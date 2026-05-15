@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-ro
 import { SplashScreen } from "@capacitor/splash-screen";
 import { native } from "@/lib/native";
 import Index from "./pages/Index";
+import Download from "./pages/Download";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,9 @@ const App = () => (
         <NativeShell />
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/download" element={<Download />} />
+          <Route path="/install" element={<Download />} />
+          <Route path="/app" element={<Download />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
