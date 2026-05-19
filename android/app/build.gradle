@@ -15,10 +15,32 @@ android {
              ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            // Подпись берётся из переменных окружения (GitHub Secrets):
+            //   NOVA_KEYSTORE_PATH       — путь к .keystore относительно android/app/
+            //   NOVA_KEYSTORE_PASSWORD   — пароль от keystore
+            //   NOVA_KEY_ALIAS           — alias ключа
+            //   NOVA_KEY_PASSWORD        — пароль от alias
+            // Если переменных нет — release-сборка останется неподписанной,
+            // тогда подписывать придётся вручную через apksigner.
+            def ksPath = System.getenv("NOVA_KEYSTORE_PATH")
+            if (ksPath != null && !ksPath.isEmpty()) {
+                storeFile file(ksPath)
+                storePassword System.getenv("NOVA_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("NOVA_KEY_ALIAS")
+                keyPassword System.getenv("NOVA_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Применяем подпись только если keystore реально настроен.
+            if (System.getenv("NOVA_KEYSTORE_PATH") != null && !System.getenv("NOVA_KEYSTORE_PATH").isEmpty()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
