@@ -1,5 +1,11 @@
 {
+  "account-delete": "https://functions.poehali.dev/ec360df4-9f13-4f70-b7ab-e9d416cf083a",
   "chat-poll": "https://functions.poehali.dev/3fc067b7-d1b3-4aed-8ad9-98df81040f0a",
+  "yookassa-pay": "https://functions.poehali.dev/2feb7862-ee04-4945-8549-c0596f30bdc9",
+  "yookassa-webhook": "https://functions.poehali.dev/3b07d374-23bb-4336-a363-24a6f9b4cc5b",
   "admin-api": "https://functions.poehali.dev/74374a22-83da-4771-855b-1716418e719b",
-  "chat-api": "https://functions.poehali.dev/b97ade88-cc88-4702-a461-4c386efd5ca3"
+  "upload-image": "https://functions.poehali.dev/c0e361f0-438f-44b3-8886-26f5afb7d935",
+  "push-notify": "https://functions.poehali.dev/c9d141ca-3552-433f-a968-ac1e92da00af",
+  "chat-api": "https://functions.poehali.dev/b97ade88-cc88-4702-a461-4c386efd5ca3",
+  "send-sms": "https://functions.poehali.dev/d5b81fb8-fe85-4a15-84a6-cc602997298c"
 }

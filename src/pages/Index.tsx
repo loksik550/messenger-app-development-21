@@ -33,6 +33,9 @@ import NotificationsPanel from "@/components/messenger/NotificationsPanel";
 import AppearancePanel from "@/components/messenger/AppearancePanel";
 import SavedNotesPanel from "@/components/messenger/SavedNotesPanel";
 import PaymentRequestsPanel from "@/components/messenger/PaymentRequestsPanel";
+import AccountDeletePanel from "@/components/messenger/AccountDeletePanel";
+import ConsentScreen, { hasConsent } from "@/components/messenger/ConsentScreen";
+import PrivacyPolicyPanel from "@/components/messenger/PrivacyPolicyPanel";
 import { type Contact } from "@/lib/api";
 
 interface ChatRaw {
@@ -66,6 +69,11 @@ function mapChat(c: ChatRaw): Chat {
 export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  // Требование RuStore / 152-ФЗ: явное согласие на обработку ПД при первом запуске
+  const [consentGiven, setConsentGiven] = useState<boolean>(() => hasConsent());
+  // Внутренние экраны (открываются из настроек)
+  const [showAccountDelete, setShowAccountDelete] = useState(false);
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
 
   // Восстановление сессии из localStorage
   useEffect(() => {
@@ -366,7 +374,33 @@ export default function Index() {
     </div>
   );
 
+  // Гейт согласия на обработку ПД — обязательное требование RuStore.
+  // Показываем ДО любых форм авторизации, чтобы не собирать ни байта данных
+  // без явного согласия пользователя.
+  if (!consentGiven) {
+    return <ConsentScreen onAccept={() => setConsentGiven(true)} />;
+  }
+
   if (!currentUser) return <AuthScreen onDone={login} />;
+
+  // Экран политики конфиденциальности (доступен из настроек)
+  if (showPrivacyPolicy) {
+    return <PrivacyPolicyPanel onBack={() => setShowPrivacyPolicy(false)} />;
+  }
+
+  // Экран удаления аккаунта (доступен из настроек)
+  if (showAccountDelete) {
+    return (
+      <AccountDeletePanel
+        user={currentUser}
+        onBack={() => setShowAccountDelete(false)}
+        onDeleted={() => {
+          setShowAccountDelete(false);
+          logout();
+        }}
+      />
+    );
+  }
 
   const navItems: { tab: View; icon: string; label: string }[] = [
     { tab: "chats", icon: "MessageCircle", label: "Чаты" },
@@ -921,7 +955,12 @@ export default function Index() {
             onOpenPayments={() => openOverlay(setShowPayments)}
           />
         ) : view === "settings" ? (
-          <SettingsPanel onLogout={logout} onBack={() => setView("profile")} />
+          <SettingsPanel
+            onLogout={logout}
+            onBack={() => setView("profile")}
+            onDeleteAccount={() => setShowAccountDelete(true)}
+            onOpenPrivacyPolicy={() => setShowPrivacyPolicy(true)}
+          />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8 animate-fade-in">
             <div className="w-20 h-20 grad-primary rounded-3xl flex items-center justify-center mb-6 glow-primary animate-float">

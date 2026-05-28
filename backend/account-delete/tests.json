@@ -1,0 +1,50 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "POST без X-User-Id → 401",
+      "method": "POST",
+      "path": "/",
+      "headers": {"Content-Type": "application/json"},
+      "body": {"confirm": "DELETE", "phone": "+70000000000"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "POST без подтверждения → 400",
+      "method": "POST",
+      "path": "/",
+      "headers": {"Content-Type": "application/json", "X-User-Id": "999999999"},
+      "body": {"phone": "+70000000000"},
+      "expectedStatus": 400
+    },
+    {
+      "name": "POST с неверным confirm → 400",
+      "method": "POST",
+      "path": "/",
+      "headers": {"Content-Type": "application/json", "X-User-Id": "999999999"},
+      "body": {"confirm": "yes", "phone": "+70000000000"},
+      "expectedStatus": 400
+    },
+    {
+      "name": "POST без phone → 400",
+      "method": "POST",
+      "path": "/",
+      "headers": {"Content-Type": "application/json", "X-User-Id": "999999999"},
+      "body": {"confirm": "DELETE"},
+      "expectedStatus": 400
+    },
+    {
+      "name": "POST для несуществующего user → 404",
+      "method": "POST",
+      "path": "/",
+      "headers": {"Content-Type": "application/json", "X-User-Id": "999999999"},
+      "body": {"confirm": "DELETE", "phone": "+70000000000"},
+      "expectedStatus": 404
+    }
+  ]
+}
