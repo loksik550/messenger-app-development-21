@@ -35,12 +35,19 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
+            // Обфускация + минификация + удаление неиспользуемых ресурсов.
+            // Требование RuStore для прохождения проверки безопасности.
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // Применяем подпись только если keystore реально настроен.
             if (System.getenv("NOVA_KEYSTORE_PATH") != null && !System.getenv("NOVA_KEYSTORE_PATH").isEmpty()) {
                 signingConfig signingConfigs.release
             }
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
         }
     }
     compileOptions {
