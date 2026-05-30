@@ -58,12 +58,10 @@ jobs:
       - name: Ensure Gradle Wrapper exists
         working-directory: android
         run: |
-          if [ ! -f gradlew ]; then
-            echo "gradlew отсутствует — генерирую wrapper 8.2.1"
-            gradle wrapper --gradle-version 8.2.1 --no-daemon
-          fi
+          echo "Генерирую Gradle Wrapper 8.2.1"
+          gradle wrapper --gradle-version 8.2.1 --distribution-type all --no-daemon
           chmod +x gradlew
-          ls -la gradlew
+          ./gradlew --version
 
       - name: Decode keystore
         env:
