@@ -32,12 +32,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # нужно для генерации changelog по тегам
+          fetch-depth: 0
 
-      # Определяем итоговый режим сборки:
-      #   • push тега v* → release-signed (для GitHub Release)
-      #   • workflow_dispatch с выбором → берём что выбрал пользователь
-      #   • любой другой push → debug
       - name: Determine build mode
         id: mode
         run: |
@@ -45,7 +41,7 @@ jobs:
             echo "build_type=release-signed" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
             echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-            echo "Tag detected: ${GITHUB_REF_NAME} → release-signed + GitHub Release"
+            echo "Tag detected: ${GITHUB_REF_NAME} -> release-signed + GitHub Release"
           elif [[ -n "${{ github.event.inputs.build_type }}" ]]; then
             echo "build_type=${{ github.event.inputs.build_type }}" >> $GITHUB_OUTPUT
             echo "is_release=false" >> $GITHUB_OUTPUT
@@ -93,15 +89,12 @@ jobs:
       - name: Build web (Vite)
         run: bun run build
 
-      # Capacitor sync создаст: gradlew, gradle-wrapper.jar, актуальные capacitor.settings.gradle,
-      # capacitor.plugins.json, capacitor.build.gradle и скопирует dist/ → android/app/src/main/assets/public/
       - name: Sync Capacitor (Android)
         run: npx cap sync android
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── Debug сборка (без подписи) ─────────────────────────────────────
       - name: Build Debug APK
         if: ${{ steps.mode.outputs.build_type == 'debug' }}
         working-directory: android
@@ -116,7 +109,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ── Release сборка БЕЗ подписи (для ручной подписи позже) ──────────
       - name: Build Release AAB (unsigned)
         if: ${{ steps.mode.outputs.build_type == 'release' }}
         working-directory: android
@@ -131,14 +123,13 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ── Release сборка С автоматической подписью ───────────────────────
       - name: Decode keystore
         if: ${{ steps.mode.outputs.build_type == 'release-signed' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Не найден secret ANDROID_KEYSTORE_BASE64. Добавь keystore в Settings → Secrets → Actions"
+            echo "::error::Не найден secret ANDROID_KEYSTORE_BASE64. Добавь keystore в Settings -> Secrets -> Actions"
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
@@ -155,7 +146,6 @@ jobs:
         run: |
           ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
-      # Переименовываем APK/AAB с версией для удобной загрузки
       - name: Rename release artifacts with version
         if: ${{ steps.mode.outputs.build_type == 'release-signed' }}
         run: |
@@ -187,14 +177,12 @@ jobs:
         if: ${{ always() && steps.mode.outputs.build_type == 'release-signed' }}
         run: rm -f android/app/release.keystore
 
-      # ── Автоматическая публикация GitHub Release при push тега v* ──────
       - name: Generate changelog from commits
         if: ${{ steps.mode.outputs.is_release == 'true' }}
         id: changelog
         run: |
           VERSION="${{ steps.mode.outputs.version }}"
           PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${VERSION}$" | head -n 1 || echo "")
-
           {
             echo "## Nova ${VERSION}"
             echo ""
@@ -213,11 +201,9 @@ jobs:
             echo ""
             echo "### Установка"
             echo ""
-            echo "- **APK** — скачай \`nova-${VERSION}.apk\`, открой на Android-телефоне, разреши установку из неизвестных источников"
-            echo "- **AAB** — для загрузки в Google Play Console"
+            echo "- APK - скачай nova-${VERSION}.apk, открой на Android-телефоне"
+            echo "- AAB - для загрузки в RuStore / Google Play Console"
           } > CHANGELOG_RELEASE.md
-
-          echo "Changelog generated:"
           cat CHANGELOG_RELEASE.md
 
       - name: Create GitHub Release
@@ -232,29 +218,3 @@ jobs:
           files: |
             release-output/nova-*.apk
             release-output/nova-*.aab
-          fail_on_unmatched_files: true
-
-      - name: Build summary
-        if: always()
-        run: |
-          echo "### Сборка Nova" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Режим:** ${{ steps.mode.outputs.build_type }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            SIZE=$(du -h android/app/build/outputs/apk/debug/app-debug.apk | cut -f1)
-            echo "✅ Debug APK — $SIZE" >> $GITHUB_STEP_SUMMARY
-            echo "Скачать: Actions → этот run → Artifacts → **nova-debug-apk**" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            SIZE=$(du -h android/app/build/outputs/apk/release/app-release.apk | cut -f1)
-            echo "✅ Подписанный Release APK — $SIZE" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ -f "android/app/build/outputs/bundle/release/app-release.aab" ]; then
-            SIZE=$(du -h android/app/build/outputs/bundle/release/app-release.aab | cut -f1)
-            echo "✅ Release AAB — $SIZE" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ "${{ steps.mode.outputs.is_release }}" == "true" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "🚀 **GitHub Release создан:** [${{ steps.mode.outputs.version }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.mode.outputs.version }})" >> $GITHUB_STEP_SUMMARY
-          fi
