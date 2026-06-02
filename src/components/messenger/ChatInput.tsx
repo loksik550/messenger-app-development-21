@@ -60,7 +60,7 @@ export function ChatInput({
 }) {
   const [showEmoji, setShowEmoji] = useState(false);
   return (
-    <div className="px-3 py-2 glass-strong border-t border-white/5 relative" style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}>
+    <div className="px-3 pt-1.5 pb-1 glass-strong border-t border-white/5 relative" style={{ paddingBottom: "calc(0.25rem + env(safe-area-inset-bottom))" }}>
       <input
         ref={fileInputRef}
         type="file"
@@ -176,7 +176,7 @@ export function ChatInput({
         >
           <Icon name={showAttach ? "X" : "Paperclip"} size={20} />
         </button>
-        <div className="flex-1 flex items-end glass rounded-2xl px-4 py-2.5 gap-2">
+        <div className="flex-1 flex items-end glass rounded-2xl px-4 py-2 gap-2">
           <textarea
             value={input}
             onChange={e => { setInput(e.target.value); onNotifyTyping(); }}

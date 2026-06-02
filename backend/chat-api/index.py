@@ -1725,20 +1725,30 @@ def handler(event: dict, context) -> dict:
         if not user_id:
             conn.close()
             return err("Нужен X-User-Id")
-        phone = (body.get("phone") or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-        if phone.startswith("8"):
-            phone = "7" + phone[1:]
-        if phone.startswith("+"):
-            phone = phone[1:]
-        name_override = (body.get("name") or "").strip() or None
-        if not phone:
-            conn.close()
-            return err("Укажите phone")
-        cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE phone = %s", (phone,))
-        found = cur.fetchone()
+        name_override = (body.get("name") or body.get("name_override") or "").strip() or None
+        contact_id_raw = body.get("contact_id")
+        if contact_id_raw:
+            try:
+                cid_int = int(contact_id_raw)
+            except (TypeError, ValueError):
+                conn.close()
+                return err("Неверный contact_id")
+            cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE id = %s", (cid_int,))
+            found = cur.fetchone()
+        else:
+            phone = (body.get("phone") or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            if phone.startswith("8"):
+                phone = "7" + phone[1:]
+            if phone.startswith("+"):
+                phone = phone[1:]
+            if not phone:
+                conn.close()
+                return err("Укажите phone или contact_id")
+            cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE phone = %s", (phone,))
+            found = cur.fetchone()
         if not found:
             conn.close()
-            return err("Пользователь с таким номером не найден")
+            return err("Пользователь не найден")
         if found[0] == int(user_id):
             conn.close()
             return err("Нельзя добавить себя")
@@ -1751,7 +1761,7 @@ def handler(event: dict, context) -> dict:
             (int(user_id), found[0], name_override, now)
         )
         conn.close()
-        return ok({"ok": True, "contact": {"id": found[0], "name": name_override or found[1], "phone": phone}})
+        return ok({"ok": True, "contact": {"id": found[0], "name": name_override or found[1]}})
 
     # ── import_contacts (массовый импорт телефонной книги) ────────────────────
     if action == "import_contacts":

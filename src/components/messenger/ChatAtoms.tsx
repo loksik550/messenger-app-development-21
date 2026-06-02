@@ -75,19 +75,34 @@ export function ChatList({
 
   const ChatRow = ({ chat }: { chat: Chat }) => {
     const [dx, setDx] = useState(0);
+    const [menu, setMenu] = useState(false);
     const startX = useRef<number | null>(null);
     const startY = useRef<number | null>(null);
     const horizontal = useRef(false);
+    const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const moved = useRef(false);
+
+    const cancelHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
+    const startHold = () => {
+      moved.current = false;
+      cancelHold();
+      holdTimer.current = setTimeout(() => {
+        try { (navigator as Navigator & { vibrate?: (p: number) => boolean }).vibrate?.(15); } catch { /* ignore */ }
+        setMenu(true);
+      }, 450);
+    };
 
     const onTouchStart = (e: React.TouchEvent) => {
       startX.current = e.touches[0].clientX;
       startY.current = e.touches[0].clientY;
       horizontal.current = false;
+      startHold();
     };
     const onTouchMove = (e: React.TouchEvent) => {
       if (startX.current === null || startY.current === null) return;
       const dxRaw = e.touches[0].clientX - startX.current;
       const dyRaw = e.touches[0].clientY - startY.current;
+      if (Math.abs(dxRaw) > 6 || Math.abs(dyRaw) > 6) { moved.current = true; cancelHold(); }
       if (!horizontal.current && Math.abs(dxRaw) > 8 && Math.abs(dxRaw) > Math.abs(dyRaw)) {
         horizontal.current = true;
       }
@@ -97,6 +112,7 @@ export function ChatList({
       }
     };
     const onTouchEnd = () => {
+      cancelHold();
       if (horizontal.current) {
         if (dx <= -70 && onToggleMute) onToggleMute(chat);
         else if (dx >= 70 && onToggleArchive) onToggleArchive(chat);
@@ -107,8 +123,34 @@ export function ChatList({
       horizontal.current = false;
     };
 
+    const menuItems: { icon: string; label: string; red?: boolean; onClick: () => void }[] = [
+      ...(onToggleMute ? [{ icon: chat.muted ? "Bell" : "BellOff", label: chat.muted ? "Включить уведомления" : "Выключить уведомления", onClick: () => onToggleMute(chat) }] : []),
+      ...(onToggleArchive ? [{ icon: chat.archived ? "ArchiveRestore" : "Archive", label: chat.archived ? "Из архива" : "В архив", onClick: () => onToggleArchive(chat) }] : []),
+      { icon: "MailOpen", label: "Открыть чат", onClick: () => onSelect(chat) },
+    ];
+
     return (
       <div className="relative mx-2 overflow-hidden rounded-2xl">
+        {menu && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={() => setMenu(false)}>
+            <div className="glass-strong rounded-2xl overflow-hidden shadow-2xl min-w-[240px] max-w-[320px] animate-scale-in" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-3 border-b border-white/10 flex items-center gap-3">
+                <Avatar label={chat.avatar} id={chat.id} src={chat.avatar_url || undefined} size="sm" />
+                <span className="font-semibold text-sm truncate">{chat.name}</span>
+              </div>
+              {menuItems.map(item => (
+                <button
+                  key={item.label}
+                  onClick={() => { setMenu(false); item.onClick(); }}
+                  className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-white/8 transition-colors text-sm ${item.red ? "text-red-400 hover:bg-red-500/10" : ""}`}
+                >
+                  <Icon name={item.icon} size={16} className={item.red ? "" : "text-muted-foreground"} />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* фон под свайпом */}
         {dx !== 0 && (
           <div className="absolute inset-0 flex items-center justify-between px-5 text-xs font-semibold pointer-events-none">
@@ -123,10 +165,14 @@ export function ChatList({
           </div>
         )}
         <button
-          onClick={() => { if (Math.abs(dx) < 5) onSelect(chat); }}
+          onClick={() => { if (Math.abs(dx) < 5 && !menu) onSelect(chat); }}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
+          onMouseDown={startHold}
+          onMouseUp={cancelHold}
+          onMouseLeave={cancelHold}
+          onContextMenu={(e) => { e.preventDefault(); setMenu(true); }}
           style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? "transform 0.2s ease" : "none" }}
           className={`w-full flex items-center gap-3 px-4 py-3 transition-colors rounded-2xl
             ${selectedId === chat.id ? "bg-white/8 glass" : "bg-[hsl(var(--background))] hover:bg-white/4"}`}

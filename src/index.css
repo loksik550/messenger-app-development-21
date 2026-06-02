@@ -252,6 +252,19 @@
     -webkit-overflow-scrolling: touch;
     /* Высота на мобильных с учётом адресной строки */
     height: 100dvh;
+    /* Запрещаем выделение текста и контекст-вызов по long-press */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Разрешаем выделение/ввод только в полях ввода */
+  input,
+  textarea,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
   }
 
   #root {
