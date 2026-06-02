@@ -1,4 +1,4 @@
-const CACHE = "nova-v4";
+const CACHE = "nova-v5";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -87,13 +87,17 @@ self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const notifData = e.notification.data || {};
 
+  // Отклонить звонок — просто закрываем уведомление
+  if (e.action === "decline") return;
+
+  // Если это звонок — открываем приложение с call_id в URL,
+  // чтобы экран вызова открылся даже если приложение было закрыто.
+  const callQuery = notifData.is_call && notifData.call_id
+    ? `/?call_id=${encodeURIComponent(notifData.call_id)}`
+    : "/";
+
   e.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      const targetUrl = "/";
-
-      // Отклонить звонок — просто закрываем уведомление
-      if (e.action === "decline") return;
-
       // Найти открытое окно и передать сообщение
       for (const client of list) {
         if (client.url.includes(self.location.origin)) {
@@ -103,7 +107,7 @@ self.addEventListener("notificationclick", (e) => {
           return client.focus();
         }
       }
-      return clients.openWindow(targetUrl);
+      return clients.openWindow(callQuery);
     })
   );
 });

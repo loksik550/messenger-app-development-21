@@ -116,6 +116,18 @@ export default function Index() {
     }
   }, []);
 
+  // Открытие по пушу звонка с заблокированного экрана: ?call_id=...
+  const [pendingCallId, setPendingCallId] = useState<string | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const cid = url.searchParams.get("call_id");
+    if (cid) {
+      setPendingCallId(cid);
+      url.searchParams.delete("call_id");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+
   const [activeTab, setActiveTab] = useState<Tab>("chats");
   const [view, setView] = useState<View>("chats");
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
@@ -351,6 +363,45 @@ export default function Index() {
       }
     }, 5000);
     return () => clearInterval(interval);
+  }, [currentUser, activeCall]);
+
+  // Приложение открыто по пушу звонка (?call_id=...) — открываем экран вызова.
+  useEffect(() => {
+    if (!currentUser || !pendingCallId || activeCall) return;
+    let alive = true;
+    api("poll_incoming_call", { since: Math.floor(Date.now() / 1000) - 90 }, currentUser.id)
+      .then((data) => {
+        if (!alive) return;
+        if (data.call && data.call.call_id === pendingCallId) {
+          setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
+        }
+        setPendingCallId(null);
+      })
+      .catch(() => { if (alive) setPendingCallId(null); });
+    return () => { alive = false; };
+  }, [currentUser, pendingCallId, activeCall]);
+
+  // Сообщения от Service Worker: клик по пушу звонка (с заблокированного экрана)
+  // сразу открывает экран входящего вызова, не дожидаясь поллинга.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!("serviceWorker" in navigator)) return;
+    const onSwMessage = (e: MessageEvent) => {
+      const d = e.data || {};
+      if (d.type === "incoming_call" && d.call_id) {
+        if (activeCall) return;
+        // Подтягиваем данные звонка с бэкенда и открываем экран вызова
+        api("poll_incoming_call", { since: Math.floor(Date.now() / 1000) - 60 }, currentUser.id)
+          .then((data) => {
+            if (data.call && data.call.call_id === d.call_id) {
+              setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
+            }
+          })
+          .catch(() => { /* ignore */ });
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
   }, [currentUser, activeCall]);
 
   const login = (user: User) => {

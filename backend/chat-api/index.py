@@ -1878,19 +1878,16 @@ def handler(event: dict, context) -> dict:
             conn.close()
             push_url = os.environ.get("PUSH_NOTIFY_URL", "")
             if push_url and caller:
-                try:
-                    push_body = json.dumps({
-                        "action": "send",
-                        "recipient_id": int(to_user_id),
-                        "sender_name": caller[0],
-                        "is_call": True,
-                        "call_id": call_id,
-                        "message": "Входящий звонок",
-                    }).encode("utf-8")
-                    req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
-                    urllib.request.urlopen(req, timeout=5)
-                except Exception:
-                    pass
+                push_body = json.dumps({
+                    "action": "send",
+                    "recipient_id": int(to_user_id),
+                    "sender_name": caller[0],
+                    "is_call": True,
+                    "call_id": call_id,
+                    "message": "Входящий звонок",
+                }).encode("utf-8")
+                # В фоне, чтобы не задерживать установку звонка у звонящего
+                _fire_and_forget_http(push_url, push_body)
         elif signal_type in ("end", "decline", "cancel", "hangup"):
             # Пропущенный звонок: если answer от вызываемого не было — создаём системное сообщение
             cur.execute(
