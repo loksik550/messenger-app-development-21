@@ -81,7 +81,7 @@ export default function PaymentRequestsPanel({
               <Icon name="ReceiptText" size={28} className="text-emerald-400" />
             </div>
             <h3 className="font-bold text-base mb-1">Запрос на оплату</h3>
-            <p className="text-sm text-muted-foreground max-w-xs mx-auto">Выставляй счета друзьям и получай оплату прямо в мессенджере. Деньги мгновенно зачисляются на твой кошелёк.</p>
+            <p className="text-sm text-muted-foreground max-w-xs mx-auto">Выставляй счета друзьям и получай оплату прямо в приложении. Деньги мгновенно зачисляются на твой кошелёк.</p>
           </div>
         )}
         {items.map(pr => {

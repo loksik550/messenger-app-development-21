@@ -100,7 +100,7 @@ export default function Download() {
             </div>
 
             <h1 className="text-5xl md:text-6xl font-extrabold leading-[1.05] tracking-tight mb-6">
-              Nova — мессенджер{" "}
+              Nova — социальная сеть{" "}
               <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-blue-400 bg-clip-text text-transparent">
                 нового поколения
               </span>
