@@ -17,6 +17,7 @@ export function ChatInput({
   onNotifyTyping,
   onStartRecording,
   onStopRecording,
+  onCancelRecording,
   onFileChange,
   onVideoCircle,
   replyTo,
@@ -44,6 +45,7 @@ export function ChatInput({
   onNotifyTyping: () => void;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  onCancelRecording?: () => void;
   onFileChange: (file: File) => void;
   onVideoCircle?: () => void;
   replyTo?: Message | null;
@@ -164,7 +166,7 @@ export function ChatInput({
           <span className="text-sm text-red-400 font-medium">
             Запись {Math.floor(recordSec / 60).toString().padStart(2, "0")}:{(recordSec % 60).toString().padStart(2, "0")}
           </span>
-          <button onClick={onStopRecording} className="ml-auto text-xs text-muted-foreground hover:text-red-400">
+          <button onClick={() => (onCancelRecording ? onCancelRecording() : onStopRecording())} className="ml-auto text-xs text-muted-foreground hover:text-red-400">
             Отмена
           </button>
         </div>
@@ -208,13 +210,10 @@ export function ChatInput({
           </button>
         ) : (
           <button
-            onMouseDown={onStartRecording}
-            onMouseUp={onStopRecording}
-            onTouchStart={onStartRecording}
-            onTouchEnd={onStopRecording}
-            className={`p-2.5 rounded-xl transition-all ${recording ? "bg-red-500 text-white" : "glass text-muted-foreground hover:text-violet-400"}`}
+            onClick={() => { if (recording) onStopRecording(); else onStartRecording(); }}
+            className={`p-2.5 rounded-xl transition-all ${recording ? "bg-red-500 text-white animate-pulse" : "glass text-muted-foreground hover:text-violet-400"}`}
           >
-            <Icon name="Mic" size={20} />
+            <Icon name={recording ? "Send" : "Mic"} size={20} />
           </button>
         )}
       </div>

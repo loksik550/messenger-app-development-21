@@ -78,16 +78,54 @@ function hexToHslTriplet(hex: string): string {
   return `${Math.round(hh * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
+// Затемнить/осветлить hex на заданный процент (-100..100)
+function shadeHex(hex: string, percent: number): string {
+  const h = hex.replace("#", "");
+  let r = parseInt(h.slice(0, 2), 16);
+  let g = parseInt(h.slice(2, 4), 16);
+  let b = parseInt(h.slice(4, 6), 16);
+  const t = percent < 0 ? 0 : 255;
+  const p = Math.abs(percent) / 100;
+  r = Math.round((t - r) * p) + r;
+  g = Math.round((t - g) * p) + g;
+  b = Math.round((t - b) * p) + b;
+  const to2 = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
+}
+
 export function applyAccent(hex: string) {
   const triplet = hexToHslTriplet(hex);
-  document.documentElement.style.setProperty("--primary", triplet);
-  document.documentElement.style.setProperty("--ring", triplet);
-  document.documentElement.style.setProperty("--accent-color", hex);
+  const root = document.documentElement;
+  root.style.setProperty("--primary", triplet);
+  root.style.setProperty("--ring", triplet);
+  root.style.setProperty("--accent-color", hex);
+  // Градиенты кнопок и исходящих сообщений строим от выбранного акцента,
+  // иначе выбор цвета не виден (кнопки используют --grad-primary).
+  const light = shadeHex(hex, 18);
+  const dark = shadeHex(hex, -22);
+  root.style.setProperty("--grad-primary", `linear-gradient(135deg, ${dark} 0%, ${hex} 55%, ${light} 100%)`);
+  root.style.setProperty("--grad-msg-out", `linear-gradient(135deg, ${dark} 0%, ${hex} 100%)`);
   try { localStorage.setItem("nova_accent_hex", hex); } catch { /* ignore */ }
 }
 
 export function getStoredAccentHex(): string | null {
   try { return localStorage.getItem("nova_accent_hex"); } catch { return null; }
+}
+
+// ─── Стиль сообщений (форма «бабблов») ───────────────────────────────────
+export type BubbleStyle = "default" | "rounded" | "minimal";
+const BUBBLE_STYLES: BubbleStyle[] = ["default", "rounded", "minimal"];
+
+export function applyBubbleStyle(style: string) {
+  const root = document.documentElement;
+  BUBBLE_STYLES.forEach(s => root.classList.remove(`bubble-${s}`));
+  const valid = (BUBBLE_STYLES as string[]).includes(style) ? style : "default";
+  root.classList.add(`bubble-${valid}`);
+  try { localStorage.setItem("nova_bubble_style", valid); } catch { /* ignore */ }
+}
+
+export function getStoredBubbleStyle(): string {
+  try { return localStorage.getItem("nova_bubble_style") || "default"; } catch { return "default"; }
 }
 
 // ─── Авто-переключение темы ──────────────────────────────────────────────

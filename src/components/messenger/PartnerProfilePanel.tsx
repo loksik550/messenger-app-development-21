@@ -21,6 +21,8 @@ interface Props {
   onSearch: () => void;
   onClearHistory: () => void;
   onBlock: () => void;
+  onDeleteContact?: () => void;
+  isContact?: boolean;
 }
 
 const REPORT_REASONS = ["spam", "abuse", "scam", "violence", "porn", "other"] as const;
@@ -29,6 +31,7 @@ export default function PartnerProfilePanel({
   chat, currentUserId, disappearingSeconds, onClose, onCall, onVideoCall,
   onToggleMute, onTogglePin, onToggleFavorite, onToggleArchive,
   onChooseWallpaper, onSetDisappearing, onSearch, onClearHistory, onBlock,
+  onDeleteContact, isContact,
 }: Props) {
   useEdgeSwipeBack(onClose);
   const { t } = useT();
@@ -36,6 +39,7 @@ export default function PartnerProfilePanel({
   const [reporting, setReporting] = useState(false);
   const [comment, setComment] = useState("");
   const [toast, setToast] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const disappearingLabel = (sec?: number | null): string => {
     if (!sec) return t("report.off");
@@ -123,10 +127,40 @@ export default function PartnerProfilePanel({
           <Row icon="Flag" label={t("partner.report")} red onClick={() => setShowReport(true)} />
           <div className="h-px bg-white/5 ml-12" />
           <Row icon="Trash2" label={t("partner.clearHistory")} red onClick={() => { onClose(); onClearHistory(); }} />
+          {onDeleteContact && isContact && (
+            <>
+              <div className="h-px bg-white/5 ml-12" />
+              <Row icon="UserMinus" label="Удалить из контактов" red onClick={() => setConfirmDelete(true)} />
+            </>
+          )}
           <div className="h-px bg-white/5 ml-12" />
           <Row icon="Ban" label={t("partner.block")} red onClick={() => { onClose(); onBlock(); }} />
         </div>
       </div>
+
+      {/* Подтверждение удаления контакта */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-6" onClick={() => setConfirmDelete(false)}>
+          <div className="w-full max-w-xs glass-strong rounded-3xl p-5 animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col items-center text-center gap-2 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/15 flex items-center justify-center">
+                <Icon name="UserMinus" size={22} className="text-red-400" />
+              </div>
+              <h3 className="font-bold text-base">Удалить контакт?</h3>
+              <p className="text-xs text-muted-foreground">{chat.name} будет удалён из ваших контактов. Переписка останется.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/8 text-sm font-medium transition">Отмена</button>
+              <button
+                onClick={() => { setConfirmDelete(false); onClose(); onDeleteContact?.(); }}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Report sheet */}
       {showReport && (

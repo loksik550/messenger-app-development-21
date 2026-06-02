@@ -43,7 +43,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0)"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16)"
 
 
 def serialize_user(row):
@@ -66,6 +66,11 @@ def serialize_user(row):
         "xp": int(row[18]) if len(row) > 18 and row[18] is not None else 0,
         "level": int(row[19]) if len(row) > 19 and row[19] is not None else 1,
         "daily_streak": int(row[20]) if len(row) > 20 and row[20] is not None else 0,
+        "theme_id": row[21] if len(row) > 21 and row[21] else "dark",
+        "accent_color": row[22] if len(row) > 22 and row[22] else "violet",
+        "chat_wallpaper": row[23] if len(row) > 23 else None,
+        "bubble_style": row[24] if len(row) > 24 and row[24] else "default",
+        "font_size": int(row[25]) if len(row) > 25 and row[25] is not None else 16,
     }
 
 

@@ -337,6 +337,20 @@
     background: hsl(var(--secondary));
   }
 
+  /* Стиль сообщений: округлый — крупный радиус */
+  :root.bubble-rounded .msg-bubble-out,
+  :root.bubble-rounded .msg-bubble-in {
+    border-radius: 22px !important;
+  }
+  /* Минимал — почти прямые углы, плоский фон у входящих */
+  :root.bubble-minimal .msg-bubble-out,
+  :root.bubble-minimal .msg-bubble-in {
+    border-radius: 8px !important;
+  }
+  :root.bubble-minimal .msg-bubble-in {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
   .glow-primary {
     box-shadow: 0 0 24px rgba(124, 58, 237, 0.4);
   }

@@ -20,6 +20,8 @@ export function VideoCircleRecorder({
 
   const [recording, setRecording] = useState(false);
   const [secs, setSecs] = useState(0);
+  const secsRef = useRef(0);
+  useEffect(() => { secsRef.current = secs; }, [secs]);
   const [err, setErr] = useState<string>("");
 
   useEffect(() => {
@@ -81,9 +83,12 @@ export function VideoCircleRecorder({
     recorderRef.current = rec;
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
     rec.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: rec.mimeType || "video/webm" });
-      const file = new File([blob], `circle_${Date.now()}.webm`, { type: blob.type });
-      const dur = secs;
+      // Берём реальный тип от рекордера (на iOS это будет video/mp4, а не webm)
+      const realType = rec.mimeType || mime || "video/webm";
+      const ext = realType.includes("mp4") ? "mp4" : realType.includes("quicktime") ? "mov" : "webm";
+      const blob = new Blob(chunksRef.current, { type: realType });
+      const file = new File([blob], `circle_${Date.now()}.${ext}`, { type: realType });
+      const dur = secsRef.current;
       cleanup();
       onClose();
       if (file.size > 1024) onRecorded(file, dur);
@@ -93,11 +98,12 @@ export function VideoCircleRecorder({
     setSecs(0);
     timerRef.current = setInterval(() => {
       setSecs(s => {
-        if (s + 1 >= MAX_SECONDS) {
+        const next = s + 1;
+        if (next >= MAX_SECONDS) {
           stopRec();
           return MAX_SECONDS;
         }
-        return s + 1;
+        return next;
       });
     }, 1000);
   };

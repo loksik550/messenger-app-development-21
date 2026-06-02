@@ -85,19 +85,23 @@ export function ChatWindow({
   const [showSchedule, setShowSchedule] = useState(false);
   const [showScheduledList, setShowScheduledList] = useState(false);
   const [scheduled, setScheduled] = useState<ScheduledItem[]>([]);
-  const [wallpaper, setWallpaper] = useState<string | null>(null);
+  // Глобальные обои из настроек оформления (применяются ко всем чатам по умолчанию)
+  const globalWp = currentUser.chat_wallpaper && currentUser.chat_wallpaper !== "default"
+    ? currentUser.chat_wallpaper : null;
+  const [wallpaper, setWallpaper] = useState<string | null>(globalWp);
   const [showWallpaper, setShowWallpaper] = useState(false);
   useEffect(() => {
     const ls = localStorage.getItem(`nova_wp_${chat.id}`);
     if (ls) setWallpaper(ls);
     api("get_wallpaper", { chat_id: chat.id }, currentUser.id).then(r => {
       if (r && !r.error) {
-        setWallpaper(r.wallpaper || null);
+        // Персональные обои чата приоритетнее; иначе — глобальные
+        setWallpaper(r.wallpaper || globalWp);
         if (r.wallpaper) localStorage.setItem(`nova_wp_${chat.id}`, r.wallpaper);
         else localStorage.removeItem(`nova_wp_${chat.id}`);
       }
     });
-  }, [chat.id, currentUser.id]);
+  }, [chat.id, currentUser.id, globalWp]);
   // Незнакомец: проверяем что собеседник не в контактах
   useEffect(() => {
     if (!chat.partner_id) { setIsUnknown(false); return; }
@@ -123,6 +127,7 @@ export function ChatWindow({
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordCancelledRef = useRef(false);
 
   const loadMessages = useCallback(async (since = 0) => {
     const data = await api("get_messages", { chat_id: chat.id, since }, currentUser.id);
@@ -341,6 +346,12 @@ export function ChatWindow({
   const cancelHold = () => { if (holdTimer.current) clearTimeout(holdTimer.current); };
 
   const sendFile = async (file: File, extra?: { duration?: number; mediaTypeOverride?: "audio" | "video" | "image" | "file" }) => {
+    // Лимит размера: тело функции в base64 раздувается ~на 33%, безопасный предел ~18 МБ
+    const MAX_FILE_MB = 18;
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум ${MAX_FILE_MB} МБ.`);
+      return;
+    }
     setUploading(true);
     setShowAttach(false);
     const labelMap: Record<string, string> = { image: "Загружаем фото...", video: "Загружаем видео...", audio: "Загружаем аудио...", file: "Загружаем файл..." };
@@ -374,7 +385,10 @@ export function ChatWindow({
         }]);
         setLastSince(data.created_at);
       }
-    } catch (uploadErr) { console.error(uploadErr); } finally { setUploading(false); }
+    } catch (uploadErr) {
+      console.error(uploadErr);
+      alert("Не удалось отправить файл. Попробуй ещё раз или выбери файл меньшего размера.");
+    } finally { setUploading(false); }
   };
 
   const startRecording = async () => {
@@ -401,13 +415,17 @@ export function ChatWindow({
       const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       mediaRecorder.current = mr;
       audioChunks.current = [];
+      recordCancelledRef.current = false;
       mr.ondataavailable = e => { if (e.data && e.data.size > 0) audioChunks.current.push(e.data); };
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
+        if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+        setRecording(false);
+        if (recordCancelledRef.current) return; // отмена — не отправляем
         const realType = mr.mimeType || mime || "audio/webm";
         const ext = realType.includes("mp4") ? "m4a" : realType.includes("ogg") ? "ogg" : "webm";
         const blob = new Blob(audioChunks.current, { type: realType });
-        if (blob.size < 500) return; // совсем пустая запись — отменили
+        if (blob.size < 500) return; // совсем пустая запись
         const dur = recordSecRef.current;
         const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: realType });
         await sendFile(file, { duration: dur, mediaTypeOverride: "audio" });
@@ -417,12 +435,10 @@ export function ChatWindow({
       setRecordSec(0);
       if (recordTimer.current) clearInterval(recordTimer.current);
       recordTimer.current = setInterval(() => setRecordSec(s => {
-        if (s + 1 >= 300) { // макс 5 минут
+        if (s + 1 >= 300) { // макс 5 минут — стоп и отправка через onstop
           if (mediaRecorder.current && mediaRecorder.current.state !== "inactive") {
             try { mediaRecorder.current.stop(); } catch { /* ignore */ }
           }
-          if (recordTimer.current) clearInterval(recordTimer.current);
-          setRecording(false);
           return 300;
         }
         return s + 1;
@@ -437,12 +453,26 @@ export function ChatWindow({
     }
   };
 
+  // Стоп + отправка
   const stopRecording = () => {
-    if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+    recordCancelledRef.current = false;
     if (mediaRecorder.current && mediaRecorder.current.state !== "inactive") {
       try { mediaRecorder.current.stop(); } catch { /* ignore */ }
+    } else {
+      if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+      setRecording(false);
     }
-    setRecording(false);
+  };
+
+  // Отмена без отправки
+  const cancelRecording = () => {
+    recordCancelledRef.current = true;
+    if (mediaRecorder.current && mediaRecorder.current.state !== "inactive") {
+      try { mediaRecorder.current.stop(); } catch { /* ignore */ }
+    } else {
+      if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+      setRecording(false);
+    }
   };
 
   const addReaction = async (msgId: number, emoji: string) => {
@@ -617,6 +647,11 @@ export function ChatWindow({
           onSearch={() => setShowSearch(true)}
           onClearHistory={handleClearHistory}
           onBlock={handleBlock}
+          isContact={!isUnknown}
+          onDeleteContact={chat.partner_id ? async () => {
+            await api("remove_contact", { contact_id: chat.partner_id }, currentUser.id);
+            setIsUnknown(true);
+          } : undefined}
         />
       )}
 
@@ -774,6 +809,7 @@ export function ChatWindow({
         onNotifyTyping={notifyTyping}
         onStartRecording={startRecording}
         onStopRecording={stopRecording}
+        onCancelRecording={cancelRecording}
         onFileChange={sendFile}
         onVideoCircle={() => { setShowAttach(false); setShowVideoCircle(true); }}
         replyTo={replyTo}

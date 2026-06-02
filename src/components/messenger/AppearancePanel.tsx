@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type User, api } from "@/lib/api";
-import { applyAccent, applyFontSize, applyTheme, getStoredFontSize, getStoredTheme, THEMES_META, type ThemeId, type AutoConfig, type AutoMode, getStoredAutoConfig, setStoredAutoConfig, startAutoTheme, stopAutoTheme } from "@/lib/theme";
+import { applyAccent, applyFontSize, applyTheme, applyBubbleStyle, getStoredFontSize, getStoredTheme, THEMES_META, type ThemeId, type AutoConfig, type AutoMode, getStoredAutoConfig, setStoredAutoConfig, startAutoTheme, stopAutoTheme } from "@/lib/theme";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
 
@@ -95,7 +95,9 @@ export default function AppearancePanel({
   };
 
   const setBs = (id: string) => {
+    vibrate(10);
     setBubbleStyle(id);
+    applyBubbleStyle(id);
     api("update_user_settings", { bubble_style: id }, currentUser.id);
     onUserUpdate({ ...currentUser, bubble_style: id } as User);
   };

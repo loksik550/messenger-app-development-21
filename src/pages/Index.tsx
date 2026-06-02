@@ -38,6 +38,7 @@ import ConsentScreen, { hasConsent } from "@/components/messenger/ConsentScreen"
 import PrivacyPolicyPanel from "@/components/messenger/PrivacyPolicyPanel";
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
+import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
 interface ChatRaw {
   id: number;
@@ -89,6 +90,22 @@ export default function Index() {
     } catch { /* ignore */ }
     setSessionChecked(true);
   }, []);
+
+  // Применяем настройки оформления с сервера (тема/акцент/шрифт/стиль сообщений)
+  useEffect(() => {
+    if (!currentUser) return;
+    const u = currentUser as User & { theme_id?: string; accent_color?: string; font_size?: number; bubble_style?: string };
+    if (u.theme_id && isThemeId(u.theme_id)) applyTheme(u.theme_id, u.font_size || getStoredFontSize());
+    if (typeof u.font_size === "number") applyFontSize(u.font_size);
+    if (u.accent_color) {
+      const hexMap: Record<string, string> = {
+        violet: "#8b5cf6", blue: "#3b82f6", cyan: "#06b6d4", emerald: "#10b981",
+        amber: "#f59e0b", rose: "#f43f5e", pink: "#ec4899", indigo: "#6366f1",
+      };
+      applyAccent(hexMap[u.accent_color] || "#8b5cf6");
+    }
+    if (u.bubble_style) applyBubbleStyle(u.bubble_style);
+  }, [currentUser?.id]);
 
   // Открытие сбора по ссылке ?fund=ID
   useEffect(() => {

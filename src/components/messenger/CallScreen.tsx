@@ -294,7 +294,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-background py-16 px-8 animate-fade-in"
+      className="fixed inset-0 z-[100] flex flex-col items-center bg-background px-8 animate-fade-in"
+      style={{ paddingTop: "calc(3rem + env(safe-area-inset-top))", paddingBottom: "calc(2.5rem + env(safe-area-inset-bottom))" }}
       onPointerDown={unlockAudio}
     >
       <audio ref={remoteAudioRef} autoPlay playsInline />
@@ -327,8 +328,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         </>
       )}
 
-      {/* Top info */}
-      <div className="flex flex-col items-center gap-4 mt-8 relative z-10">
+      {/* Top info — по центру свободного пространства */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 relative z-10">
         {(!isVideo || state !== "connected") && (
           <div className={`w-28 h-28 rounded-full flex items-center justify-center text-5xl font-bold text-white animate-pulse-glow bg-gradient-to-br ${avatarGrad(remoteUserId)}`}>
             {remoteName[0]?.toUpperCase()}
@@ -339,25 +340,23 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           {stateLabel}
         </p>
         {isVideo && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs text-white/70"><Icon name="Video" size={12} />Видеозвонок</div>}
+
+        {/* Waveform (audio only, в соединении) */}
+        {state === "connected" && !isVideo && (
+          <div className="flex items-end gap-1 h-10 mt-2">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <div
+                key={i}
+                className="w-1.5 bg-violet-500/60 rounded-full animate-pulse"
+                style={{ height: `${8 + Math.random() * 24}px`, animationDelay: `${i * 0.07}s` }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Waveform placeholder (audio only) */}
-      {state === "connected" && !isVideo && (
-        <div className="flex items-end gap-1 h-10">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div
-              key={i}
-              className="w-1.5 bg-violet-500/60 rounded-full animate-pulse"
-              style={{ height: `${8 + Math.random() * 24}px`, animationDelay: `${i * 0.07}s` }}
-            />
-          ))}
-        </div>
-      )}
-      {state !== "connected" && !isVideo && <div className="h-10" />}
-      {isVideo && <div className="h-10" />}
-
-      {/* Controls */}
-      <div className="w-full relative z-20">
+      {/* Controls — всегда внизу */}
+      <div className="w-full relative z-20 flex-shrink-0">
         {state === "ringing" ? (
           <div className="flex items-center justify-center gap-12">
             <div className="flex flex-col items-center gap-2">
