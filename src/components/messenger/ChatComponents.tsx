@@ -21,6 +21,7 @@ import BotInlineButtons, { type InlineButton } from "@/components/messenger/BotI
 import ScheduleModal from "@/components/messenger/ScheduleModal";
 import ScheduledList, { type ScheduledItem } from "@/components/messenger/ScheduledList";
 import WallpaperPicker, { wallpaperById, wallpaperClassById } from "@/components/messenger/WallpaperPicker";
+import PartnerProfilePanel from "@/components/messenger/PartnerProfilePanel";
 
 // Re-export atoms so existing imports from ChatComponents still work
 export { Avatar, TypingIndicator, ChatList } from "@/components/messenger/ChatAtoms";
@@ -56,6 +57,7 @@ export function ChatWindow({
   const [input, setInput] = useState("");
   const [showAttach, setShowAttach] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [confirm, setConfirm] = useState<null | { title: string; text: string; danger?: boolean; action: () => void | Promise<void>; }>(null);
@@ -593,6 +595,7 @@ export function ChatWindow({
         onBack={onBack}
         showMenu={showMenu}
         setShowMenu={setShowMenu}
+        onOpenProfile={chat.group ? undefined : () => setShowProfile(true)}
         onCall={onCall}
         onVideoCall={onVideoCall}
         searchQuery={searchQuery}
@@ -609,6 +612,25 @@ export function ChatWindow({
         disappearingSeconds={disappearingSec}
         onChooseWallpaper={() => setShowWallpaper(true)}
       />
+
+      {showProfile && !chat.group && (
+        <PartnerProfilePanel
+          chat={chat}
+          disappearingSeconds={disappearingSec}
+          onClose={() => setShowProfile(false)}
+          onCall={() => onCall && chat.partner_id && onCall(chat.partner_id, chat.name)}
+          onVideoCall={() => onVideoCall && chat.partner_id && onVideoCall(chat.partner_id, chat.name)}
+          onToggleMute={handleToggleMute}
+          onTogglePin={handleTogglePin}
+          onToggleFavorite={handleToggleFavorite}
+          onToggleArchive={handleToggleArchive}
+          onChooseWallpaper={() => setShowWallpaper(true)}
+          onSetDisappearing={() => setShowDisappearing(true)}
+          onSearch={() => setShowSearch(true)}
+          onClearHistory={handleClearHistory}
+          onBlock={handleBlock}
+        />
+      )}
 
       {confirm && (
         <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-6 animate-fade-in" onClick={() => setConfirm(null)}>

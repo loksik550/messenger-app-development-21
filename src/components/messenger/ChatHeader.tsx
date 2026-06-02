@@ -7,6 +7,7 @@ export function ChatHeader({
   onBack,
   showMenu,
   setShowMenu,
+  onOpenProfile,
   onCall,
   onVideoCall,
   searchQuery,
@@ -27,6 +28,7 @@ export function ChatHeader({
   onBack: () => void;
   showMenu: boolean;
   setShowMenu: (v: boolean | ((prev: boolean) => boolean)) => void;
+  onOpenProfile?: () => void;
   onCall?: (partnerId: number, name: string) => void;
   onVideoCall?: (partnerId: number, name: string) => void;
   searchQuery: string;
@@ -72,6 +74,7 @@ export function ChatHeader({
   }
 
   const menuItems: Array<{ icon: IconName; label: string; red?: boolean; active?: boolean; onClick: () => void }> = [
+    ...(onOpenProfile ? [{ icon: "User" as IconName, label: "Профиль", onClick: onOpenProfile }] : []),
     { icon: "Search", label: "Поиск по чату", onClick: () => setShowSearch(true) },
     { icon: chat.muted ? "BellOff" : "Bell", label: chat.muted ? "Включить уведомления" : "Отключить уведомления", active: chat.muted, onClick: onToggleMute },
     { icon: "Pin", label: chat.pinned ? "Открепить" : "Закрепить", active: chat.pinned, onClick: onTogglePin },
@@ -98,7 +101,7 @@ export function ChatHeader({
       <button
         type="button"
         className="flex-1 flex items-center gap-3 min-w-0 select-none cursor-pointer text-left"
-        onClick={() => setShowMenu(true)}
+        onClick={() => (onOpenProfile ? onOpenProfile() : setShowMenu(true))}
         onContextMenu={(e) => { e.preventDefault(); setShowMenu(true); }}
       >
         <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={chat.avatar_url || undefined} />
@@ -132,6 +135,13 @@ export function ChatHeader({
           className="p-2 rounded-xl hover:bg-white/8 transition-colors text-sky-400 hover:text-sky-300"
         >
           <Icon name="Video" size={18} />
+        </button>
+        <button
+          onClick={() => setShowMenu(true)}
+          className="p-2 rounded-xl hover:bg-white/8 transition-colors text-muted-foreground hover:text-foreground"
+          aria-label="Меню"
+        >
+          <Icon name="MoreVertical" size={18} />
         </button>
       </div>
       {showMenu && (
