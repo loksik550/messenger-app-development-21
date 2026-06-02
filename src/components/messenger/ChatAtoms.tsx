@@ -133,7 +133,7 @@ export function ChatList({
       <div className="relative mx-2 overflow-hidden rounded-2xl">
         {menu && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={() => setMenu(false)}>
-            <div className="glass-strong rounded-2xl overflow-hidden shadow-2xl min-w-[240px] max-w-[320px] animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-w-[240px] max-w-[320px] animate-scale-in" style={{ background: "hsl(var(--popover))" }} onClick={e => e.stopPropagation()}>
               <div className="px-5 py-3 border-b border-white/10 flex items-center gap-3">
                 <Avatar label={chat.avatar} id={chat.id} src={chat.avatar_url || undefined} size="sm" />
                 <span className="font-semibold text-sm truncate">{chat.name}</span>

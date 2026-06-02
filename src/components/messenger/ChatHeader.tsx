@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { type Chat, type IconName } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
@@ -44,15 +43,6 @@ export function ChatHeader({
   disappearingSeconds?: number | null;
   onChooseWallpaper?: () => void;
 }) {
-  const headerHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startHeaderHold = () => {
-    if (headerHoldTimer.current) clearTimeout(headerHoldTimer.current);
-    headerHoldTimer.current = setTimeout(() => setShowMenu(true), 450);
-  };
-  const cancelHeaderHold = () => {
-    if (headerHoldTimer.current) { clearTimeout(headerHoldTimer.current); headerHoldTimer.current = null; }
-  };
-
   if (showSearch) {
     return (
       <div className="flex items-center gap-2 px-3 glass-strong border-b border-white/5" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))", paddingBottom: "0.75rem" }}>
@@ -105,17 +95,13 @@ export function ChatHeader({
       <button onClick={onBack} className="md:hidden p-2 rounded-xl hover:bg-white/8 transition-colors">
         <Icon name="ChevronLeft" size={20} />
       </button>
-      <div
-        className="flex-1 flex items-center gap-3 min-w-0 select-none cursor-pointer"
-        onMouseDown={startHeaderHold}
-        onMouseUp={cancelHeaderHold}
-        onMouseLeave={cancelHeaderHold}
-        onTouchStart={startHeaderHold}
-        onTouchEnd={cancelHeaderHold}
-        onTouchCancel={cancelHeaderHold}
+      <button
+        type="button"
+        className="flex-1 flex items-center gap-3 min-w-0 select-none cursor-pointer text-left"
+        onClick={() => setShowMenu(true)}
         onContextMenu={(e) => { e.preventDefault(); setShowMenu(true); }}
       >
-        <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={chat.avatar_url || undefined} zoomable />
+        <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={chat.avatar_url || undefined} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-foreground truncate">{chat.name}</span>
@@ -133,7 +119,7 @@ export function ChatHeader({
             )}
           </div>
         </div>
-      </div>
+      </button>
       <div className="flex items-center gap-1">
         <button
           onClick={() => onCall && chat.partner_id && onCall(chat.partner_id, chat.name)}
@@ -150,8 +136,11 @@ export function ChatHeader({
       </div>
       {showMenu && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
-          <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+3.5rem)] z-50 glass-strong rounded-2xl overflow-hidden shadow-xl min-w-[230px] animate-scale-in">
+          <div className="fixed inset-0 z-40 bg-black/40 animate-fade-in" onClick={() => setShowMenu(false)} />
+          <div
+            className="absolute right-3 top-[calc(env(safe-area-inset-top)+3.5rem)] z-50 rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-w-[240px] animate-scale-in"
+            style={{ background: "hsl(var(--popover))" }}
+          >
             {menuItems.map(item => (
               <button
                 key={item.label}

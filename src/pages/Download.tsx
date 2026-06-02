@@ -96,7 +96,7 @@ export default function Download() {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-white/70 mb-6">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Версия 1.0 • Бесплатно
+              Версия 1.0.6 • Бесплатно
             </div>
 
             <h1 className="text-5xl md:text-6xl font-extrabold leading-[1.05] tracking-tight mb-6">

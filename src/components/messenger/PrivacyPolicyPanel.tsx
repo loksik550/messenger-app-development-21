@@ -7,7 +7,7 @@ interface Props {
 export default function PrivacyPolicyPanel({ onBack }: Props) {
   return (
     <div className="flex flex-col h-full bg-background">
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-border sticky top-0 bg-background z-10">
+      <header className="flex items-center gap-3 px-4 pb-3 border-b border-border sticky top-0 bg-background z-10" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
         <button
           onClick={onBack}
           className="p-2 -ml-2 rounded-full hover:bg-accent transition"
