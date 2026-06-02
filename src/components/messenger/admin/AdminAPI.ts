@@ -86,6 +86,31 @@ export interface AdminUser {
   owned_bots?: { id: number; name: string; username: string }[];
 }
 
+export interface Report {
+  id: number;
+  reporter_id: number;
+  reporter_name: string | null;
+  reporter_phone: string | null;
+  reported_user_id: number;
+  reported_name: string | null;
+  reported_phone: string | null;
+  reported_avatar?: string | null;
+  chat_id: number | null;
+  reason: string;
+  comment: string | null;
+  status: "open" | "resolved";
+  created_at: number;
+}
+
+export const REASON_LABEL: Record<string, string> = {
+  spam: "Спам",
+  abuse: "Оскорбления",
+  scam: "Мошенничество",
+  violence: "Насилие",
+  porn: "Порнография",
+  other: "Другое",
+};
+
 export const LOAD_COLOR: Record<string, string> = {
   low: "text-emerald-400",
   medium: "text-amber-400",

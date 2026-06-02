@@ -650,5 +650,65 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return ok({"ok": True, "cleared_messages": cleared_msgs})
 
+    # ── reports_list — список жалоб ──────────────────────────────────────────
+    if action == "reports_list":
+        status_filter = (body.get("status") or params.get("status") or "all").strip()
+        where = ""
+        q_params: list = []
+        if status_filter in ("open", "resolved"):
+            where = "WHERE r.status = %s"
+            q_params.append(status_filter)
+        cur.execute(
+            f"""SELECT r.id, r.reporter_id, ru.name, ru.phone,
+                       r.reported_user_id, tu.name, tu.phone, tu.avatar_url,
+                       r.chat_id, r.reason, r.comment, r.status, r.created_at
+                FROM {SCHEMA}.reports r
+                LEFT JOIN {SCHEMA}.users ru ON ru.id = r.reporter_id
+                LEFT JOIN {SCHEMA}.users tu ON tu.id = r.reported_user_id
+                {where}
+                ORDER BY r.created_at DESC LIMIT 300""",
+            tuple(q_params)
+        )
+        rows = cur.fetchall()
+        cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.reports WHERE status = 'open'")
+        open_count = int(cur.fetchone()[0] or 0)
+        conn.close()
+        return ok({
+            "reports": [{
+                "id": r[0],
+                "reporter_id": r[1], "reporter_name": r[2], "reporter_phone": r[3],
+                "reported_user_id": r[4], "reported_name": r[5], "reported_phone": r[6], "reported_avatar": r[7],
+                "chat_id": r[8], "reason": r[9], "comment": r[10],
+                "status": r[11], "created_at": int(r[12]),
+            } for r in rows],
+            "open_count": open_count,
+        })
+
+    # ── report_delete — удалить жалобу ───────────────────────────────────────
+    if action == "report_delete":
+        report_id = body.get("report_id")
+        if not report_id:
+            conn.close(); return err("Нужен report_id")
+        try:
+            rid = int(report_id)
+        except (TypeError, ValueError):
+            conn.close(); return err("Неверный report_id")
+        cur.execute(f"DELETE FROM {SCHEMA}.reports WHERE id = %s", (rid,))
+        conn.close()
+        return ok({"ok": True, "deleted": rid})
+
+    # ── report_resolve — пометить жалобу обработанной ────────────────────────
+    if action == "report_resolve":
+        report_id = body.get("report_id")
+        if not report_id:
+            conn.close(); return err("Нужен report_id")
+        try:
+            rid = int(report_id)
+        except (TypeError, ValueError):
+            conn.close(); return err("Неверный report_id")
+        cur.execute(f"UPDATE {SCHEMA}.reports SET status = 'resolved' WHERE id = %s", (rid,))
+        conn.close()
+        return ok({"ok": True, "resolved": rid})
+
     conn.close()
     return err("Неизвестный action")

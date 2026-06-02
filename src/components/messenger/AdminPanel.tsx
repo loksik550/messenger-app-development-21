@@ -6,19 +6,24 @@ import {
   SupportTicket,
   SupportMsg,
   AdminUser,
+  Report,
 } from "./admin/AdminAPI";
 import { AdminStatsTab } from "./admin/AdminStatsTab";
 import { AdminUsersTab } from "./admin/AdminUsersTab";
 import { AdminSupportTab } from "./admin/AdminSupportTab";
+import { AdminReportsTab } from "./admin/AdminReportsTab";
 
 export function AdminPanel({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState(() => sessionStorage.getItem("nova_admin_token") || "");
   const [authed, setAuthed] = useState(false);
   const [authInput, setAuthInput] = useState("");
   const [authError, setAuthError] = useState("");
-  const [tab, setTab] = useState<"stats" | "users" | "support">("stats");
+  const [tab, setTab] = useState<"stats" | "users" | "support" | "reports">("stats");
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [supportUnread, setSupportUnread] = useState(0);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [reportsOpenCount, setReportsOpenCount] = useState(0);
+  const [reportsStatusFilter, setReportsStatusFilter] = useState<"all" | "open" | "resolved">("open");
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null);
   const [ticketMessages, setTicketMessages] = useState<SupportMsg[]>([]);
   const [ticketReply, setTicketReply] = useState("");
@@ -104,6 +109,30 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
     loadTickets(ticketStatusFilter);
   }, [token, ticketStatusFilter, loadTickets]);
 
+  const loadReports = useCallback(async (status: "all" | "open" | "resolved" = "open") => {
+    const data = await adminApi("reports_list", { status }, token);
+    if (Array.isArray(data?.reports)) {
+      setReports(data.reports as Report[]);
+      setReportsOpenCount((data.open_count as number) || 0);
+    } else if (data?.error) setApiError(`Не удалось загрузить жалобы: ${data.error}`);
+  }, [token]);
+
+  const handleChangeReportsFilter = (s: "all" | "open" | "resolved") => {
+    setReportsStatusFilter(s);
+    loadReports(s);
+  };
+
+  const handleResolveReport = async (id: number) => {
+    await adminApi("report_resolve", { report_id: id }, token);
+    loadReports(reportsStatusFilter);
+  };
+
+  const handleDeleteReport = async (id: number) => {
+    setReports(prev => prev.filter(r => r.id !== id));
+    await adminApi("report_delete", { report_id: id }, token);
+    loadReports(reportsStatusFilter);
+  };
+
   useEffect(() => {
     if (token) {
       adminApi("stats", {}, token).then(d => {
@@ -138,7 +167,19 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
     if (tab === "stats") loadStats();
     if (tab === "users") loadUsers(search);
     if (tab === "support") loadTickets(ticketStatusFilter);
+    if (tab === "reports") loadReports(reportsStatusFilter);
   }, [tab, authed]);
+
+  // Периодически обновляем счётчик новых жалоб
+  useEffect(() => {
+    if (!authed) return;
+    loadReports(reportsStatusFilter);
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      loadReports(reportsStatusFilter);
+    }, 30000);
+    return () => clearInterval(t);
+  }, [authed, reportsStatusFilter, loadReports]);
 
   const openUser = async (u: AdminUser) => {
     const data = await adminApi("user_detail", { user_id: u.id }, token);
@@ -320,7 +361,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           <span className="font-bold">Nova Dev Panel</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => tab === "stats" ? loadStats() : loadUsers(search)} className="p-2 glass rounded-xl text-muted-foreground hover:text-foreground" title="Обновить">
+          <button onClick={() => tab === "stats" ? loadStats() : tab === "users" ? loadUsers(search) : tab === "support" ? loadTickets(ticketStatusFilter) : loadReports(reportsStatusFilter)} className="p-2 glass rounded-xl text-muted-foreground hover:text-foreground" title="Обновить">
             <Icon name="RefreshCw" size={16} />
           </button>
           <button onClick={onClose} className="p-2 glass rounded-xl text-muted-foreground hover:text-foreground">
@@ -331,13 +372,18 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
 
       {/* Tabs */}
       <div className="flex mx-4 mt-3 mb-3 glass rounded-2xl p-1 gap-1">
-        {(["stats", "users", "support"] as const).map(t => (
+        {(["stats", "users", "support", "reports"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`relative flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${tab === t ? "grad-primary text-white shadow-lg" : "text-muted-foreground hover:text-foreground"}`}>
-            {t === "stats" ? "📊 Нагрузка" : t === "users" ? "👥 Юзеры" : "🛟 Тикеты"}
+            {t === "stats" ? "📊 Нагрузка" : t === "users" ? "👥 Юзеры" : t === "support" ? "🛟 Тикеты" : "🚩 Жалобы"}
             {t === "support" && supportUnread > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
                 {supportUnread > 99 ? "99+" : supportUnread}
+              </span>
+            )}
+            {t === "reports" && reportsOpenCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {reportsOpenCount > 99 ? "99+" : reportsOpenCount}
               </span>
             )}
           </button>
@@ -416,6 +462,15 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           onCloseActiveTicket={handleCloseActiveTicket}
           onCloseTicket={handleCloseTicket}
           onSendReply={handleSendReply}
+        />
+
+        <AdminReportsTab
+          visible={tab === "reports"}
+          reports={reports}
+          statusFilter={reportsStatusFilter}
+          onChangeStatusFilter={handleChangeReportsFilter}
+          onResolve={handleResolveReport}
+          onDelete={handleDeleteReport}
         />
       </div>
     </div>

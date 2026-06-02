@@ -7,6 +7,22 @@
       "body": {"action": "stats"},
       "expectedStatus": 403,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "reports_list rejected without auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "reports_list"},
+      "expectedStatus": 403,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "report_delete rejected without auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "report_delete", "report_id": 1},
+      "expectedStatus": 403,
+      "bodyMatcher": "partial"
     }
   ]
 }
