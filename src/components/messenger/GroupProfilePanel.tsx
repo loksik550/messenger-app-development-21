@@ -4,6 +4,7 @@ import { api, uploadMedia, type User, type Group, type GroupMember, type Contact
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import { ConfirmDialog } from "@/components/messenger/ConfirmDialog";
 import { AddMemberModal } from "@/components/messenger/AddMemberModal";
+import { groupMuteLabel } from "@/components/messenger/groupProfileUtils";
 
 type Tab = "info" | "members" | "admins";
 
@@ -95,16 +96,7 @@ export function GroupProfilePanel({
     }
   };
 
-  const muteLabel = (() => {
-    if (!muted) return "Уведомления включены";
-    if (!mutedUntil) return "Заглушено навсегда";
-    const left = mutedUntil - Math.floor(Date.now() / 1000);
-    if (left <= 0) return "Уведомления включены";
-    const h = Math.floor(left / 3600);
-    if (h >= 24) return `Заглушено ещё ${Math.floor(h / 24)} дн.`;
-    if (h >= 1) return `Заглушено ещё ${h} ч.`;
-    return `Заглушено ещё ${Math.floor(left / 60)} мин.`;
-  })();
+  const muteLabel = groupMuteLabel(muted, mutedUntil);
 
   const toggleOnlyAdmins = async () => {
     const next = !onlyAdmins;

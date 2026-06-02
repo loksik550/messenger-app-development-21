@@ -22,18 +22,13 @@ import ScheduleModal from "@/components/messenger/ScheduleModal";
 import ScheduledList, { type ScheduledItem } from "@/components/messenger/ScheduledList";
 import WallpaperPicker, { wallpaperById, wallpaperClassById } from "@/components/messenger/WallpaperPicker";
 import PartnerProfilePanel from "@/components/messenger/PartnerProfilePanel";
+import {
+  SCROLL_NEAR_BOTTOM_PX, SCROLL_SHOW_DOWN_PX, SCROLL_RESET_NEW_PX,
+  TYPING_THROTTLE_MS, isMediaPlaceholder,
+} from "@/components/messenger/chatConstants";
 
 // Re-export atoms so existing imports from ChatComponents still work
 export { Avatar, TypingIndicator, ChatList } from "@/components/messenger/ChatAtoms";
-
-// Магические числа/строки в одном месте
-const SCROLL_NEAR_BOTTOM_PX = 120;
-const SCROLL_SHOW_DOWN_PX = 200;
-const SCROLL_RESET_NEW_PX = 50;
-const TYPING_THROTTLE_MS = 3000;
-const MEDIA_PLACEHOLDERS = ["📷 Фото", "🎥 Видео", "🎵 Голосовое"] as const;
-const isMediaPlaceholder = (text: string) =>
-  (MEDIA_PLACEHOLDERS as readonly string[]).includes(text) || text.startsWith("📎");
 
 // ─── ChatWindow ───────────────────────────────────────────────────────────────
 

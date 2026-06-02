@@ -6,6 +6,7 @@ import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { applyTheme, applyFontSize, getStoredTheme, getStoredFontSize, THEMES_META, type ThemeId } from "@/lib/theme";
 import { BirthdayPickerModal } from "@/components/messenger/BirthdayPickerModal";
 import { useT } from "@/hooks/useT";
+import { formatBirthdate, calcAge, parseBd, formatPhone } from "@/components/messenger/profileUtils";
 
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 const MAX_ABOUT_LEN = 200;
@@ -154,37 +155,7 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
       }
     } catch { /* ignore */ } finally { setSavingMeta(false); }
   };
-  const formatBirthdate = (iso?: string | null) => {
-    if (!iso) return "Не указана";
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-    if (!m) return "Не указана";
-    const year = parseInt(m[1], 10);
-    const month = parseInt(m[2], 10);
-    const day = parseInt(m[3], 10);
-    if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return "Не указана";
-    const months = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
-    return `${day} ${months[month - 1]} ${year} г.`;
-  };
-  const calcAge = (iso?: string | null) => {
-    if (!iso) return null;
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-    if (!m) return null;
-    const year = parseInt(m[1], 10);
-    const month = parseInt(m[2], 10);
-    const day = parseInt(m[3], 10);
-    if (year < 1900 || year > 2100) return null;
-    const now = new Date();
-    let age = now.getFullYear() - year;
-    const dm = now.getMonth() + 1 - month;
-    if (dm < 0 || (dm === 0 && now.getDate() < day)) age--;
-    if (age < 0 || age > 150) return null;
-    return age;
-  };
   const [bdayPickerOpen, setBdayPickerOpen] = useState(false);
-  const parseBd = (iso?: string | null) => {
-    const m = iso ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;
-    return m ? { d: parseInt(m[3]), mo: parseInt(m[2]), y: parseInt(m[1]) } : { d: 1, mo: 1, y: 2000 };
-  };
   const initBd = parseBd(currentUser.birthdate);
   const [bdDay, setBdDay] = useState<number>(initBd.d);
   const [bdMonth, setBdMonth] = useState<number>(initBd.mo);
@@ -212,12 +183,6 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
     }).catch(() => { /* ignore */ });
     return () => { cancelled = true; };
   }, [currentUser.id]);
-
-  const formatPhone = (phone: string) => {
-    const d = phone.replace(/\D/g, "");
-    if (d.length === 11) return `+7 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}`;
-    return phone;
-  };
 
   const saveName = async () => {
     if (editName.trim().length < 2) return;

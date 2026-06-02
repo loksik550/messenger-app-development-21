@@ -37,6 +37,7 @@ import AccountDeletePanel from "@/components/messenger/AccountDeletePanel";
 import ConsentScreen, { hasConsent } from "@/components/messenger/ConsentScreen";
 import PrivacyPolicyPanel from "@/components/messenger/PrivacyPolicyPanel";
 import { type Contact } from "@/lib/api";
+import { NAV_ITEMS } from "@/pages/navItems";
 
 interface ChatRaw {
   id: number;
@@ -401,14 +402,6 @@ export default function Index() {
       />
     );
   }
-
-  const navItems: { tab: View; icon: string; label: string }[] = [
-    { tab: "chats", icon: "MessageCircle", label: "Чаты" },
-    { tab: "contacts", icon: "BookUser", label: "Контакты" },
-    { tab: "search", icon: "Search", label: "Поиск" },
-    { tab: "profile", icon: "User", label: "Профиль" },
-    { tab: "settings", icon: "Shield", label: "Безопасность" },
-  ];
 
   const handleSelectChat = (chat: Chat) => {
     setSelectedChat(chat);
@@ -850,7 +843,7 @@ export default function Index() {
 
         {/* Bottom nav */}
         <div className="flex items-center justify-around px-4 pt-3 border-t border-white/5" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-          {navItems.map(item => {
+          {NAV_ITEMS.map(item => {
             // Считаем непрочитанные только по НЕзаглушённым чатам — иначе
             // шумные группы постоянно бы дёргали значок на навигации.
             const totalUnread = item.tab === "chats"
@@ -876,7 +869,7 @@ export default function Index() {
                     {totalUnread > 99 ? "99+" : totalUnread}
                   </span>
                 )}
-                <span className="text-[9px] font-medium">{item.label}</span>
+                <span className="text-[9px] font-medium">{tr(item.labelKey)}</span>
               </button>
             );
           })}
