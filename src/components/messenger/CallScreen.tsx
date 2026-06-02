@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { api, avatarGrad, type User } from "@/lib/api";
-import { startRingtone, stopRingtone, startDialTone, stopDialTone, playHangupSound } from "@/lib/sounds";
+import { startRingtone, stopRingtone, startDialTone, stopDialTone, playHangupSound, unlockAudioContext } from "@/lib/sounds";
 
 type CallState = "calling" | "ringing" | "connected" | "ended";
 
@@ -257,6 +257,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   };
 
   useEffect(() => {
+    // Разблокируем AudioContext, иначе на мобильных гудки/рингтон не играют
+    unlockAudioContext();
     if (isIncoming) {
       startRingtone();
     } else {
@@ -281,6 +283,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   }[state];
 
   const unlockAudio = async () => {
+    unlockAudioContext();
     if (remoteAudioRef.current) {
       try { remoteAudioRef.current.muted = false; await remoteAudioRef.current.play(); } catch { /* ignore */ }
     }

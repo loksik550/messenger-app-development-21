@@ -109,8 +109,32 @@ export async function clearCustomRingtone() {
 // ─── Web Audio core ───────────────────────────────────────────────────────
 let ctx: AudioContext | null = null;
 function getCtx(): AudioContext {
-  if (!ctx || ctx.state === "closed") ctx = new AudioContext();
+  if (!ctx || ctx.state === "closed") {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    ctx = new Ctor();
+  }
+  // На мобильных контекст создаётся в "suspended" — возобновляем,
+  // иначе осцилляторы не играют (нет гудков/рингтона).
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => { /* ignore */ });
+  }
   return ctx;
+}
+
+// Разблокировка аудио по первому жесту пользователя (тап/клик/клавиша).
+// Без этого AudioContext остаётся suspended и звуки не играют.
+export function unlockAudioContext(): void {
+  try {
+    const c = getCtx();
+    if (c.state === "suspended") c.resume().catch(() => { /* ignore */ });
+  } catch { /* ignore */ }
+}
+
+if (typeof window !== "undefined") {
+  const unlock = () => unlockAudioContext();
+  window.addEventListener("pointerdown", unlock, { passive: true });
+  window.addEventListener("touchstart", unlock, { passive: true });
+  window.addEventListener("keydown", unlock);
 }
 
 type Note = { freq: number; dur: number; start: number; type?: OscillatorType; gain?: number };
