@@ -92,15 +92,32 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
         }),
       });
       const d = await res.json();
-      setBuying(false);
       if (d.payment_url) {
+        setBuying(false);
         window.location.href = d.payment_url;
-      } else {
-        setError(d.error || "Не удалось создать платёж");
+        return;
       }
+      // ЮKassa не настроена — активируем Pro напрямую
+      if (res.status === 503) {
+        const r = await api("buy_pro", { plan: selected }, currentUser.id);
+        setBuying(false);
+        if (r.is_pro) {
+          const userR = await api("get_me", { phone: currentUser.phone });
+          if (userR.user) {
+            onUserUpdate?.(userR.user);
+            localStorage.setItem("nova_user", JSON.stringify(userR.user));
+          }
+          onClose();
+        } else {
+          setError(r.error || "Не удалось оформить");
+        }
+        return;
+      }
+      setBuying(false);
+      setError(d.error || "Не удалось создать платёж");
     } catch {
       setBuying(false);
-      setError("Ошибка соединения с ЮKassa");
+      setError("Ошибка соединения с оплатой");
     }
   };
 

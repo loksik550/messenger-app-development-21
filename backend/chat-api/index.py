@@ -2922,6 +2922,20 @@ def handler(event: dict, context) -> dict:
             )
             conn.close()
             return ok({"balance": balance, "pro_until": new_until, "is_pro": True, "is_trial": True})
+        # Демо-режим: если ЮKassa не настроена и средств не хватает — активируем без списания
+        yk_configured = bool(os.environ.get("YOOKASSA_SHOP_ID") and os.environ.get("YOOKASSA_SECRET_KEY"))
+        if balance < price and not yk_configured:
+            new_until = max(cur_until, now) + duration
+            cur.execute(f"UPDATE {SCHEMA}.users SET pro_until=%s WHERE id=%s", (new_until, int(user_id)))
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.pro_subscriptions (user_id, plan, amount, source, starts_at, ends_at, is_trial, created_at)
+                    VALUES (%s,%s,0,'demo',%s,%s,FALSE,%s)""",
+                (int(user_id), plan, now, new_until, now)
+            )
+            _grant_xp(cur, int(user_id), "pro_purchased")
+            _award_badge(cur, int(user_id), "pro")
+            conn.close()
+            return ok({"balance": balance, "pro_until": new_until, "is_pro": True, "demo": True})
         if balance < price:
             conn.close(); return err(f"Недостаточно средств. Нужно {price}₽, на счету {balance}₽")
         new_until = max(cur_until, now) + duration
