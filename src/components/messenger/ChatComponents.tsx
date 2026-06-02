@@ -616,6 +616,7 @@ export function ChatWindow({
       {showProfile && !chat.group && (
         <PartnerProfilePanel
           chat={chat}
+          currentUserId={currentUser.id}
           disappearingSeconds={disappearingSec}
           onClose={() => setShowProfile(false)}
           onCall={() => onCall && chat.partner_id && onCall(chat.partner_id, chat.name)}

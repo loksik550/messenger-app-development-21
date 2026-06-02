@@ -1,6 +1,7 @@
 import Icon from "@/components/ui/icon";
 import { type Chat, type IconName } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
+import { useT } from "@/hooks/useT";
 
 export function ChatHeader({
   chat,
@@ -45,6 +46,7 @@ export function ChatHeader({
   disappearingSeconds?: number | null;
   onChooseWallpaper?: () => void;
 }) {
+  const { t } = useT();
   if (showSearch) {
     return (
       <div className="flex items-center gap-2 px-3 glass-strong border-b border-white/5" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))", paddingBottom: "0.75rem" }}>
@@ -60,7 +62,7 @@ export function ChatHeader({
             autoFocus
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск по чату..."
+            placeholder={t("chat.searchInChat")}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
           />
           {searchQuery && (
@@ -74,23 +76,23 @@ export function ChatHeader({
   }
 
   const menuItems: Array<{ icon: IconName; label: string; red?: boolean; active?: boolean; onClick: () => void }> = [
-    ...(onOpenProfile ? [{ icon: "User" as IconName, label: "Профиль", onClick: onOpenProfile }] : []),
-    { icon: "Search", label: "Поиск по чату", onClick: () => setShowSearch(true) },
-    { icon: chat.muted ? "BellOff" : "Bell", label: chat.muted ? "Включить уведомления" : "Отключить уведомления", active: chat.muted, onClick: onToggleMute },
-    { icon: "Pin", label: chat.pinned ? "Открепить" : "Закрепить", active: chat.pinned, onClick: onTogglePin },
-    { icon: "Star", label: chat.favorite ? "Убрать из избранного" : "В избранное", active: chat.favorite, onClick: onToggleFavorite },
-    { icon: "Archive", label: chat.archived ? "Из архива" : "В архив", active: chat.archived, onClick: onToggleArchive },
+    ...(onOpenProfile ? [{ icon: "User" as IconName, label: t("partner.title"), onClick: onOpenProfile }] : []),
+    { icon: "Search", label: t("chat.searchInChat"), onClick: () => setShowSearch(true) },
+    { icon: chat.muted ? "BellOff" : "Bell", label: chat.muted ? t("chat.muteOn") : t("chat.muteOff"), active: chat.muted, onClick: onToggleMute },
+    { icon: "Pin", label: chat.pinned ? t("chat.unpin") : t("chat.pin"), active: chat.pinned, onClick: onTogglePin },
+    { icon: "Star", label: chat.favorite ? t("chat.favoriteOff") : t("chat.favoriteOn"), active: chat.favorite, onClick: onToggleFavorite },
+    { icon: "Archive", label: chat.archived ? t("chat.archiveOff") : t("chat.archiveOn"), active: chat.archived, onClick: onToggleArchive },
     ...(onSetDisappearing ? [{
       icon: "Timer" as IconName,
       label: disappearingSeconds
-        ? `Исчезают через: ${disappearingSeconds === 10 ? "10 с" : disappearingSeconds === 60 ? "1 мин" : disappearingSeconds === 300 ? "5 мин" : disappearingSeconds === 3600 ? "1 ч" : disappearingSeconds === 86400 ? "24 ч" : "7 дн"}`
-        : "Исчезающие сообщения",
+        ? `${t("chat.disappearing")}: ${disappearingSeconds === 10 ? "10s" : disappearingSeconds === 60 ? "1m" : disappearingSeconds === 300 ? "5m" : disappearingSeconds === 3600 ? "1h" : disappearingSeconds === 86400 ? "24h" : "7d"}`
+        : t("chat.disappearing"),
       active: !!disappearingSeconds,
       onClick: onSetDisappearing,
     }] : []),
-    ...(onChooseWallpaper ? [{ icon: "Image" as IconName, label: "Обои чата", onClick: onChooseWallpaper }] : []),
-    { icon: "Trash2", label: "Очистить историю", red: true, onClick: onClearHistory },
-    { icon: "Ban", label: "Заблокировать", red: true, onClick: onBlock },
+    ...(onChooseWallpaper ? [{ icon: "Image" as IconName, label: t("chat.wallpaper"), onClick: onChooseWallpaper }] : []),
+    { icon: "Trash2", label: t("chat.clearHistory"), red: true, onClick: onClearHistory },
+    { icon: "Ban", label: t("chat.block"), red: true, onClick: onBlock },
   ];
 
   return (
@@ -110,15 +112,15 @@ export function ChatHeader({
             <span className="font-semibold text-foreground truncate">{chat.name}</span>
             {chat.muted && <Icon name="BellOff" size={12} className="text-muted-foreground flex-shrink-0" />}
             {chat.pinned && <Icon name="Pin" size={12} className="text-violet-400 flex-shrink-0" />}
-            {chat.group && <span className="text-[10px] bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full font-medium">группа</span>}
+            {chat.group && <span className="text-[10px] bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full font-medium">{t("chat.groupBadge")}</span>}
           </div>
           <div className="text-xs text-muted-foreground">
             {chat.typing ? (
-              <span className="text-violet-400">печатает сообщение...</span>
+              <span className="text-violet-400">{t("common.typing")}</span>
             ) : chat.online ? (
-              <span className="text-emerald-400">в сети</span>
+              <span className="text-emerald-400">{t("partner.online")}</span>
             ) : (
-              "был(а) недавно"
+              t("partner.recently")
             )}
           </div>
         </div>

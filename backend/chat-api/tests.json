@@ -79,6 +79,23 @@
       "body": {"action": "get_mute_settings"},
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "report requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "report", "reported_user_id": 2, "reason": "spam"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "report requires reported_user_id",
+      "method": "POST",
+      "path": "/",
+      "headers": {"X-User-Id": "1"},
+      "body": {"action": "report", "reason": "spam"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

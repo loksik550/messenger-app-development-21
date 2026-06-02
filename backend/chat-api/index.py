@@ -2095,6 +2095,46 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return ok({"blocked": is_b})
 
+    if action == "report":
+        if not user_id:
+            conn.close()
+            return err("Need X-User-Id")
+        # Rate-limit: max 5 reports per minute per user
+        if not _rate_limit(cur, f"report:{user_id}", 5):
+            conn.close()
+            return err("Too many reports. Please wait a minute.", 429)
+        target = body.get("reported_user_id")
+        if not target:
+            conn.close()
+            return err("reported_user_id is required")
+        try:
+            target_int = int(target)
+            reporter_int = int(user_id)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Invalid user id")
+        if target_int == reporter_int:
+            conn.close()
+            return err("You cannot report yourself")
+        ALLOWED_REASONS = {"spam", "abuse", "scam", "violence", "porn", "other"}
+        reason = (body.get("reason") or "other").strip().lower()
+        if reason not in ALLOWED_REASONS:
+            reason = "other"
+        comment = (body.get("comment") or "").strip()[:1000] or None
+        chat_id = body.get("chat_id")
+        try:
+            chat_id_int = int(chat_id) if chat_id else None
+        except (TypeError, ValueError):
+            chat_id_int = None
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.reports
+                (reporter_id, reported_user_id, chat_id, reason, comment, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, 'open', %s)""",
+            (reporter_int, target_int, chat_id_int, reason, comment, int(time.time()))
+        )
+        conn.close()
+        return ok({"ok": True, "reported": True})
+
     # ── favorites (pin message) ───────────────────────────────────────────────
     if action == "toggle_favorite_message":
         if not user_id:
