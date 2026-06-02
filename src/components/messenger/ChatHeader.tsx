@@ -139,7 +139,7 @@ export function ChatHeader({
           <div className="fixed inset-0 z-40 bg-black/40 animate-fade-in" onClick={() => setShowMenu(false)} />
           <div
             className="absolute right-3 top-[calc(env(safe-area-inset-top)+3.5rem)] z-50 rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-w-[240px] animate-scale-in"
-            style={{ background: "hsl(var(--popover))" }}
+            style={{ backgroundColor: "#16151f" }}
           >
             {menuItems.map(item => (
               <button
