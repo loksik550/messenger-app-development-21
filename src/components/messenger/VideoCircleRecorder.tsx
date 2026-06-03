@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 
-const MAX_SECONDS = 30;
+const MAX_SECONDS = 15;
 
 export function VideoCircleRecorder({
   open,
@@ -35,7 +35,7 @@ export function VideoCircleRecorder({
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 480 }, height: { ideal: 480 }, facingMode: "user" },
+          video: { width: { ideal: 360 }, height: { ideal: 360 }, facingMode: "user", frameRate: { ideal: 24, max: 30 } },
           audio: { echoCancellation: true, noiseSuppression: true },
         });
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -92,7 +92,7 @@ export function VideoCircleRecorder({
     }
 
     // Ограничиваем битрейт, чтобы кружок гарантированно влезал в лимит загрузки
-    const opts: MediaRecorderOptions = { videoBitsPerSecond: 1_000_000, audioBitsPerSecond: 64_000 };
+    const opts: MediaRecorderOptions = { videoBitsPerSecond: 700_000, audioBitsPerSecond: 48_000 };
     if (mime) opts.mimeType = mime;
     let rec: MediaRecorder;
     try {
@@ -111,7 +111,15 @@ export function VideoCircleRecorder({
       const dur = secsRef.current;
       cleanup();
       onClose();
-      if (file.size > 1024) onRecorded(file, dur);
+      if (file.size <= 1024) {
+        alert("Кружок не записался. Попробуй ещё раз.");
+        return;
+      }
+      if (file.size > 4.5 * 1024 * 1024) {
+        alert("Кружок получился слишком большой. Запиши покороче (до 10-15 секунд).");
+        return;
+      }
+      onRecorded(file, dur);
     };
     rec.start();
     setRecording(true);
@@ -148,7 +156,7 @@ export function VideoCircleRecorder({
         {err
           ? err
           : recording
-            ? `Запись… ${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")} / 01:00`
+            ? `Запись… ${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")} / 00:${String(MAX_SECONDS).padStart(2, "0")}`
             : "Видео-сообщение"}
       </div>
 
@@ -196,7 +204,7 @@ export function VideoCircleRecorder({
       </div>
 
       <p className="text-xs text-white/60 mt-6 text-center max-w-xs">
-        Нажми кнопку для старта записи. Максимум 60 секунд.
+        Нажми кнопку для старта записи. Максимум {MAX_SECONDS} секунд.
       </p>
     </div>
   );

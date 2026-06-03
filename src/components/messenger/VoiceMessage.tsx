@@ -44,12 +44,14 @@ export function VoiceMessage({ url, out, knownDuration }: { url: string; out: bo
     const a = audioRef.current;
     if (!a) return;
     a.playbackRate = speed;
+    a.muted = false;
+    a.volume = 1;
     if (a.paused) {
       // Если запись закончилась — начинаем сначала
       if (a.ended || (duration && a.currentTime >= duration - 0.05)) {
         try { a.currentTime = 0; } catch { /* ignore */ }
       }
-      a.play().catch(() => {});
+      a.play().catch((err) => { console.error("voice play error", err); });
     } else {
       a.pause();
     }

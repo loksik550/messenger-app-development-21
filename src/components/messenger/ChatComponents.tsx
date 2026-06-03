@@ -405,15 +405,12 @@ export function ChatWindow({
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-      // Подбираем поддерживаемый формат (Safari/iOS не любит webm)
-      const candidates = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/mp4;codecs=mp4a.40.2",
-        "audio/mp4",
-        "audio/ogg;codecs=opus",
-        "",
-      ];
+      // Подбираем поддерживаемый формат. На Apple-устройствах webm не
+      // воспроизводится — там приоритет mp4, на остальных webm/opus.
+      const isApple = /iphone|ipad|ipod|mac/i.test(navigator.userAgent);
+      const candidates = isApple
+        ? ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus", "audio/webm", ""]
+        : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/ogg;codecs=opus", ""];
       let mime = "";
       for (const c of candidates) {
         if (!c) { mime = ""; break; }
@@ -439,7 +436,7 @@ export function ChatWindow({
         const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: realType });
         await sendFile(file, { duration: dur, mediaTypeOverride: "audio" });
       };
-      mr.start(100); // ловим chunks каждые 100мс
+      mr.start(); // пишем одним куском — корректный заголовок и длительность
       setRecording(true);
       setRecordSec(0);
       if (recordTimer.current) clearInterval(recordTimer.current);
