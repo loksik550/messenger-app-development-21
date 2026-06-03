@@ -61,6 +61,7 @@ export function ChatInput({
   scheduledCount?: number;
 }) {
   const [showEmoji, setShowEmoji] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<"voice" | "video">("voice");
   return (
     <div className="px-3 pt-1.5 pb-1 glass-strong border-t border-white/5 relative" style={{ paddingBottom: "calc(0.25rem + env(safe-area-inset-bottom))" }}>
       <input
@@ -160,63 +161,105 @@ export function ChatInput({
           <span className="text-xs text-muted-foreground">{uploadLabel}</span>
         </div>
       )}
-      {recording && (
-        <div className="flex items-center gap-3 mb-2 px-2 animate-fade-in">
-          <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-sm text-red-400 font-medium">
-            Запись {Math.floor(recordSec / 60).toString().padStart(2, "0")}:{(recordSec % 60).toString().padStart(2, "0")}
-          </span>
-          <button onClick={() => (onCancelRecording ? onCancelRecording() : onStopRecording())} className="ml-auto text-xs text-muted-foreground hover:text-red-400">
-            Отмена
-          </button>
-        </div>
-      )}
-      <div className="flex items-end gap-2">
-        <button
-          onClick={() => setShowAttach(v => !v)}
-          className={`p-2.5 rounded-xl transition-all ${showAttach ? "bg-violet-500/20 text-violet-400" : "hover:bg-white/8 text-muted-foreground hover:text-foreground"}`}
-        >
-          <Icon name={showAttach ? "X" : "Paperclip"} size={20} />
-        </button>
-        <div className="flex-1 flex items-end glass rounded-2xl px-4 py-2 gap-2">
-          <textarea
-            value={input}
-            onChange={e => { setInput(e.target.value); onNotifyTyping(); }}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-            placeholder="Сообщение..."
-            rows={1}
-            className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder-muted-foreground resize-none max-h-32"
-          />
-          <div className="relative">
-            <button
-              onClick={() => setShowEmoji(v => !v)}
-              className={`transition-colors ${showEmoji ? "text-violet-400" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <Icon name="Smile" size={20} />
-            </button>
-            <EmojiStickerPicker
-              open={showEmoji}
-              onClose={() => setShowEmoji(false)}
-              onPick={(e) => setInput(input + e)}
-            />
-          </div>
-        </div>
-        {input.trim() ? (
+      {recording ? (
+        /* Панель записи голосового — как в Telegram */
+        <div className="flex items-center gap-2 py-1 animate-fade-in">
           <button
-            onClick={onSend}
-            className="p-2.5 rounded-xl transition-all grad-primary text-white glow-primary animate-scale-in"
+            onClick={() => (onCancelRecording ? onCancelRecording() : onStopRecording())}
+            className="p-2.5 rounded-full hover:bg-red-500/10 text-red-400 transition-colors flex-shrink-0"
+            aria-label="Удалить запись"
+          >
+            <Icon name="Trash2" size={20} />
+          </button>
+          <div className="flex-1 flex items-center gap-3 glass rounded-2xl px-4 py-2.5 min-w-0">
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+            <span className="text-sm text-foreground font-medium tabular-nums flex-shrink-0">
+              {Math.floor(recordSec / 60).toString().padStart(2, "0")}:{(recordSec % 60).toString().padStart(2, "0")}
+            </span>
+            <div className="flex-1 flex items-center gap-[2px] h-5 overflow-hidden">
+              {Array.from({ length: 28 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 rounded-full bg-violet-400/70 animate-pulse"
+                  style={{ height: `${20 + Math.abs(Math.sin(i * 1.7 + recordSec)) * 80}%`, animationDelay: `${i * 0.04}s`, minWidth: 2 }}
+                />
+              ))}
+            </div>
+            <span className="text-[11px] text-muted-foreground flex-shrink-0">Отпусти для отправки</span>
+          </div>
+          <button
+            onClick={onStopRecording}
+            className="p-2.5 rounded-full grad-primary text-white glow-primary flex-shrink-0 animate-scale-in"
+            aria-label="Отправить"
           >
             <Icon name="Send" size={20} />
           </button>
-        ) : (
+        </div>
+      ) : (
+        <div className="flex items-end gap-2">
           <button
-            onClick={() => { if (recording) onStopRecording(); else onStartRecording(); }}
-            className={`p-2.5 rounded-xl transition-all ${recording ? "bg-red-500 text-white animate-pulse" : "glass text-muted-foreground hover:text-violet-400"}`}
+            onClick={() => setShowAttach(v => !v)}
+            className={`p-2.5 rounded-xl transition-all ${showAttach ? "bg-violet-500/20 text-violet-400" : "hover:bg-white/8 text-muted-foreground hover:text-foreground"}`}
           >
-            <Icon name={recording ? "Send" : "Mic"} size={20} />
+            <Icon name={showAttach ? "X" : "Paperclip"} size={20} />
           </button>
-        )}
-      </div>
+          <div className="flex-1 flex items-end glass rounded-2xl px-4 py-2 gap-2">
+            <textarea
+              value={input}
+              onChange={e => { setInput(e.target.value); onNotifyTyping(); }}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+              placeholder="Сообщение..."
+              rows={1}
+              className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder-muted-foreground resize-none max-h-32"
+            />
+            <div className="relative">
+              <button
+                onClick={() => setShowEmoji(v => !v)}
+                className={`transition-colors ${showEmoji ? "text-violet-400" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                <Icon name="Smile" size={20} />
+              </button>
+              <EmojiStickerPicker
+                open={showEmoji}
+                onClose={() => setShowEmoji(false)}
+                onPick={(e) => setInput(input + e)}
+              />
+            </div>
+          </div>
+          {input.trim() ? (
+            <button
+              onClick={onSend}
+              className="p-2.5 rounded-xl transition-all grad-primary text-white glow-primary animate-scale-in"
+            >
+              <Icon name="Send" size={20} />
+            </button>
+          ) : (
+            <>
+              {/* Переключатель режима голос/кружок — как в TG */}
+              {onVideoCircle && (
+                <button
+                  onClick={() => setVoiceMode(m => (m === "voice" ? "video" : "voice"))}
+                  className="p-2.5 rounded-xl glass text-muted-foreground hover:text-violet-400 transition-all"
+                  aria-label="Сменить режим"
+                  title={voiceMode === "voice" ? "Переключить на видео-кружок" : "Переключить на голосовое"}
+                >
+                  <Icon name={voiceMode === "voice" ? "Video" : "Mic"} size={18} />
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  if (voiceMode === "video" && onVideoCircle) onVideoCircle();
+                  else onStartRecording();
+                }}
+                className="p-2.5 rounded-xl glass text-muted-foreground hover:text-violet-400 transition-all"
+                aria-label={voiceMode === "voice" ? "Записать голосовое" : "Записать кружок"}
+              >
+                <Icon name={voiceMode === "voice" ? "Mic" : "Video"} size={20} />
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

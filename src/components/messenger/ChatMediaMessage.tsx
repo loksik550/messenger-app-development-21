@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { type Message, type Reaction } from "@/lib/api";
 import { MediaViewer, type MediaItem } from "@/components/messenger/MediaViewer";
@@ -65,6 +65,12 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
     );
   }
 
+  // Видео-кружок (как в Telegram) — определяем по имени файла circle_*
+  const isCircle = mediaType === "video" && (msg.file_name || "").startsWith("circle_");
+  if (isCircle) {
+    return <VideoCircleMessage url={mediaUrl} duration={msg.duration} />;
+  }
+
   if (mediaType === "video") {
     return (
       <>
@@ -124,6 +130,81 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
   }
 
   return null;
+}
+
+// ─── VideoCircleMessage (кружок как в Telegram) ───────────────────────────────
+
+function VideoCircleMessage({ url, duration }: { url: string; duration?: number }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    return () => { v?.pause(); };
+  }, []);
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) { v.muted = false; v.play().catch(() => {}); }
+    else v.pause();
+  };
+
+  const fmt = (s?: number) => {
+    if (!s || !isFinite(s)) return "";
+    return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, "0")}`;
+  };
+
+  const R = 48;
+  const circ = 2 * Math.PI * R;
+
+  return (
+    <div
+      className="relative w-52 h-52 select-none cursor-pointer"
+      onClick={toggle}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <video
+        ref={videoRef}
+        src={url}
+        className="w-52 h-52 rounded-full object-cover bg-black"
+        playsInline
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setProgress(0); }}
+        onTimeUpdate={(e) => {
+          const v = e.currentTarget;
+          if (v.duration > 0) setProgress(v.currentTime / v.duration);
+        }}
+      />
+      {/* Прогресс по кругу */}
+      <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r={R} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2.5" />
+        <circle
+          cx="50" cy="50" r={R}
+          fill="none" stroke="#a78bfa" strokeWidth="2.5" strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - progress)}
+        />
+      </svg>
+      {!playing && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-12 h-12 rounded-full bg-black/45 backdrop-blur-sm flex items-center justify-center">
+            <Icon name="Play" size={22} className="text-white ml-0.5" />
+          </div>
+        </div>
+      )}
+      {duration != null && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/55 text-[10px] text-white tabular-nums pointer-events-none">
+          {fmt(duration)}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── ReactionBar ──────────────────────────────────────────────────────────────
