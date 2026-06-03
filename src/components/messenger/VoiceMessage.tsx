@@ -18,10 +18,10 @@ function generateBars(seed: string, count = 32): number[] {
 const SPEED_KEY = "nova_voice_speed";
 const SPEEDS = [1, 1.5, 2] as const;
 
-export function VoiceMessage({ url, out }: { url: string; out: boolean }) {
+export function VoiceMessage({ url, out, knownDuration }: { url: string; out: boolean; knownDuration?: number }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(knownDuration && isFinite(knownDuration) ? knownDuration : 0);
   const [curTime, setCurTime] = useState(0);
   const [speed, setSpeed] = useState<number>(() => {
     const v = Number(localStorage.getItem(SPEED_KEY));
@@ -44,8 +44,15 @@ export function VoiceMessage({ url, out }: { url: string; out: boolean }) {
     const a = audioRef.current;
     if (!a) return;
     a.playbackRate = speed;
-    if (a.paused) a.play().catch(() => {});
-    else a.pause();
+    if (a.paused) {
+      // Если запись закончилась — начинаем сначала
+      if (a.ended || (duration && a.currentTime >= duration - 0.05)) {
+        try { a.currentTime = 0; } catch { /* ignore */ }
+      }
+      a.play().catch(() => {});
+    } else {
+      a.pause();
+    }
   };
 
   const cycleSpeed = () => {
@@ -137,13 +144,27 @@ export function VoiceMessage({ url, out }: { url: string; out: boolean }) {
         src={url}
         preload="metadata"
         onLoadedMetadata={(e) => {
-          const d = e.currentTarget.duration;
-          if (isFinite(d)) setDuration(d);
+          const a = e.currentTarget;
+          const d = a.duration;
+          if (isFinite(d) && d > 0) {
+            setDuration(d);
+          } else if (d === Infinity) {
+            // Трюк для WebM/Opus без длительности: форсируем подсчёт
+            const onSeeked = () => {
+              if (isFinite(a.duration) && a.duration > 0) setDuration(a.duration);
+              a.currentTime = 0;
+              a.removeEventListener("seeked", onSeeked);
+            };
+            a.addEventListener("seeked", onSeeked);
+            try { a.currentTime = 1e101; } catch { /* ignore */ }
+          }
         }}
         onTimeUpdate={(e) => {
           const a = e.currentTarget;
+          if (!isFinite(a.currentTime)) return;
           setCurTime(a.currentTime);
-          if (a.duration > 0) setProgress(a.currentTime / a.duration);
+          const dur = isFinite(a.duration) && a.duration > 0 ? a.duration : duration;
+          if (dur > 0) setProgress(Math.min(1, a.currentTime / dur));
         }}
         onEnded={() => { setPlaying(false); setProgress(0); setCurTime(0); }}
         onPlay={() => setPlaying(true)}

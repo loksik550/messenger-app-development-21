@@ -106,7 +106,7 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
   }
 
   if (mediaType === "audio") {
-    return <VoiceMessage url={mediaUrl} out={out} />;
+    return <VoiceMessage url={mediaUrl} out={out} knownDuration={msg.duration} />;
   }
 
   if (mediaType === "file") {

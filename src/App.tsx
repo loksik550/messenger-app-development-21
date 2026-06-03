@@ -8,6 +8,7 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { native } from "@/lib/native";
 import Index from "./pages/Index";
 import Download from "./pages/Download";
+import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +57,9 @@ const App = () => (
           <Route path="/download" element={<Download />} />
           <Route path="/install" element={<Download />} />
           <Route path="/app" element={<Download />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/privacy-policy" element={<Privacy />} />
+          <Route path="/politika-konfidencialnosti" element={<Privacy />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

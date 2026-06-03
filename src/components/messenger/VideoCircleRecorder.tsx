@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 
-const MAX_SECONDS = 60;
+const MAX_SECONDS = 30;
 
 export function VideoCircleRecorder({
   open,
@@ -78,12 +78,28 @@ export function VideoCircleRecorder({
     if (!streamRef.current) return;
     chunksRef.current = [];
 
-    let mime = "video/webm;codecs=vp9,opus";
-    if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm;codecs=vp8,opus";
-    if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm";
-    if (!MediaRecorder.isTypeSupported(mime)) mime = "";
+    // Приоритет mp4 (iOS/Safari), затем webm (Android/Chrome)
+    const candidates = [
+      "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+      "video/mp4",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ];
+    let mime = "";
+    for (const c of candidates) {
+      if (MediaRecorder.isTypeSupported?.(c)) { mime = c; break; }
+    }
 
-    const rec = mime ? new MediaRecorder(streamRef.current, { mimeType: mime }) : new MediaRecorder(streamRef.current);
+    // Ограничиваем битрейт, чтобы кружок гарантированно влезал в лимит загрузки
+    const opts: MediaRecorderOptions = { videoBitsPerSecond: 1_000_000, audioBitsPerSecond: 64_000 };
+    if (mime) opts.mimeType = mime;
+    let rec: MediaRecorder;
+    try {
+      rec = new MediaRecorder(streamRef.current, opts);
+    } catch {
+      rec = mime ? new MediaRecorder(streamRef.current, { mimeType: mime }) : new MediaRecorder(streamRef.current);
+    }
     recorderRef.current = rec;
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
     rec.onstop = () => {

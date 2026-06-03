@@ -346,10 +346,11 @@ export function ChatWindow({
   const cancelHold = () => { if (holdTimer.current) clearTimeout(holdTimer.current); };
 
   const sendFile = async (file: File, extra?: { duration?: number; mediaTypeOverride?: "audio" | "video" | "image" | "file" }) => {
-    // Лимит размера: тело функции в base64 раздувается ~на 33%, безопасный предел ~18 МБ
-    const MAX_FILE_MB = 18;
+    // Лимит размера: тело облачной функции ограничено (~6 МБ), а base64 раздувает на ~33%.
+    // Поэтому безопасный предел исходного файла ~4.5 МБ.
+    const MAX_FILE_MB = 4.5;
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум ${MAX_FILE_MB} МБ.`);
+      alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум ${MAX_FILE_MB} МБ. Сожми файл или запиши короче.`);
       return;
     }
     setUploading(true);
