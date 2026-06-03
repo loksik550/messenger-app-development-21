@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 
@@ -6,6 +7,21 @@ const VERSION = "2.0";
 
 export default function Privacy() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const prevTitle = document.title;
+    document.title = "Политика конфиденциальности — Nova Messenger";
+    const meta = document.querySelector('meta[name="description"]');
+    const prevDesc = meta?.getAttribute("content") || "";
+    meta?.setAttribute(
+      "content",
+      "Политика конфиденциальности Nova Messenger: какие данные обрабатываются, регистрация по номеру телефона и имени, хранение в РФ согласно 152-ФЗ.",
+    );
+    return () => {
+      document.title = prevTitle;
+      meta?.setAttribute("content", prevDesc);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
