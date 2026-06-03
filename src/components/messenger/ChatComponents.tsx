@@ -392,6 +392,14 @@ export function ChatWindow({
   };
 
   const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("Запись недоступна. Открой приложение по защищённому адресу (https) и в современном браузере.");
+      return;
+    }
+    if (typeof MediaRecorder === "undefined") {
+      alert("Браузер не поддерживает запись звука.");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },

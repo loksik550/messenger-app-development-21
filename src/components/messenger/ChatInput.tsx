@@ -61,7 +61,6 @@ export function ChatInput({
   scheduledCount?: number;
 }) {
   const [showEmoji, setShowEmoji] = useState(false);
-  const [voiceMode, setVoiceMode] = useState<"voice" | "video">("voice");
   return (
     <div className="px-3 pt-1.5 pb-1 glass-strong border-t border-white/5 relative" style={{ paddingBottom: "calc(0.25rem + env(safe-area-inset-bottom))" }}>
       <input
@@ -112,12 +111,6 @@ export function ChatInput({
               <span className="text-[10px] text-muted-foreground">{item.label}</span>
             </button>
           ))}
-          {onVideoCircle && (
-            <button onClick={onVideoCircle} className="flex flex-col items-center gap-1 p-3 glass rounded-2xl hover:bg-white/8 transition-colors">
-              <Icon name="Video" size={20} className="text-rose-400" />
-              <span className="text-[10px] text-muted-foreground">Кружок</span>
-            </button>
-          )}
           {onSendGift && (
             <button onClick={onSendGift} className="flex flex-col items-center gap-1 p-3 glass rounded-2xl hover:bg-white/8 transition-colors">
               <Icon name="Zap" size={20} className="text-amber-400" />
@@ -235,26 +228,23 @@ export function ChatInput({
             </button>
           ) : (
             <>
-              {/* Переключатель режима голос/кружок — как в TG */}
+              {/* Видео-кружок */}
               {onVideoCircle && (
                 <button
-                  onClick={() => setVoiceMode(m => (m === "voice" ? "video" : "voice"))}
+                  onClick={onVideoCircle}
                   className="p-2.5 rounded-xl glass text-muted-foreground hover:text-violet-400 transition-all"
-                  aria-label="Сменить режим"
-                  title={voiceMode === "voice" ? "Переключить на видео-кружок" : "Переключить на голосовое"}
+                  aria-label="Записать кружок"
                 >
-                  <Icon name={voiceMode === "voice" ? "Video" : "Mic"} size={18} />
+                  <Icon name="Video" size={20} />
                 </button>
               )}
+              {/* Голосовое */}
               <button
-                onClick={() => {
-                  if (voiceMode === "video" && onVideoCircle) onVideoCircle();
-                  else onStartRecording();
-                }}
+                onClick={onStartRecording}
                 className="p-2.5 rounded-xl glass text-muted-foreground hover:text-violet-400 transition-all"
-                aria-label={voiceMode === "voice" ? "Записать голосовое" : "Записать кружок"}
+                aria-label="Записать голосовое"
               >
-                <Icon name={voiceMode === "voice" ? "Mic" : "Video"} size={20} />
+                <Icon name="Mic" size={20} />
               </button>
             </>
           )}

@@ -29,6 +29,10 @@ export function VideoCircleRecorder({
     let cancelled = false;
 
     const start = async () => {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+        setErr("Запись недоступна. Нужен https и современный браузер.");
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 480 }, height: { ideal: 480 }, facingMode: "user" },
