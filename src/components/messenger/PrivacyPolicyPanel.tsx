@@ -20,7 +20,7 @@ export default function PrivacyPolicyPanel({ onBack }: Props) {
 
       <div className="flex-1 overflow-y-auto p-4 text-sm leading-relaxed space-y-5">
         <section>
-          <h2 className="text-base font-semibold mb-1">Nova Messenger</h2>
+          <h2 className="text-base font-semibold mb-1">Nova — социальная сеть для общения</h2>
           <p className="text-muted-foreground">
             Действует с 3 июня 2026 г. Версия документа 2.0.
           </p>
@@ -30,7 +30,7 @@ export default function PrivacyPolicyPanel({ onBack }: Props) {
           <h3 className="font-semibold mb-1">1. Общие положения</h3>
           <p>
             Настоящая Политика определяет порядок обработки персональных данных
-            (далее — ПД) пользователей мессенджера Nova в соответствии с
+            (далее — ПД) пользователей социальной сети Nova в соответствии с
             Федеральным законом № 152-ФЗ «О персональных данных».
           </p>
         </section>

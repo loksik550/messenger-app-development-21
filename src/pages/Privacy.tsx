@@ -10,12 +10,12 @@ export default function Privacy() {
 
   useEffect(() => {
     const prevTitle = document.title;
-    document.title = "Политика конфиденциальности — Nova Messenger";
+    document.title = "Политика конфиденциальности — Nova";
     const meta = document.querySelector('meta[name="description"]');
     const prevDesc = meta?.getAttribute("content") || "";
     meta?.setAttribute(
       "content",
-      "Политика конфиденциальности Nova Messenger: какие данные обрабатываются, регистрация по номеру телефона и имени, хранение в РФ согласно 152-ФЗ.",
+      "Политика конфиденциальности Nova — социальной сети для общения: какие данные обрабатываются, регистрация по номеру телефона и имени, хранение в РФ согласно 152-ФЗ.",
     );
     return () => {
       document.title = prevTitle;
@@ -41,16 +41,17 @@ export default function Privacy() {
 
       <main className="max-w-2xl mx-auto px-4 py-6 text-sm leading-relaxed space-y-6">
         <section>
-          <h2 className="text-xl font-bold mb-1">Nova Messenger</h2>
+          <h2 className="text-xl font-bold mb-1">Nova — социальная сеть для общения</h2>
           <p className="text-muted-foreground">
             Действует с {UPDATED}. Версия документа {VERSION}.
           </p>
           <p className="mt-3">
             Настоящая Политика конфиденциальности (далее — «Политика») описывает,
-            какие данные обрабатывает мобильное приложение и веб-сервис Nova
-            Messenger (далее — «Приложение», «Сервис», «мы») и как мы их
-            защищаем. Политика составлена в соответствии с Федеральным законом
-            Российской Федерации от 27.07.2006 № 152-ФЗ «О персональных данных».
+            какие данные обрабатывает мобильное приложение и веб-сервис Nova —
+            социальная сеть для общения (истории, сообщества, друзья, чаты и
+            звонки) (далее — «Приложение», «Сервис», «мы») и как мы их защищаем.
+            Политика составлена в соответствии с Федеральным законом Российской
+            Федерации от 27.07.2006 № 152-ФЗ «О персональных данных».
           </p>
           <p className="mt-2">
             Используя Приложение, вы соглашаетесь с условиями настоящей Политики.
