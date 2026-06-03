@@ -191,7 +191,9 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
             </button>
             <p className="text-center text-xs text-muted-foreground">
               Нажимая «Продолжить», вы соглашаетесь с{" "}
-              <span className="text-violet-400 cursor-pointer">Условиями использования</span>
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 underline">
+                Политикой конфиденциальности
+              </a>
             </p>
           </div>
         )}
@@ -234,6 +236,12 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
                 <>Начать общение <Icon name="Sparkles" size={18} /></>
               )}
             </button>
+            <p className="text-center text-xs text-muted-foreground">
+              Нажимая «Начать общение», вы соглашаетесь с{" "}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 underline">
+                Политикой конфиденциальности
+              </a>
+            </p>
           </div>
         )}
       </div>
