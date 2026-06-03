@@ -111,7 +111,7 @@ export default function ConsentScreen({ onAccept }: Props) {
             <span className="text-sm leading-snug">
               Я даю согласие на обработку своих персональных данных
               (номер телефона, имя, аватар, сообщения) в целях работы
-              мессенджера, согласно ст. 9 152-ФЗ
+              социальной сети, согласно ст. 9 152-ФЗ
             </span>
           </label>
 
