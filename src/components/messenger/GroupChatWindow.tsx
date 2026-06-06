@@ -47,6 +47,17 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+      if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+      const mr = mediaRecorder.current;
+      if (mr && mr.state === "recording") {
+        try { mr.stream?.getTracks().forEach(t => t.stop()); mr.stop(); } catch { /* noop */ }
+      }
+    };
+  }, []);
+
   const toTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
 
   const loadMessages = useCallback(async (since = 0): Promise<boolean> => {

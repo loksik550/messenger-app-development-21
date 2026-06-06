@@ -130,6 +130,18 @@ export function ChatWindow({
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordCancelledRef = useRef(false);
 
+  useEffect(() => {
+    return () => {
+      if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+      if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+      if (typingTimerRef.current) { clearTimeout(typingTimerRef.current); typingTimerRef.current = null; }
+      const mr = mediaRecorder.current;
+      if (mr && mr.state === "recording") {
+        try { mr.stream?.getTracks().forEach(t => t.stop()); mr.stop(); } catch { /* noop */ }
+      }
+    };
+  }, []);
+
   const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
     const data = await api("get_messages", { chat_id: chat.id, since }, currentUser.id);
     let changed = false;
@@ -219,14 +231,15 @@ export function ChatWindow({
 
   useAdaptivePoll(() => loadMessages(lastSinceRef.current), [chat.id, loadMessages], 3000, 10000);
 
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      if (document.visibilityState !== "visible") return;
-      const data = await api("get_typing", { chat_id: chat.id }, currentUser.id);
-      setIsTyping(!!data.typing);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [chat.id, currentUser.id]);
+  const typingRef = useRef(false);
+  useAdaptivePoll(async () => {
+    const data = await api("get_typing", { chat_id: chat.id }, currentUser.id);
+    const typing = !!data.typing;
+    setIsTyping(typing);
+    const changed = typing || typingRef.current;
+    typingRef.current = typing;
+    return changed;
+  }, [chat.id, currentUser.id], 4000, 8000);
 
   // Загрузка запланированных + автозапуск отправки доспевших
   const reloadScheduled = useCallback(async () => {

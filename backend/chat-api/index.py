@@ -46,6 +46,15 @@ def err(msg, code=400):
 USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16)"
 
 
+def _is_chat_member(cur, chat_id: int, user_id: int) -> bool:
+    """Проверяет, что пользователь — участник приватного чата (user1 или user2)."""
+    cur.execute(
+        f"SELECT 1 FROM {SCHEMA}.chats WHERE id = %s AND (user1_id = %s OR user2_id = %s)",
+        (chat_id, user_id, user_id),
+    )
+    return cur.fetchone() is not None
+
+
 def serialize_user(row):
     if not row:
         return None
@@ -1655,6 +1664,9 @@ def handler(event: dict, context) -> dict:
         if not chat_id:
             conn.close()
             return err("Укажите chat_id")
+        if not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         now = int(time.time())
         cur.execute(
             f"UPDATE {SCHEMA}.messages SET read_at = %s WHERE chat_id = %s AND sender_id != %s AND read_at IS NULL",
@@ -2020,6 +2032,9 @@ def handler(event: dict, context) -> dict:
         if not chat_id or field not in ("muted", "pinned", "favorite"):
             conn.close()
             return err("Неверные параметры")
+        if not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         cur.execute(
             f"""INSERT INTO {SCHEMA}.chat_settings (user_id, chat_id, {field})
                 VALUES (%s, %s, %s)
@@ -2239,6 +2254,9 @@ def handler(event: dict, context) -> dict:
         if not msg_id or not chat_id:
             conn.close()
             return err("Укажите message_id и chat_id")
+        if not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         cur.execute(
             f"UPDATE {SCHEMA}.chats SET pinned_message_id = %s WHERE id = %s",
             (int(msg_id), int(chat_id))
@@ -2254,6 +2272,9 @@ def handler(event: dict, context) -> dict:
         if not chat_id:
             conn.close()
             return err("Укажите chat_id")
+        if not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         cur.execute(
             f"UPDATE {SCHEMA}.chats SET pinned_message_id = NULL WHERE id = %s",
             (int(chat_id),)
