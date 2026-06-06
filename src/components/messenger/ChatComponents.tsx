@@ -5,6 +5,7 @@ import { playMessageSound } from "@/lib/sounds";
 import { ChatHeader, ContextMenu, ChatInput } from "@/components/messenger/ChatWindowParts";
 import VideoCircleRecorder from "@/components/messenger/VideoCircleRecorder";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
+import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
 import { GiftSendModal, FundraiserAttachModal } from "@/components/messenger/ChatGiftModals";
 import { ForwardDialog } from "@/components/messenger/ForwardDialog";
 import StickerPicker from "@/components/messenger/StickerPicker";
@@ -129,16 +130,19 @@ export function ChatWindow({
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordCancelledRef = useRef(false);
 
-  const loadMessages = useCallback(async (since = 0) => {
+  const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
     const data = await api("get_messages", { chat_id: chat.id, since }, currentUser.id);
+    let changed = false;
 
     // Удаляем у себя то, что удалили на сервере (для получателя)
     if (Array.isArray(data.removed_ids) && data.removed_ids.length > 0) {
       const removedSet = new Set<number>(data.removed_ids);
       setMessages(prev => prev.some(m => removedSet.has(m.id)) ? prev.filter(m => !removedSet.has(m.id)) : prev);
+      changed = true;
     }
 
     if (data.messages && data.messages.length > 0) {
+      changed = true;
       const mapped: Message[] = data.messages.map((m: {
         id: number; text: string; created_at: number; sender_id: number; sender_name?: string; read_at?: number;
         image_url?: string; media_type?: string; media_url?: string;
@@ -201,7 +205,11 @@ export function ChatWindow({
       setLastSince(maxTs);
       api("mark_read", { chat_id: chat.id }, currentUser.id);
     }
+    return changed;
   }, [chat.id, currentUser.id]);
+
+  const lastSinceRef = useRef(0);
+  lastSinceRef.current = lastSince;
 
   useEffect(() => {
     setMessages([]);
@@ -209,13 +217,7 @@ export function ChatWindow({
     loadMessages(0);
   }, [chat.id]);
 
-  useEffect(() => {
-    const tick = () => { if (document.visibilityState === "visible") loadMessages(lastSince); };
-    const interval = setInterval(tick, 3000);
-    const onVis = () => { if (document.visibilityState === "visible") tick(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVis); };
-  }, [chat.id, lastSince, loadMessages]);
+  useAdaptivePoll(() => loadMessages(lastSinceRef.current), [chat.id, loadMessages], 3000, 10000);
 
   useEffect(() => {
     const interval = setInterval(async () => {

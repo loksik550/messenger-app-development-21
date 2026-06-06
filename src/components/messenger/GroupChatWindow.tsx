@@ -8,6 +8,7 @@ import { LinkifiedText } from "@/components/messenger/LinkifiedText";
 import VideoCircleRecorder from "@/components/messenger/VideoCircleRecorder";
 import GroupProfilePanel from "@/components/messenger/GroupProfilePanel";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
+import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
 
 const POLL_MS = 3500;
 
@@ -45,14 +46,14 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const audioChunks = useRef<Blob[]>([]);
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const toTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
 
-  const loadMessages = useCallback(async (since = 0) => {
+  const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
     const d = await api("get_group_messages", { group_id: group.id, since }, currentUser.id);
-    if (!d.messages) return;
+    if (!d.messages) return false;
     const msgs: GroupMessage[] = d.messages.map((m: GroupMessage) => ({ ...m, time: toTime(m.created_at) }));
+    let changed = false;
     if (since === 0) {
       setMessages(msgs);
     } else if (msgs.length) {
@@ -61,8 +62,10 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         return [...prev, ...msgs.filter((m: GroupMessage) => !ids.has(m.id))];
       });
       setLastSince(msgs[msgs.length - 1].created_at);
+      changed = true;
     }
     if (since === 0 && msgs.length) setLastSince(msgs[msgs.length - 1].created_at);
+    return changed;
   }, [group.id, currentUser.id]);
 
   useEffect(() => {
@@ -101,16 +104,10 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     setPinned(null);
   };
 
-  useEffect(() => {
-    const tick = () => { if (document.visibilityState === "visible") loadMessages(lastSince); };
-    pollRef.current = setInterval(tick, POLL_MS);
-    const onVis = () => { if (document.visibilityState === "visible") loadMessages(lastSince); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [lastSince, loadMessages]);
+  const lastSinceRef = useRef(0);
+  lastSinceRef.current = lastSince;
+
+  useAdaptivePoll(() => loadMessages(lastSinceRef.current), [group.id, loadMessages], POLL_MS, 10000);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
