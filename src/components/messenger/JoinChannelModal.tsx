@@ -50,15 +50,20 @@ export default function JoinChannelModal({
     return () => { cancel = true; clearTimeout(t); };
   }, [q, tab]);
 
-  const joinById = async (groupId: number, name: string, isChannel: boolean) => {
+  const joinById = async (item: ChannelItem) => {
     setBusy(true); setError("");
     try {
-      // Получаем invite_link, чтобы использовать join_by_invite — или создадим пустой fake вход через add_group_member по publicу
-      // Но у нас фронт не имеет invite_link напрямую. Используем универсальный путь — backend join_by_invite требует ссылку.
-      // Поэтому добавим членство напрямую через invite_link, если он не пуст. Иначе fallback.
-      const r = await api("join_by_invite", { invite_link: String(groupId) }, currentUser.id);
+      const r = await api("join_by_invite", { invite_link: String(item.id) }, currentUser.id);
       if (r?.error) throw new Error(r.error);
-      onJoined({ id: groupId, name, owner_id: 0, is_channel: isChannel });
+      onJoined({
+        id: item.id,
+        name: item.name,
+        owner_id: 0,
+        is_channel: item.is_channel,
+        avatar_url: item.avatar_url || undefined,
+        description: item.description || undefined,
+        members_count: item.members_count,
+      });
       onClose();
     } catch (e) {
       setError((e as Error).message || "Не удалось присоединиться");
@@ -145,7 +150,7 @@ export default function JoinChannelModal({
                   </div>
                   <button
                     disabled={busy}
-                    onClick={() => joinById(it.id, it.name, it.is_channel)}
+                    onClick={() => joinById(it)}
                     className="px-3 py-1.5 grad-primary text-white text-xs font-bold rounded-xl disabled:opacity-50"
                   >
                     Войти

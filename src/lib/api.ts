@@ -362,6 +362,7 @@ export interface GroupMessage {
   kind?: string;
   out: boolean;
   time?: string;
+  read?: boolean;
 }
 
 export interface BeforeInstallPromptEvent extends Event {

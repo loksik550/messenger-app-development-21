@@ -2460,8 +2460,38 @@ def handler(event: dict, context) -> dict:
             (int(group_id), since)
         )
         rows = cur.fetchall()
+
+        # Отмечаем чужие сообщения прочитанными текущим пользователем
+        incoming_ids = [r[0] for r in rows if r[1] != int(user_id)]
+        if incoming_ids:
+            now_v = int(time.time())
+            args = []
+            values_sql = []
+            for mid in incoming_ids:
+                values_sql.append("(%s, %s, %s)")
+                args.extend([mid, int(user_id), now_v])
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.group_message_views (message_id, user_id, viewed_at)
+                    VALUES {','.join(values_sql)}
+                    ON CONFLICT (message_id, user_id) DO NOTHING""",
+                args
+            )
+
+        # Для своих сообщений выясняем, прочитал ли их кто-то ещё (две галочки)
+        own_ids = [r[0] for r in rows if r[1] == int(user_id)]
+        read_set = set()
+        if own_ids:
+            placeholders = ','.join(['%s'] * len(own_ids))
+            cur.execute(
+                f"""SELECT DISTINCT message_id FROM {SCHEMA}.group_message_views
+                    WHERE message_id IN ({placeholders}) AND user_id != %s""",
+                own_ids + [int(user_id)]
+            )
+            read_set = {row[0] for row in cur.fetchall()}
+
         messages = []
         for r in rows:
+            is_out = r[1] == int(user_id)
             messages.append({
                 "id": r[0], "sender_id": r[1], "sender_name": r[2],
                 "sender_avatar": r[3], "text": r[4] or "",
@@ -2469,7 +2499,8 @@ def handler(event: dict, context) -> dict:
                 "file_name": r[7], "file_size": r[8], "duration": r[9],
                 "reply_to_id": r[10], "created_at": r[11],
                 "edited_at": r[12], "kind": r[13] or "text",
-                "out": r[1] == int(user_id)
+                "out": is_out,
+                "read": (r[0] in read_set) if is_out else False
             })
         conn.close()
         return ok({"messages": messages})
