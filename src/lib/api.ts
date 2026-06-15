@@ -3,6 +3,7 @@ export const CHAT_POLL_API = "https://functions.poehali.dev/3fc067b7-d1b3-4aed-8
 export const PUSH_API = "https://functions.poehali.dev/c9d141ca-3552-433f-a968-ac1e92da00af";
 export const UPLOAD_API = "https://functions.poehali.dev/c0e361f0-438f-44b3-8886-26f5afb7d935";
 export const YOOKASSA_PAY_API = "https://functions.poehali.dev/2feb7862-ee04-4945-8549-c0596f30bdc9";
+export const SMS_API = "https://functions.poehali.dev/d5b81fb8-fe85-4a15-84a6-cc602997298c";
 
 // Лёгкие polling-эндпоинты вынесены в отдельную функцию chat-poll
 const POLL_ACTIONS = new Set(["get_typing", "get_call_signals", "poll_incoming_call", "scheduled_run_due"]);
@@ -66,6 +67,19 @@ export async function api(action: string, body: Record<string, unknown> = {}, us
   const res = await fetchWithRetry(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": String(userId) } : {}) },
+    body: JSON.stringify({ action, ...body }),
+  });
+  try {
+    return await res.json();
+  } catch {
+    return { error: "bad_response" };
+  }
+}
+
+export async function smsApi(action: string, body: Record<string, unknown> = {}) {
+  const res = await fetchWithRetry(SMS_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, ...body }),
   });
   try {
