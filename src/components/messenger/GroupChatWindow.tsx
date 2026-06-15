@@ -132,8 +132,11 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     return loadMessages(full ? 0 : lastSinceRef.current);
   }, [group.id, loadMessages], POLL_MS, 10000);
 
+  const didInitialScroll = useRef(false);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length === 0) return;
+    endRef.current?.scrollIntoView({ behavior: didInitialScroll.current ? "smooth" : "auto" });
+    didInitialScroll.current = true;
   }, [messages.length]);
 
   const send = async () => {
@@ -265,7 +268,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   }, []);
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="flex flex-col h-full min-h-0 relative">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 glass-strong border-b border-white/5 flex-shrink-0"
         style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
@@ -320,7 +323,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-1 relative">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-1 relative">
         {groupedMessages.map(({ date, msgs }) => (
           <div key={date}>
             <div className="flex justify-center my-3">
@@ -527,6 +530,11 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
           onClose={() => setShowInfo(false)}
           onGroupUpdated={g => { onGroupUpdated?.(g); }}
           onGroupDeleted={() => { onGroupDeleted?.(); }}
+          onHistoryCleared={() => {
+            setMessages([]);
+            setLastSince(Math.floor(Date.now() / 1000));
+            didInitialScroll.current = false;
+          }}
           onMembersChanged={() => {
             api("get_group_members", { group_id: group.id }, currentUser.id).then(d => {
               if (d.members) setMembers(d.members.filter((m: GroupMember) => m.role !== "removed"));

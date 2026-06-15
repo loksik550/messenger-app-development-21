@@ -70,11 +70,9 @@ export function EmojiStickerPicker({
 
   useEffect(() => {
     if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    setTimeout(() => document.addEventListener("mousedown", onClick), 0);
-    return () => document.removeEventListener("mousedown", onClick);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
   if (!open) return null;
@@ -89,10 +87,17 @@ export function EmojiStickerPicker({
   };
 
   return (
-    <div
-      ref={ref}
-      className="absolute bottom-full right-0 mb-2 w-[340px] max-w-[calc(100vw-1rem)] glass-strong rounded-2xl p-3 shadow-2xl z-50 animate-fade-in"
-    >
+    <div className="fixed inset-0 z-[120] flex flex-col justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 animate-fade-in" />
+      <div
+        ref={ref}
+        onClick={e => e.stopPropagation()}
+        className="relative w-full glass-strong rounded-t-3xl p-3 pt-2 shadow-2xl animate-slide-up"
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      >
+        <div className="flex justify-center pb-2">
+          <div className="w-10 h-1 rounded-full bg-white/20" />
+        </div>
       <div className="flex gap-1 mb-2 p-1 bg-white/5 rounded-xl">
         <button
           onClick={() => setTab("emoji")}
@@ -116,7 +121,7 @@ export function EmojiStickerPicker({
               </div>
             </>
           )}
-          <div className="grid grid-cols-8 gap-0.5 max-h-56 overflow-y-auto">
+          <div className="grid grid-cols-8 gap-0.5 max-h-[40vh] overflow-y-auto">
             {selected.emojis.map((e, i) => (
               <button key={i} onClick={() => pick(e)} className="text-xl p-1.5 rounded-lg hover:bg-white/10 transition">{e}</button>
             ))}
@@ -135,7 +140,7 @@ export function EmojiStickerPicker({
           </div>
         </>
       ) : (
-        <div className="max-h-72 overflow-y-auto space-y-3">
+        <div className="max-h-[44vh] overflow-y-auto space-y-3">
           {STICKER_PACKS.map(p => (
             <div key={p.id}>
               <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">{p.name}</div>
@@ -152,6 +157,7 @@ export function EmojiStickerPicker({
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

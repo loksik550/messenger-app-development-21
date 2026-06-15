@@ -17,11 +17,12 @@ interface Props {
   onGroupUpdated: (g: Group) => void;
   onMembersChanged: () => void;
   onGroupDeleted?: () => void;
+  onHistoryCleared?: () => void;
 }
 
 export function GroupProfilePanel({
   group, members, currentUser, myRole,
-  onClose, onGroupUpdated, onMembersChanged, onGroupDeleted,
+  onClose, onGroupUpdated, onMembersChanged, onGroupDeleted, onHistoryCleared,
 }: Props) {
   const isOwner = myRole === "owner";
   const isAdmin = isOwner || myRole === "admin";
@@ -49,6 +50,7 @@ export function GroupProfilePanel({
   const [confirmKick, setConfirmKick] = useState<{ id: number; name: string } | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [busy, setBusy] = useState(false);
   const [onlyAdmins, setOnlyAdmins] = useState<boolean>(false);
 
@@ -203,6 +205,16 @@ export function GroupProfilePanel({
     setConfirmDelete(false);
     if (r?.error) { alert(r.error); return; }
     onGroupDeleted?.();
+    onClose();
+  };
+
+  const clearHistory = async () => {
+    setBusy(true);
+    const r = await api("clear_group_history", { group_id: group.id }, currentUser.id);
+    setBusy(false);
+    setConfirmClear(false);
+    if (r?.error) { alert(r.error); return; }
+    onHistoryCleared?.();
     onClose();
   };
 
@@ -470,7 +482,14 @@ export function GroupProfilePanel({
             </div>
 
             {/* Действия */}
-            <div className="glass rounded-2xl overflow-hidden">
+            <div className="glass rounded-2xl overflow-hidden divide-y divide-white/5">
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition text-left"
+              >
+                <Icon name="Eraser" size={18} className="text-amber-400" />
+                <span className="text-sm font-medium">Очистить переписку</span>
+              </button>
               {!isOwner && (
                 <button
                   onClick={() => setConfirmLeave(true)}
@@ -636,6 +655,16 @@ export function GroupProfilePanel({
           loading={busy}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={deleteGroup}
+        />
+      )}
+      {confirmClear && (
+        <ConfirmDialog
+          title="Очистить переписку?"
+          text="Все сообщения скроются только у вас. Остальные участники продолжат видеть их."
+          danger
+          loading={busy}
+          onCancel={() => setConfirmClear(false)}
+          onConfirm={clearHistory}
         />
       )}
     </div>

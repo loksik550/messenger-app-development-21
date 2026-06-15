@@ -2063,6 +2063,28 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return ok({"ok": True, "cleared_at": ts})
 
+    # ── clear_group_history ───────────────────────────────────────────────────
+    if action == "clear_group_history":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        group_id = body.get("group_id")
+        if not group_id:
+            conn.close()
+            return err("Укажите group_id")
+        ts = int(time.time())
+        cur.execute(
+            f"""UPDATE {SCHEMA}.group_members
+                SET cleared_at = %s
+                WHERE group_id = %s AND user_id = %s""",
+            (ts, int(group_id), int(user_id))
+        )
+        if cur.rowcount == 0:
+            conn.close()
+            return err("Нет доступа", 403)
+        conn.close()
+        return ok({"ok": True, "cleared_at": ts})
+
     # ── block_user / unblock_user ─────────────────────────────────────────────
     if action == "block_user":
         if not user_id:
@@ -2442,12 +2464,15 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return err("Укажите group_id")
         cur.execute(
-            f"SELECT 1 FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s",
+            f"SELECT COALESCE(cleared_at, 0) FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s",
             (int(group_id), int(user_id))
         )
-        if not cur.fetchone():
+        member_row = cur.fetchone()
+        if not member_row:
             conn.close()
             return err("Нет доступа", 403)
+        cleared_at = int(member_row[0] or 0)
+        effective_since = max(since, cleared_at)
         cur.execute(
             f"""SELECT m.id, m.sender_id, u.name, u.avatar_url, m.text,
                        m.media_type, m.media_url, m.file_name, m.file_size, m.duration,
@@ -2457,7 +2482,7 @@ def handler(event: dict, context) -> dict:
                 WHERE m.group_id = %s AND m.removed_at IS NULL AND m.created_at > %s
                 ORDER BY m.created_at ASC
                 LIMIT 200""",
-            (int(group_id), since)
+            (int(group_id), effective_since)
         )
         rows = cur.fetchall()
 
