@@ -93,29 +93,40 @@ def handler(event: dict, context) -> dict:
 
         login = os.environ.get("SMSC_LOGIN", "")
         password = os.environ.get("SMSC_PASSWORD", "")
+        sender = os.environ.get("SMSC_SENDER", "")
 
         if login and password:
-            params = urllib.parse.urlencode({
+            sms_params = {
                 "login": login,
                 "psw": password,
                 "phones": digits,
                 "mes": f"Nova: ваш код подтверждения {code}",
                 "fmt": 3,
                 "charset": "utf-8",
-            })
+            }
+            if sender:
+                sms_params["sender"] = sender
+            params = urllib.parse.urlencode(sms_params)
             url = f"https://smsc.ru/sys/send.php?{params}"
-            req = urllib.request.urlopen(url, timeout=10)
-            result = json.loads(req.read().decode("utf-8"))
-            if result.get("error"):
+            try:
+                req = urllib.request.urlopen(url, timeout=10)
+                result = json.loads(req.read().decode("utf-8"))
+            except Exception:
                 conn.close()
-                return {"statusCode": 502, "headers": headers, "body": json.dumps({"error": f"Ошибка SMS: {result.get('error_code')}"})}
+                return {"statusCode": 502, "headers": headers, "body": json.dumps({"error": "Не удалось отправить SMS. Попробуйте позже."})}
+            if result.get("error"):
+                # Не логируем код, только тех. ошибку SMSC
+                print(f"SMSC error: code={result.get('error_code')} msg={result.get('error')}")
+                conn.close()
+                return {"statusCode": 502, "headers": headers, "body": json.dumps({"error": "Не удалось отправить SMS. Проверьте номер и попробуйте позже."})}
+            conn.close()
+            return {"statusCode": 200, "headers": headers, "body": json.dumps({"ok": True, "demo": False})}
 
-        is_demo = not bool(login)
+        # Демо-режим (SMS-провайдер не настроен): код НЕ возвращаем клиенту,
+        # его видно только в логах функции — для безопасности.
+        print(f"[DEMO SMS] phone={digits} code={code}")
         conn.close()
-        result = {"ok": True, "demo": is_demo}
-        if is_demo:
-            result["code"] = code
-        return {"statusCode": 200, "headers": headers, "body": json.dumps(result)}
+        return {"statusCode": 200, "headers": headers, "body": json.dumps({"ok": True, "demo": True})}
 
     if action == "verify":
         phone = (body.get("phone") or "").strip()
