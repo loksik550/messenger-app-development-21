@@ -1,12 +1,13 @@
 const URL_RE = /(https?:\/\/[^\s]+)/g;
+const TOKEN_RE = /(https?:\/\/[^\s]+|@[A-Za-zА-Яа-яЁё0-9_]+)/g;
 
-export function LinkifiedText({ text, out }: { text: string; out: boolean }) {
-  const parts = text.split(URL_RE);
+export function LinkifiedText({ text, out, mentions }: { text: string; out: boolean; mentions?: boolean }) {
+  const splitRe = mentions ? TOKEN_RE : URL_RE;
+  const parts = text.split(splitRe);
   return (
     <>
       {parts.map((part, i) => {
-        if (URL_RE.test(part)) {
-          URL_RE.lastIndex = 0;
+        if (/^https?:\/\//.test(part)) {
           return (
             <a
               key={i}
@@ -18,6 +19,13 @@ export function LinkifiedText({ text, out }: { text: string; out: boolean }) {
             >
               {part}
             </a>
+          );
+        }
+        if (mentions && /^@[A-Za-zА-Яа-яЁё0-9_]+$/.test(part)) {
+          return (
+            <span key={i} className={`font-semibold ${out ? "text-white" : "text-violet-400"}`}>
+              {part}
+            </span>
           );
         }
         return <span key={i}>{part}</span>;

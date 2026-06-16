@@ -8,6 +8,8 @@ import { LinkifiedText } from "@/components/messenger/LinkifiedText";
 import VideoCircleRecorder from "@/components/messenger/VideoCircleRecorder";
 import GroupProfilePanel from "@/components/messenger/GroupProfilePanel";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
+import GroupContextMenu from "@/components/messenger/GroupContextMenu";
+import ForwardGroupDialog from "@/components/messenger/ForwardGroupDialog";
 import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
 
 const POLL_MS = 3500;
@@ -33,11 +35,17 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const [showInfo, setShowInfo] = useState(false);
   const [showVideoCircle, setShowVideoCircle] = useState(false);
   const [replyTo, setReplyTo] = useState<GroupMessage | null>(null);
+  const [editing, setEditing] = useState<GroupMessage | null>(null);
+  const [forwardMsg, setForwardMsg] = useState<GroupMessage | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ msgId: number; out: boolean } | null>(null);
   const [pinned, setPinned] = useState<{ id: number; text: string; sender_name: string; media_type?: string } | null>(null);
   const [onlyAdminsPost, setOnlyAdminsPost] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{ id: number; sender_name: string; text: string; created_at: number }[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const endRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -142,6 +150,16 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const send = async () => {
     const text = input.trim();
     if (!text) return;
+    // Режим редактирования
+    if (editing) {
+      const editId = editing.id;
+      const r = await api("edit_group_message", { message_id: editId, text }, currentUser.id);
+      if (r?.error) { alert(r.error); return; }
+      setInput("");
+      setEditing(null);
+      setMessages(prev => prev.map(m => m.id === editId ? { ...m, text, edited_at: r.edited_at } : m));
+      return;
+    }
     setInput("");
     const replyId = replyTo?.id;
     setReplyTo(null);
@@ -154,6 +172,62 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
       }]);
       setLastSince(d.created_at);
     }
+  };
+
+  const reactToMessage = async (msgId: number, emoji: string) => {
+    setCtxMenu(null);
+    const snapshot = messages;
+    // Оптимистично обновляем UI: одна реакция от пользователя (toggle)
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m;
+      const had = (m.reactions || []).some(r => r.user_id === currentUser.id && r.emoji === emoji);
+      const others = (m.reactions || []).filter(r => r.user_id !== currentUser.id);
+      return { ...m, reactions: had ? others : [...others, { emoji, user_id: currentUser.id, user_name: currentUser.name }] };
+    }));
+    const r = await api("add_group_reaction", { message_id: msgId, emoji }, currentUser.id);
+    if (r?.error) { alert(r.error); setMessages(snapshot); }
+  };
+
+  const deleteMessage = async (msgId: number) => {
+    setCtxMenu(null);
+    const r = await api("delete_group_message", { message_id: msgId }, currentUser.id);
+    if (r?.error) { alert(r.error); return; }
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+  };
+
+  const startEdit = (msgId: number) => {
+    setCtxMenu(null);
+    const m = messages.find(x => x.id === msgId);
+    if (m) { setEditing(m); setReplyTo(null); setInput(m.text); }
+  };
+
+  const forwardMessage = (msgId: number) => {
+    setCtxMenu(null);
+    const m = messages.find(x => x.id === msgId);
+    if (m) setForwardMsg(m);
+  };
+
+  const runSearch = async (q: string) => {
+    setSearchQuery(q);
+    if (!q.trim()) { setSearchResults([]); return; }
+    setSearching(true);
+    const r = await api("search_group_messages", { group_id: group.id, query: q.trim() }, currentUser.id);
+    setSearching(false);
+    setSearchResults(r?.results || []);
+  };
+
+  // ── Упоминания @имя ──
+  const mentionMatch = input.match(/(?:^|\s)@([^\s@]*)$/);
+  const mentionQuery = mentionMatch ? mentionMatch[1].toLowerCase() : null;
+  const mentionCandidates = mentionQuery !== null
+    ? members
+        .filter(m => m.id !== currentUser.id && m.role !== "removed" && m.name.toLowerCase().includes(mentionQuery))
+        .slice(0, 6)
+    : [];
+
+  const applyMention = (name: string) => {
+    const cleanName = name.replace(/\s+/g, "_");
+    setInput(prev => prev.replace(/(^|\s)@([^\s@]*)$/, (_m, p1) => `${p1}@${cleanName} `));
   };
 
   const sendFile = async (file: File, opts?: { duration?: number; mediaTypeOverride?: string }) => {
@@ -298,10 +372,55 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
             </div>
           </div>
         </button>
+        <button onClick={() => { setShowSearch(true); setSearchQuery(""); setSearchResults([]); }} className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground">
+          <Icon name="Search" size={18} />
+        </button>
         <button onClick={() => setShowInfo(true)} className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground">
           <Icon name="Info" size={18} />
         </button>
       </div>
+
+      {/* Search overlay */}
+      {showSearch && (
+        <div className="absolute inset-0 z-[90] flex flex-col bg-[hsl(var(--background))] animate-fade-in">
+          <div className="flex items-center gap-2 px-3 py-2 glass-strong border-b border-white/5 flex-shrink-0"
+            style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
+            <button onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }} className="p-2 rounded-xl hover:bg-white/8">
+              <Icon name="ChevronLeft" size={20} />
+            </button>
+            <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5">
+              <Icon name="Search" size={16} className="text-muted-foreground" />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={e => runSearch(e.target.value)}
+                placeholder="Поиск по сообщениям"
+                className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
+              />
+              {searchQuery && (
+                <button onClick={() => runSearch("")} className="text-muted-foreground hover:text-foreground">
+                  <Icon name="X" size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 py-2">
+            {searching && <div className="text-center text-sm text-muted-foreground py-6">Поиск...</div>}
+            {!searching && searchQuery.trim() && searchResults.length === 0 && (
+              <div className="text-center text-sm text-muted-foreground py-6">Ничего не найдено</div>
+            )}
+            {searchResults.map(r => (
+              <div key={r.id} className="px-3 py-2.5 rounded-xl hover:bg-white/5 transition">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-[11px] font-semibold text-violet-400">{r.sender_name}</span>
+                  <span className="text-[10px] text-muted-foreground">{new Date(r.created_at * 1000).toLocaleDateString("ru", { day: "numeric", month: "short" })}</span>
+                </div>
+                <div className="text-sm text-foreground line-clamp-2">{r.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Pinned message */}
       {pinned && (
@@ -372,7 +491,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
                             Ответ
                           </div>
                         )}
-                        <LinkifiedText text={msg.text} out={msg.out} />
+                        <LinkifiedText text={msg.text} out={msg.out} mentions />
                         <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-0.5 ${msg.out ? "text-white/60" : "text-muted-foreground"}`}>
                           {msg.edited_at && <span className="opacity-70">ред.</span>}
                           <span>{msg.time}</span>
@@ -380,6 +499,32 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
                             <Icon name={msg.read ? "CheckCheck" : "Check"} size={12} className={msg.read ? "text-sky-300" : "text-white/60"} />
                           )}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Reactions */}
+                    {msg.reactions && msg.reactions.length > 0 && (
+                      <div className={`flex flex-wrap gap-1 mt-1 ${msg.out ? "justify-end" : "justify-start"}`}>
+                        {Object.entries(
+                          msg.reactions.reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
+                            const cur = acc[r.emoji] || { count: 0, mine: false };
+                            cur.count += 1;
+                            if (r.user_id === currentUser.id) cur.mine = true;
+                            acc[r.emoji] = cur;
+                            return acc;
+                          }, {})
+                        ).map(([emoji, info]) => (
+                          <button
+                            key={emoji}
+                            onClick={() => reactToMessage(msg.id, emoji)}
+                            className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs transition ${
+                              info.mine ? "bg-violet-500/30 border border-violet-400/50" : "bg-white/8 border border-transparent hover:bg-white/12"
+                            }`}
+                          >
+                            <span>{emoji}</span>
+                            {info.count > 1 && <span className="text-[10px] text-muted-foreground">{info.count}</span>}
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -404,14 +549,28 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
 
       {/* Context menu */}
       {ctxMenu && (
-        <div className="fixed inset-0 z-50" onClick={() => setCtxMenu(null)}>
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 glass-strong rounded-2xl overflow-hidden shadow-xl w-56" onClick={e => e.stopPropagation()}>
-            <button onClick={() => { const m = messages.find(m => m.id === ctxMenu.msgId); if (m) setReplyTo(m); setCtxMenu(null); }}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 text-sm">
-              <Icon name="Reply" size={16} className="text-muted-foreground" />Ответить
-            </button>
-          </div>
-        </div>
+        <GroupContextMenu
+          ctxMenu={ctxMenu}
+          messages={messages}
+          canModerate={isAdminHere}
+          isPinned={pinned?.id === ctxMenu.msgId}
+          onClose={() => setCtxMenu(null)}
+          onReact={reactToMessage}
+          onReply={(id) => { const m = messages.find(m => m.id === id); if (m) { setReplyTo(m); setEditing(null); } setCtxMenu(null); }}
+          onForward={forwardMessage}
+          onEdit={startEdit}
+          onPin={(id) => { if (pinned?.id === id) unpinMessage(); else pinMessage(id); }}
+          onDelete={deleteMessage}
+        />
+      )}
+
+      {/* Forward dialog */}
+      {forwardMsg && (
+        <ForwardGroupDialog
+          message={forwardMsg}
+          currentUser={currentUser}
+          onClose={() => setForwardMsg(null)}
+        />
       )}
 
       {/* Input */}
@@ -421,7 +580,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
           <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip"
             className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.target.value = ""; }} />
 
-          {replyTo && (
+          {replyTo && !editing && (
             <div className="flex items-center gap-2 mb-2 px-3 py-1.5 glass rounded-xl border-l-2 border-violet-400 animate-fade-in">
               <Icon name="Reply" size={14} className="text-violet-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
@@ -429,6 +588,17 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
                 <div className="text-xs text-muted-foreground truncate">{replyTo.text || "[медиа]"}</div>
               </div>
               <button onClick={() => setReplyTo(null)} className="p-1"><Icon name="X" size={14} /></button>
+            </div>
+          )}
+
+          {editing && (
+            <div className="flex items-center gap-2 mb-2 px-3 py-1.5 glass rounded-xl border-l-2 border-amber-400 animate-fade-in">
+              <Icon name="Pencil" size={14} className="text-amber-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] text-amber-400">Редактирование</div>
+                <div className="text-xs text-muted-foreground truncate">{editing.text || "[медиа]"}</div>
+              </div>
+              <button onClick={() => { setEditing(null); setInput(""); }} className="p-1"><Icon name="X" size={14} /></button>
             </div>
           )}
 
@@ -461,6 +631,24 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
                 {String(Math.floor(recordSec / 60)).padStart(2, "0")}:{String(recordSec % 60).padStart(2, "0")}
               </span>
               <button onClick={cancelRecording} className="ml-auto text-xs text-muted-foreground">Отмена</button>
+            </div>
+          )}
+
+          {mentionCandidates.length > 0 && (
+            <div className="mb-2 glass rounded-xl overflow-hidden max-h-44 overflow-y-auto animate-fade-in">
+              {mentionCandidates.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => applyMention(m.name)}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/8 text-left"
+                >
+                  <Avatar label={m.name[0]?.toUpperCase() || "?"} id={m.id} src={m.avatar_url || undefined} size="sm" />
+                  <span className="text-sm truncate">{m.name}</span>
+                  {(m.role === "owner" || m.role === "admin") && (
+                    <span className="text-[10px] text-violet-400 ml-auto">{m.role === "owner" ? "владелец" : "админ"}</span>
+                  )}
+                </button>
+              ))}
             </div>
           )}
 

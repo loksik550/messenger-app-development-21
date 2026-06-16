@@ -348,6 +348,7 @@ export interface Group {
   last_message?: string;
   last_message_at?: number;
   members_count?: number;
+  unread_count?: number;
 }
 
 export interface GroupMember {
@@ -377,6 +378,7 @@ export interface GroupMessage {
   out: boolean;
   time?: string;
   read?: boolean;
+  reactions?: Reaction[];
 }
 
 export interface BeforeInstallPromptEvent extends Event {

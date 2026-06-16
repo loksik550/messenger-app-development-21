@@ -5,6 +5,7 @@ import { api, avatarGrad, uploadMedia, type User } from "@/lib/api";
 export interface StoryItem {
   id: number;
   media_url: string;
+  media_type?: "image" | "video";
   caption?: string | null;
   created_at: number;
   expires_at: number;
@@ -43,12 +44,15 @@ export function RealStoriesBar({
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
-    if (!f.type.startsWith("image/")) { alert("Только изображения"); return; }
-    if (f.size > 8 * 1024 * 1024) { alert("Файл слишком большой (макс 8 МБ)"); return; }
+    const isImage = f.type.startsWith("image/");
+    const isVideo = f.type.startsWith("video/");
+    if (!isImage && !isVideo) { alert("Только фото или видео"); return; }
+    const maxMb = isVideo ? 30 : 8;
+    if (f.size > maxMb * 1024 * 1024) { alert(`Файл слишком большой (макс ${maxMb} МБ)`); return; }
     setBusy(true);
     try {
       const up = await uploadMedia(f, currentUser.id);
-      await api("story_publish", { media_url: up.url }, currentUser.id);
+      await api("story_publish", { media_url: up.url, media_type: isVideo ? "video" : "image" }, currentUser.id);
       await load();
     } catch (err) {
       alert((err as Error).message || "Ошибка загрузки");
@@ -62,7 +66,7 @@ export function RealStoriesBar({
 
   return (
     <div className="flex gap-3 px-4 py-3 overflow-x-auto no-scrollbar">
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
+      <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={onFile} />
       {/* Моя история — кнопка добавить */}
       <button
         onClick={() => {
@@ -137,6 +141,7 @@ export function RealStoryViewer({
   const [showViews, setShowViews] = useState<{ id: number; views: { user_id: number; name: string; viewed_at: number }[] } | null>(null);
   const [sentToast, setSentToast] = useState("");
   const [dragY, setDragY] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const dragStartY = useRef<number | null>(null);
   const dragStartX = useRef<number | null>(null);
   const dragAxis = useRef<"x" | "y" | null>(null);
@@ -172,19 +177,27 @@ export function RealStoryViewer({
     }
   }, [storyIdx, groupIdx, groups]);
 
+  // Пауза/воспроизведение видео-истории
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (paused) v.pause();
+    else v.play().catch(() => { /* автоплей мог быть заблокирован */ });
+  }, [paused, story?.id]);
+
   // Прогресс 5 секунд
   useEffect(() => {
     if (!story || paused) return;
     setProgress(0);
     const start = Date.now();
-    const dur = 5000;
+    const dur = story.media_type === "video" ? 15000 : 5000;
     const t = setInterval(() => {
       const p = Math.min(100, ((Date.now() - start) / dur) * 100);
       setProgress(p);
       if (p >= 100) { clearInterval(t); next(); }
     }, 50);
     return () => clearInterval(t);
-  }, [story?.id, paused, next]);
+  }, [story?.id, paused, next, story?.media_type]);
 
   const openViews = async () => {
     if (!story || !group?.is_me) return;
@@ -292,14 +305,26 @@ export function RealStoryViewer({
         </button>
       </div>
 
-      {/* Картинка */}
+      {/* Медиа */}
       <div
         className="absolute inset-0 flex items-center justify-center"
         onPointerDown={() => setPaused(true)}
         onPointerUp={() => setPaused(false)}
         onPointerCancel={() => setPaused(false)}
       >
-        <img src={story.media_url} alt="story" className="max-w-full max-h-full object-contain" />
+        {story.media_type === "video" ? (
+          <video
+            key={story.id}
+            ref={videoRef}
+            src={story.media_url}
+            className="max-w-full max-h-full object-contain"
+            autoPlay
+            playsInline
+            controls={false}
+          />
+        ) : (
+          <img src={story.media_url} alt="story" className="max-w-full max-h-full object-contain" />
+        )}
       </div>
 
       {/* Тапы по сторонам */}

@@ -862,8 +862,15 @@ export default function Index() {
                               </span>
                             ) : null}
                           </div>
-                          <div className="text-xs text-muted-foreground truncate mt-0.5">
-                            {g.last_message || `${g.members_count ?? 0} участников`}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs text-muted-foreground truncate mt-0.5">
+                              {g.last_message || `${g.members_count ?? 0} участников`}
+                            </div>
+                            {g.unread_count ? (
+                              <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold text-white flex items-center justify-center grad-primary">
+                                {g.unread_count > 99 ? "99+" : g.unread_count}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       </button>

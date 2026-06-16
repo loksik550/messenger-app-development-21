@@ -104,6 +104,38 @@
       "body": {"action": "clear_group_history", "group_id": 1},
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "add_group_reaction requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "add_group_reaction", "message_id": 1, "emoji": "👍"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "delete_group_message requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "delete_group_message", "message_id": 1},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "edit_group_message requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "edit_group_message", "message_id": 1, "text": "x"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "search_group_messages requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "search_group_messages", "group_id": 1, "query": "test"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

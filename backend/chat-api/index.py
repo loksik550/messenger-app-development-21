@@ -2434,13 +2434,24 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT g.id, g.name, g.description, g.avatar_url, g.owner_id, g.is_channel,
                        g.last_message, g.last_message_at, g.invite_link,
-                       COUNT(gm2.user_id) AS members_count
+                       COUNT(gm2.user_id) AS members_count,
+                       (
+                           SELECT COUNT(*) FROM {SCHEMA}.group_messages m
+                           WHERE m.group_id = g.id
+                             AND m.removed_at IS NULL
+                             AND m.sender_id <> %s
+                             AND m.created_at > COALESCE(gm.cleared_at, 0)
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM {SCHEMA}.group_message_views v
+                                 WHERE v.message_id = m.id AND v.user_id = %s
+                             )
+                       ) AS unread_count
                 FROM {SCHEMA}.groups g
-                JOIN {SCHEMA}.group_members gm ON gm.group_id = g.id AND gm.user_id = %s
+                JOIN {SCHEMA}.group_members gm ON gm.group_id = g.id AND gm.user_id = %s AND gm.role <> 'removed'
                 JOIN {SCHEMA}.group_members gm2 ON gm2.group_id = g.id
-                GROUP BY g.id
-                ORDER BY g.last_message_at DESC""",
-            (int(user_id),)
+                GROUP BY g.id, gm.cleared_at
+                ORDER BY g.last_message_at DESC NULLS LAST""",
+            (int(user_id), int(user_id), int(user_id))
         )
         rows = cur.fetchall()
         groups = []
@@ -2448,7 +2459,8 @@ def handler(event: dict, context) -> dict:
             groups.append({
                 "id": r[0], "name": r[1], "description": r[2], "avatar_url": r[3],
                 "owner_id": r[4], "is_channel": r[5], "last_message": r[6] or "",
-                "last_message_at": r[7], "invite_link": r[8], "members_count": r[9]
+                "last_message_at": r[7], "invite_link": r[8], "members_count": r[9],
+                "unread_count": r[10] or 0
             })
         conn.close()
         return ok({"groups": groups})
@@ -2514,6 +2526,23 @@ def handler(event: dict, context) -> dict:
             )
             read_set = {row[0] for row in cur.fetchall()}
 
+        # Реакции на сообщения группы
+        all_ids = [r[0] for r in rows]
+        reactions_map: dict = {}
+        if all_ids:
+            placeholders = ','.join(['%s'] * len(all_ids))
+            cur.execute(
+                f"""SELECT gr.message_id, gr.emoji, gr.user_id, u.name
+                    FROM {SCHEMA}.group_message_reactions gr
+                    JOIN {SCHEMA}.users u ON u.id = gr.user_id
+                    WHERE gr.message_id IN ({placeholders}) AND gr.emoji <> '__removed__'""",
+                all_ids
+            )
+            for rr in cur.fetchall():
+                reactions_map.setdefault(rr[0], []).append({
+                    "emoji": rr[1], "user_id": rr[2], "user_name": rr[3]
+                })
+
         messages = []
         for r in rows:
             is_out = r[1] == int(user_id)
@@ -2525,7 +2554,8 @@ def handler(event: dict, context) -> dict:
                 "reply_to_id": r[10], "created_at": r[11],
                 "edited_at": r[12], "kind": r[13] or "text",
                 "out": is_out,
-                "read": (r[0] in read_set) if is_out else False
+                "read": (r[0] in read_set) if is_out else False,
+                "reactions": reactions_map.get(r[0], []),
             })
         conn.close()
         return ok({"messages": messages})
@@ -2602,6 +2632,147 @@ def handler(event: dict, context) -> dict:
             _fire_and_forget_http(push_url, push_body, timeout=5.0)
 
         return ok({"id": msg_id, "created_at": now})
+
+    # ── add_group_reaction ────────────────────────────────────────────────────
+    if action == "add_group_reaction":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        msg_id = body.get("message_id")
+        emoji = (body.get("emoji") or "").strip()
+        if not msg_id or not emoji:
+            conn.close()
+            return err("Укажите message_id и emoji")
+        # Проверяем, что пользователь — участник группы этого сообщения
+        cur.execute(
+            f"""SELECT 1 FROM {SCHEMA}.group_messages m
+                JOIN {SCHEMA}.group_members gm ON gm.group_id = m.group_id AND gm.user_id = %s
+                WHERE m.id = %s AND gm.role <> 'removed'""",
+            (int(user_id), int(msg_id))
+        )
+        if not cur.fetchone():
+            conn.close()
+            return err("Нет доступа", 403)
+        now = int(time.time())
+        cur.execute(
+            f"SELECT id, emoji FROM {SCHEMA}.group_message_reactions WHERE message_id = %s AND user_id = %s",
+            (int(msg_id), int(user_id))
+        )
+        existing = cur.fetchone()
+        if existing and existing[1] == emoji:
+            cur.execute(f"DELETE FROM {SCHEMA}.group_message_reactions WHERE id = %s", (existing[0],))
+            conn.close()
+            return ok({"ok": True, "removed": True})
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.group_message_reactions (message_id, user_id, emoji, created_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (message_id, user_id) DO UPDATE SET emoji = EXCLUDED.emoji, created_at = EXCLUDED.created_at""",
+            (int(msg_id), int(user_id), emoji, now)
+        )
+        conn.close()
+        return ok({"ok": True})
+
+    # ── delete_group_message ──────────────────────────────────────────────────
+    if action == "delete_group_message":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        msg_id = body.get("message_id")
+        if not msg_id:
+            conn.close()
+            return err("Укажите message_id")
+        # Автор может удалить своё; владелец/админ — любое в своей группе
+        cur.execute(
+            f"""SELECT m.sender_id, m.group_id, gm.role
+                FROM {SCHEMA}.group_messages m
+                LEFT JOIN {SCHEMA}.group_members gm ON gm.group_id = m.group_id AND gm.user_id = %s
+                WHERE m.id = %s""",
+            (int(user_id), int(msg_id))
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return err("Сообщение не найдено", 404)
+        sender_id, group_id, role = row
+        if not role or role == 'removed':
+            conn.close()
+            return err("Нет доступа", 403)
+        if sender_id != int(user_id) and role not in ('owner', 'admin'):
+            conn.close()
+            return err("Можно удалять только свои сообщения", 403)
+        now = int(time.time())
+        cur.execute(
+            f"UPDATE {SCHEMA}.group_messages SET removed_at = %s WHERE id = %s",
+            (now, int(msg_id))
+        )
+        conn.close()
+        return ok({"ok": True})
+
+    # ── edit_group_message ────────────────────────────────────────────────────
+    if action == "edit_group_message":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        msg_id = body.get("message_id")
+        new_text = (body.get("text") or "").strip()
+        if not msg_id or not new_text:
+            conn.close()
+            return err("Укажите message_id и text")
+        cur.execute(
+            f"SELECT sender_id FROM {SCHEMA}.group_messages WHERE id = %s AND removed_at IS NULL",
+            (int(msg_id),)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return err("Сообщение не найдено", 404)
+        if row[0] != int(user_id):
+            conn.close()
+            return err("Можно изменять только свои сообщения", 403)
+        now = int(time.time())
+        cur.execute(
+            f"UPDATE {SCHEMA}.group_messages SET text = %s, edited_at = %s WHERE id = %s",
+            (new_text[:4000], now, int(msg_id))
+        )
+        conn.close()
+        return ok({"ok": True, "edited_at": now})
+
+    # ── search_group_messages ─────────────────────────────────────────────────
+    if action == "search_group_messages":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        group_id = body.get("group_id")
+        query = (body.get("query") or "").strip()
+        if not group_id or not query:
+            conn.close()
+            return err("Укажите group_id и query")
+        cur.execute(
+            f"SELECT COALESCE(cleared_at, 0) FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s AND role <> 'removed'",
+            (int(group_id), int(user_id))
+        )
+        mrow = cur.fetchone()
+        if not mrow:
+            conn.close()
+            return err("Нет доступа", 403)
+        cleared_at = int(mrow[0] or 0)
+        like = "%" + query.replace("%", "\\%").replace("_", "\\_") + "%"
+        cur.execute(
+            f"""SELECT m.id, m.sender_id, u.name, m.text, m.created_at
+                FROM {SCHEMA}.group_messages m
+                JOIN {SCHEMA}.users u ON u.id = m.sender_id
+                WHERE m.group_id = %s AND m.removed_at IS NULL
+                  AND m.created_at > %s AND m.text ILIKE %s
+                ORDER BY m.created_at DESC
+                LIMIT 50""",
+            (int(group_id), cleared_at, like)
+        )
+        results = [{
+            "id": r[0], "sender_id": r[1], "sender_name": r[2],
+            "text": r[3] or "", "created_at": r[4]
+        } for r in cur.fetchall()]
+        conn.close()
+        return ok({"results": results})
 
     # ── get_group_members ─────────────────────────────────────────────────────
     if action == "get_group_members":
@@ -3810,14 +3981,17 @@ def handler(event: dict, context) -> dict:
             conn.close(); return err("Нужен X-User-Id")
         media_url = (body.get("media_url") or "").strip()
         caption = (body.get("caption") or "").strip()[:200] or None
+        media_type = (body.get("media_type") or "image").strip()
+        if media_type not in ("image", "video"):
+            media_type = "image"
         if not media_url:
             conn.close(); return err("Нужен media_url")
         now = int(time.time())
         expires = now + 24 * 3600
         cur.execute(
             f"""INSERT INTO {SCHEMA}.stories (user_id, media_url, media_type, caption, created_at, expires_at)
-                VALUES (%s, %s, 'image', %s, %s, %s) RETURNING id""",
-            (int(user_id), media_url, caption, now, expires)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (int(user_id), media_url, media_type, caption, now, expires)
         )
         sid = int(cur.fetchone()[0])
         conn.close()
@@ -3830,7 +4004,8 @@ def handler(event: dict, context) -> dict:
         now = int(time.time())
         cur.execute(
             f"""SELECT s.id, s.user_id, u.name, u.avatar_url, s.media_url, s.caption, s.created_at, s.expires_at,
-                       EXISTS(SELECT 1 FROM {SCHEMA}.story_views v WHERE v.story_id=s.id AND v.viewer_id=%s) AS viewed
+                       EXISTS(SELECT 1 FROM {SCHEMA}.story_views v WHERE v.story_id=s.id AND v.viewer_id=%s) AS viewed,
+                       COALESCE(s.media_type, 'image')
                 FROM {SCHEMA}.stories s
                 JOIN {SCHEMA}.users u ON u.id = s.user_id
                 WHERE s.expires_at > %s
@@ -3862,6 +4037,7 @@ def handler(event: dict, context) -> dict:
             groups[uid]["stories"].append({
                 "id": int(r[0]), "media_url": r[4], "caption": r[5],
                 "created_at": int(r[6]), "expires_at": int(r[7]), "viewed": viewed,
+                "media_type": r[9] or "image",
             })
         # Сначала «Моя», потом непросмотренные, потом просмотренные
         items = [groups[u] for u in order]
