@@ -228,5 +228,63 @@ def handler(event: dict, context) -> dict:
 
         return ok({"ok": True, "queued": len(subs)})
 
+    # ── broadcast — push всем пользователям (массовая рассылка от админа) ──────
+    if action == "broadcast":
+        message = body.get("message", "Сообщение от Nova")
+        sender_name = body.get("sender_name", "Nova")
+
+        # Берём подписки только тех, кто не отключил уведомления о сообщениях
+        cur.execute(
+            f"""SELECT ps.endpoint, ps.p256dh, ps.auth
+                FROM {SCHEMA}.push_subscriptions ps
+                JOIN {SCHEMA}.users u ON u.id = ps.user_id
+                WHERE COALESCE(u.notify_messages, TRUE) = TRUE"""
+        )
+        subs = cur.fetchall()
+        conn.close()
+
+        if not subs:
+            return ok({"ok": True, "queued": 0})
+
+        vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
+        vapid_public = os.environ.get("VAPID_PUBLIC_KEY", "")
+        if not vapid_private or not vapid_public:
+            return err("VAPID ключи не настроены", 500)
+
+        payload = json.dumps({
+            "title": f"📣 {sender_name}",
+            "body": message,
+            "url": "/",
+            "icon": "/icons/icon-192.png",
+            "badge": "/icons/icon-192.png",
+            "tag": "broadcast",
+        })
+
+        def _push_one(endpoint, p256dh_key, auth_key):
+            try:
+                webpush(
+                    subscription_info={
+                        "endpoint": endpoint,
+                        "keys": {"p256dh": p256dh_key, "auth": auth_key},
+                    },
+                    data=payload,
+                    vapid_private_key=vapid_private,
+                    vapid_claims={"sub": "mailto:nova@poehali.dev"},
+                )
+            except WebPushException:
+                pass
+            except Exception:
+                pass
+
+        threads = []
+        for endpoint, p256dh, auth_key in subs:
+            t = threading.Thread(target=_push_one, args=(endpoint, p256dh, auth_key), daemon=True)
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join(timeout=8)
+
+        return ok({"ok": True, "queued": len(subs)})
+
     conn.close()
     return err("Неизвестный action")

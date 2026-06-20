@@ -23,6 +23,14 @@
       "body": {"action": "report_delete", "report_id": 1},
       "expectedStatus": 403,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "broadcast rejected without auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "broadcast", "text": "test"},
+      "expectedStatus": 403,
+      "bodyMatcher": "partial"
     }
   ]
 }

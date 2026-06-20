@@ -9,6 +9,7 @@ import { CallScreen } from "@/components/messenger/CallScreen";
 import { AdminPanel } from "@/components/messenger/AdminPanel";
 import InstallPrompt from "@/components/messenger/InstallPrompt";
 import InstallWelcome from "@/components/messenger/InstallWelcome";
+import { toast } from "@/hooks/use-toast";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
 import GroupCreateModal from "@/components/messenger/GroupCreateModal";
@@ -416,6 +417,10 @@ export default function Index() {
             }
           })
           .catch(() => { /* ignore */ });
+      }
+      // Входящее сообщение/рассылка пока приложение открыто — показываем тост
+      if (d.type === "in_app_message" && d.body) {
+        toast({ title: d.title || "Nova", description: d.body, duration: 6000 });
       }
     };
     navigator.serviceWorker.addEventListener("message", onSwMessage);

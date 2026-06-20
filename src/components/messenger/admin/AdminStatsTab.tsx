@@ -85,6 +85,24 @@ export function AdminStatsTab({
     });
   }, [token]);
 
+  // Рассылка всем пользователям
+  const [bcText, setBcText] = useState("");
+  const [bcSending, setBcSending] = useState(false);
+  const [bcResult, setBcResult] = useState<string | null>(null);
+  const [bcConfirm, setBcConfirm] = useState(false);
+
+  const sendBroadcast = async () => {
+    if (!token || !bcText.trim()) return;
+    setBcSending(true);
+    setBcResult(null);
+    const r = await adminApi("broadcast", { text: bcText.trim() }, token) as { sent?: number; error?: string };
+    setBcSending(false);
+    setBcConfirm(false);
+    if (r.error) { setBcResult("Ошибка: " + r.error); return; }
+    setBcResult(`Отправлено ${r.sent ?? 0} пользователям`);
+    setBcText("");
+  };
+
   if (!stats) {
     return (
       <div className="space-y-4 animate-fade-in">
@@ -99,6 +117,57 @@ export function AdminStatsTab({
 
   return (
     <div className="space-y-4 animate-fade-in">
+
+      {/* Рассылка всем пользователям */}
+      <div className="glass rounded-2xl p-4 border border-violet-500/20">
+        <div className="flex items-center gap-2 mb-2">
+          <Icon name="Megaphone" size={16} className="text-violet-400" />
+          <span className="font-bold text-sm">Рассылка всем</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground mb-2">
+          Сообщение придёт всем пользователям в чат от «Nova Dev» и пуш-уведомлением.
+        </p>
+        <textarea
+          value={bcText}
+          onChange={e => setBcText(e.target.value)}
+          rows={3}
+          maxLength={1000}
+          placeholder="Например: Вышло обновление Nova 1.1 — реакции и поиск в группах!"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-violet-500/40 resize-none mb-2"
+        />
+        {bcResult && (
+          <p className={`text-xs mb-2 ${bcResult.startsWith("Ошибка") ? "text-red-400" : "text-emerald-400"}`}>{bcResult}</p>
+        )}
+        {!bcConfirm ? (
+          <button
+            onClick={() => setBcConfirm(true)}
+            disabled={!bcText.trim()}
+            className="w-full py-2.5 grad-primary rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Icon name="Send" size={15} />
+            Отправить всем
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setBcConfirm(false)}
+              className="flex-1 py-2.5 glass rounded-xl text-sm font-medium hover:bg-white/10"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={sendBroadcast}
+              disabled={bcSending}
+              className="flex-1 py-2.5 bg-red-500/20 text-red-300 rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-red-500/30 disabled:opacity-50"
+            >
+              {bcSending
+                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                : <Icon name="Check" size={15} />}
+              Точно отправить?
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Новые фичи */}
       <div className="glass rounded-2xl p-4">

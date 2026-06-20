@@ -1,10 +1,11 @@
-const CACHE = "nova-v6";
+const CACHE = "nova-v7";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(CACHE).then((c) => c.addAll(["/"]))
   );
-  self.skipWaiting();
+  // НЕ вызываем skipWaiting автоматически — ждём подтверждения пользователя
+  // (через сообщение SKIP_WAITING), чтобы показать баннер «Обновить».
 });
 
 self.addEventListener("activate", (e) => {
@@ -14,6 +15,13 @@ self.addEventListener("activate", (e) => {
     )
   );
   self.clients.claim();
+});
+
+// Пользователь нажал «Обновить» — активируем новый SW немедленно.
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("fetch", (e) => {
@@ -75,7 +83,7 @@ self.addEventListener("push", (e) => {
       const visible = list.find((c) => c.visibilityState === "visible" && c.focused);
       if (visible && !isCall) {
         // Передадим в окно, пусть само рендерит in-app тост
-        visible.postMessage({ type: "in_app_message", chat_id: data.chat_id, body: options.body });
+        visible.postMessage({ type: "in_app_message", chat_id: data.chat_id, title: data.title || "Nova", body: options.body });
         return;
       }
       await self.registration.showNotification(data.title || "Nova", options);

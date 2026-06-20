@@ -435,6 +435,73 @@ def handler(event: dict, context) -> dict:
 
         return ok({"ok": True, "msg_id": msg_id, "chat_id": chat_id})
 
+    # ── broadcast — рассылка сообщения ВСЕМ пользователям ──────────────────────
+    if action == "broadcast":
+        text = (body.get("text") or "").strip()
+        if not text:
+            conn.close()
+            return err("Нужен text")
+
+        # Системный пользователь "Nova Dev"
+        cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone = '00000000000'")
+        dev_user = cur.fetchone()
+        now = int(time.time())
+        if not dev_user:
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.users (phone, name, last_seen, created_at)
+                    VALUES ('00000000000', 'Nova Dev', %s, %s)
+                    RETURNING id""",
+                (now, now)
+            )
+            dev_user_id = cur.fetchone()[0]
+        else:
+            dev_user_id = dev_user[0]
+
+        # Все реальные пользователи, кроме системного
+        cur.execute(
+            f"SELECT id FROM {SCHEMA}.users WHERE phone <> '00000000000'"
+        )
+        user_ids = [r[0] for r in cur.fetchall()]
+
+        sent = 0
+        for target_user_id in user_ids:
+            uid, pid = sorted([dev_user_id, int(target_user_id)])
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.chats (user1_id, user2_id, created_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (user1_id, user2_id) DO UPDATE SET user1_id = EXCLUDED.user1_id
+                    RETURNING id""",
+                (uid, pid, now)
+            )
+            chat_id = cur.fetchone()[0]
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.messages (chat_id, sender_id, text, created_at)
+                    VALUES (%s, %s, %s, %s)""",
+                (chat_id, dev_user_id, text, now)
+            )
+            cur.execute(
+                f"UPDATE {SCHEMA}.chats SET last_message = %s, last_message_at = %s WHERE id = %s",
+                (text[:100], now, chat_id)
+            )
+            sent += 1
+        conn.close()
+
+        # Один общий push-вызов на массовую рассылку — push-notify сам разошлёт всем
+        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        if push_url:
+            try:
+                push_body = json.dumps({
+                    "action": "broadcast",
+                    "sender_name": "Nova Dev",
+                    "message": text[:140],
+                }).encode("utf-8")
+                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=15)
+            except Exception:
+                pass
+
+        return ok({"ok": True, "sent": sent})
+
     # ── support: список тикетов ────────────────────────────────────────────────
     if action == "support_list_tickets":
         status_filter = (body.get("status") or "all").strip()
