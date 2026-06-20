@@ -1,4 +1,4 @@
-const CACHE = "nova-v5";
+const CACHE = "nova-v6";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
