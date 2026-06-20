@@ -8,6 +8,7 @@ import { ContactsPanel } from "@/components/messenger/ContactsPanel";
 import { CallScreen } from "@/components/messenger/CallScreen";
 import { AdminPanel } from "@/components/messenger/AdminPanel";
 import InstallPrompt from "@/components/messenger/InstallPrompt";
+import InstallWelcome from "@/components/messenger/InstallWelcome";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
 import GroupCreateModal from "@/components/messenger/GroupCreateModal";
@@ -450,7 +451,12 @@ export default function Index() {
     return <ConsentScreen onAccept={() => setConsentGiven(true)} />;
   }
 
-  if (!currentUser) return <AuthScreen onDone={login} />;
+  if (!currentUser) return (
+    <>
+      <AuthScreen onDone={login} />
+      <InstallWelcome />
+    </>
+  );
 
   // Экран политики конфиденциальности (доступен из настроек)
   if (showPrivacyPolicy) {
