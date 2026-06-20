@@ -7,6 +7,22 @@ from pywebpush import webpush, WebPushException
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
+
+def _clean_key(raw: str) -> str:
+    """Очищает VAPID-ключ от лишних кавычек, запятых и пробелов.
+    Нужно на случай, если ключ скопировали из вывода web-push с обёрткой."""
+    if not raw:
+        return ""
+    return raw.strip().strip('",').strip().strip('"').strip()
+
+
+def _vapid_public() -> str:
+    return _clean_key(os.environ.get("VAPID_PUBLIC_KEY", ""))
+
+
+def _vapid_private() -> str:
+    return _clean_key(os.environ.get("VAPID_PRIVATE_KEY", ""))
+
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -47,8 +63,7 @@ def handler(event: dict, context) -> dict:
 
     # ── vapid_key — публичный ключ для фронтенда ──────────────────────────────
     if action == "vapid_key":
-        pub_key = os.environ.get("VAPID_PUBLIC_KEY", "")
-        return ok({"public_key": pub_key})
+        return ok({"public_key": _vapid_public()})
 
     conn = get_conn()
     cur = conn.cursor()
@@ -112,8 +127,8 @@ def handler(event: dict, context) -> dict:
         if not subs:
             return ok({"ok": True, "sent": 0})
 
-        vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
-        vapid_public = os.environ.get("VAPID_PUBLIC_KEY", "")
+        vapid_private = _vapid_private()
+        vapid_public = _vapid_public()
         if not vapid_private or not vapid_public:
             return err("VAPID ключи не настроены", 500)
 
@@ -184,8 +199,8 @@ def handler(event: dict, context) -> dict:
         if not subs:
             return ok({"ok": True, "sent": 0})
 
-        vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
-        vapid_public = os.environ.get("VAPID_PUBLIC_KEY", "")
+        vapid_private = _vapid_private()
+        vapid_public = _vapid_public()
         if not vapid_private or not vapid_public:
             return err("VAPID ключи не настроены", 500)
 
@@ -246,8 +261,8 @@ def handler(event: dict, context) -> dict:
         if not subs:
             return ok({"ok": True, "queued": 0})
 
-        vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
-        vapid_public = os.environ.get("VAPID_PUBLIC_KEY", "")
+        vapid_private = _vapid_private()
+        vapid_public = _vapid_public()
         if not vapid_private or not vapid_public:
             return err("VAPID ключи не настроены", 500)
 

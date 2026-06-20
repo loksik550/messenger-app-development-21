@@ -103,8 +103,11 @@ export async function pushApi(action: string, body: Record<string, unknown> = {}
 }
 
 export function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  // Чистим ключ от лишних кавычек, запятых и пробелов (на случай, если
+  // VAPID-ключ скопировали с обёрткой из вывода web-push).
+  const cleaned = (base64String || "").trim().replace(/^[",\s]+|[",\s]+$/g, "");
+  const padding = "=".repeat((4 - (cleaned.length % 4)) % 4);
+  const base64 = (cleaned + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = window.atob(base64);
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 }

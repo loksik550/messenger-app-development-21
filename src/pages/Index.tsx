@@ -213,8 +213,9 @@ export default function Index() {
           p256dh: (subJson.keys as Record<string, string>)?.p256dh || "",
           auth: (subJson.keys as Record<string, string>)?.auth || "",
         }, currentUser.id);
-      } catch {
-        // Пользователь отклонил или браузер не поддерживает
+      } catch (e) {
+        // Пользователь отклонил, браузер не поддерживает или невалидный VAPID-ключ
+        console.warn("[push] Не удалось подписаться на уведомления:", e);
       }
     };
 
