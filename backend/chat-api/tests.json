@@ -136,6 +136,22 @@
       "body": {"action": "search_group_messages", "group_id": 1, "query": "test"},
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "auth_password rejects short password",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "auth_password", "phone": "79991112233", "password": "1"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "auth_password rejects bad phone",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "auth_password", "phone": "123", "password": "secret"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

@@ -37,7 +37,7 @@ export function setNotifyId(id: NotifyId) { localStorage.setItem(LS_NOTIFY, id);
 
 export function getVolume(): number {
   const v = Number(localStorage.getItem(LS_VOLUME));
-  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.7;
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 1.0;
 }
 export function setVolume(v: number) { localStorage.setItem(LS_VOLUME, String(v)); }
 

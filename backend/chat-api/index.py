@@ -1,9 +1,30 @@
 import os
 import json
 import time
+import hashlib
+import hmac
 import urllib.request
 import threading
 import psycopg2
+
+
+def _hash_password(password: str) -> str:
+    """Хеширует пароль с солью через PBKDF2 (надёжно, без внешних зависимостей)."""
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100000)
+    return "pbkdf2$" + salt.hex() + "$" + dk.hex()
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        if not stored or not stored.startswith("pbkdf2$"):
+            return False
+        _, salt_hex, dk_hex = stored.split("$")
+        salt = bytes.fromhex(salt_hex)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100000)
+        return hmac.compare_digest(dk.hex(), dk_hex)
+    except Exception:
+        return False
 
 
 def _fire_and_forget_http(url: str, body: bytes, timeout: float = 3.0) -> None:
@@ -297,6 +318,67 @@ def handler(event: dict, context) -> dict:
             except Exception:
                 pass
         return ok({"user": serialize_user(row)})
+
+    # ── auth_password — вход/регистрация по паролю (без SMS) ───────────────────
+    if action == "auth_password":
+        phone = (body.get("phone") or "").strip()
+        password = (body.get("password") or "")
+        name = (body.get("name") or "").strip()
+        digits = "".join(c for c in phone if c.isdigit())
+        if not digits or len(digits) < 11:
+            conn.close()
+            return err("Введите корректный номер телефона")
+        if len(password) < 4:
+            conn.close()
+            return err("Пароль должен быть не короче 4 символов")
+
+        # Rate-limit по IP
+        ip = (event.get("requestContext", {}) or {}).get("identity", {}).get("sourceIp", "anon")
+        if not _rate_limit(cur, f"auth:{ip}", 15):
+            conn.close()
+            return err("Слишком много попыток, подождите минуту", 429)
+
+        cur.execute(f"SELECT id, password_hash FROM {SCHEMA}.users WHERE phone = %s", (digits,))
+        found = cur.fetchone()
+
+        if found:
+            user_id_db, pwd_hash = found
+            if pwd_hash:
+                # Существующий пользователь с паролем — проверяем
+                if not _verify_password(password, pwd_hash):
+                    conn.close()
+                    return err("Неверный пароль")
+            else:
+                # Старый пользователь без пароля (например из SMS-эпохи) —
+                # задаём пароль при первом входе.
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET password_hash = %s WHERE id = %s",
+                    (_hash_password(password), user_id_db)
+                )
+            cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (int(time.time()), user_id_db))
+            cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (user_id_db,))
+            row = cur.fetchone()
+            conn.close()
+            return ok({"user": serialize_user(row), "existed": True})
+
+        # Новый пользователь — для регистрации нужно имя
+        if not name:
+            conn.close()
+            return ok({"need_name": True})
+
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.users (phone, name, password_hash, last_seen, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id""",
+            (digits, name, _hash_password(password), int(time.time()), int(time.time()))
+        )
+        new_id = cur.fetchone()[0]
+        _grant_xp(cur, new_id, "registered")
+        _award_badge(cur, new_id, "newcomer")
+        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id=%s", (new_id,))
+        row = cur.fetchone()
+        conn.close()
+        return ok({"user": serialize_user(row), "existed": False})
 
     # ── get_me ────────────────────────────────────────────────────────────────
     if action == "get_me":

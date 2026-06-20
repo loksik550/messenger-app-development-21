@@ -1,11 +1,10 @@
-const CACHE = "nova-v7";
+const CACHE = "nova-v8";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(CACHE).then((c) => c.addAll(["/"]))
   );
-  // НЕ вызываем skipWaiting автоматически — ждём подтверждения пользователя
-  // (через сообщение SKIP_WAITING), чтобы показать баннер «Обновить».
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {

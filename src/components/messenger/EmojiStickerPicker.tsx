@@ -59,6 +59,7 @@ export function EmojiStickerPicker({
   const [tab, setTab] = useState<"emoji" | "stickers">("emoji");
   const [cat, setCat] = useState<string>(EMOJI_CATEGORIES[0].id);
   const [recent, setRecent] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,77 +87,128 @@ export function EmojiStickerPicker({
     try { localStorage.setItem("nova_recent_emoji", JSON.stringify(next)); } catch { /* ignore */ }
   };
 
+  // Поиск по эмодзи: по названию категории (смайлы, люди, еда…)
+  const q = search.trim().toLowerCase();
+  const searchResults = q
+    ? Array.from(new Set(
+        EMOJI_CATEGORIES
+          .filter(c => c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q))
+          .flatMap(c => c.emojis)
+      ))
+    : [];
+
   return (
     <div className="fixed inset-0 z-[120] flex flex-col justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 animate-fade-in" />
       <div
         ref={ref}
         onClick={e => e.stopPropagation()}
-        className="relative w-full glass-strong rounded-t-3xl p-3 pt-2 shadow-2xl animate-slide-up"
-        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        className="relative w-full glass-strong rounded-t-3xl pt-2 shadow-2xl animate-slide-up flex flex-col"
+        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))", maxHeight: "70vh" }}
       >
-        <div className="flex justify-center pb-2">
+        {/* Ручка */}
+        <div className="flex justify-center pb-2 flex-shrink-0">
           <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
-      <div className="flex gap-1 mb-2 p-1 bg-white/5 rounded-xl">
-        <button
-          onClick={() => setTab("emoji")}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition ${tab === "emoji" ? "grad-primary text-white" : "text-muted-foreground"}`}
-        >Эмодзи</button>
-        <button
-          onClick={() => setTab("stickers")}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition ${tab === "stickers" ? "grad-primary text-white" : "text-muted-foreground"}`}
-        >Стикеры</button>
-      </div>
 
-      {tab === "emoji" ? (
-        <>
-          {recent.length > 0 && (
-            <>
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">Недавние</div>
-              <div className="grid grid-cols-8 gap-0.5 mb-2 max-h-20 overflow-y-auto">
-                {recent.map((e, i) => (
-                  <button key={i} onClick={() => pick(e)} className="text-xl p-1.5 rounded-lg hover:bg-white/10">{e}</button>
-                ))}
-              </div>
-            </>
-          )}
-          <div className="grid grid-cols-8 gap-0.5 max-h-[40vh] overflow-y-auto">
-            {selected.emojis.map((e, i) => (
-              <button key={i} onClick={() => pick(e)} className="text-xl p-1.5 rounded-lg hover:bg-white/10 transition">{e}</button>
-            ))}
-          </div>
-          <div className="flex gap-1 mt-2 pt-2 border-t border-white/5 overflow-x-auto no-scrollbar">
-            {EMOJI_CATEGORIES.map(c => (
-              <button
-                key={c.id}
-                onClick={() => setCat(c.id)}
-                className={`p-1.5 rounded-lg flex-shrink-0 ${cat === c.id ? "bg-violet-500/20 text-violet-400" : "text-muted-foreground hover:bg-white/8"}`}
-                title={c.label}
-              >
-                <Icon name={c.icon} size={16} />
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="max-h-[44vh] overflow-y-auto space-y-3">
-          {STICKER_PACKS.map(p => (
-            <div key={p.id}>
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">{p.name}</div>
-              <div className="grid grid-cols-5 gap-1">
-                {p.emojis.map((e, i) => (
-                  <button
-                    key={i}
-                    onClick={() => pick(e)}
-                    className="text-4xl aspect-square rounded-2xl hover:bg-white/10 hover:scale-110 transition flex items-center justify-center"
-                  >{e}</button>
-                ))}
-              </div>
+        {/* Поиск + категории-эмодзи сверху (как в Telegram) */}
+        {tab === "emoji" && (
+          <div className="px-3 flex-shrink-0">
+            <div className="flex items-center gap-2 bg-white/8 rounded-2xl px-3 py-2 mb-2">
+              <Icon name="Search" size={16} className="text-muted-foreground" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Поиск"
+                className="flex-1 bg-transparent outline-none text-sm placeholder-muted-foreground"
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-foreground">
+                  <Icon name="X" size={14} />
+                </button>
+              )}
             </div>
-          ))}
+            {!q && (
+              <div className="flex gap-1 mb-1 overflow-x-auto no-scrollbar pb-1">
+                {EMOJI_CATEGORIES.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => setCat(c.id)}
+                    className={`p-2 rounded-xl flex-shrink-0 transition ${cat === c.id ? "bg-violet-500/20 text-violet-400" : "text-muted-foreground hover:bg-white/8"}`}
+                    title={c.label}
+                  >
+                    <Icon name={c.icon} size={18} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Контент */}
+        <div className="flex-1 overflow-y-auto px-3">
+          {tab === "emoji" ? (
+            q ? (
+              <div className="grid grid-cols-8 gap-0.5 py-1">
+                {searchResults.map((e, i) => (
+                  <button key={i} onClick={() => pick(e)} className="text-2xl p-1.5 rounded-lg hover:bg-white/10 transition">{e}</button>
+                ))}
+              </div>
+            ) : (
+              <>
+                {recent.length > 0 && (
+                  <>
+                    <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1 mt-1">Недавние</div>
+                    <div className="grid grid-cols-8 gap-0.5 mb-2">
+                      {recent.map((e, i) => (
+                        <button key={i} onClick={() => pick(e)} className="text-2xl p-1.5 rounded-lg hover:bg-white/10">{e}</button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">{selected.label}</div>
+                <div className="grid grid-cols-8 gap-0.5 pb-1">
+                  {selected.emojis.map((e, i) => (
+                    <button key={i} onClick={() => pick(e)} className="text-2xl p-1.5 rounded-lg hover:bg-white/10 transition">{e}</button>
+                  ))}
+                </div>
+              </>
+            )
+          ) : (
+            <div className="space-y-3 py-1">
+              {STICKER_PACKS.map(p => (
+                <div key={p.id}>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">{p.name}</div>
+                  <div className="grid grid-cols-5 gap-1">
+                    {p.emojis.map((e, i) => (
+                      <button
+                        key={i}
+                        onClick={() => pick(e)}
+                        className="text-4xl aspect-square rounded-2xl hover:bg-white/10 hover:scale-110 transition flex items-center justify-center"
+                      >{e}</button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Нижние вкладки — как в Telegram */}
+        <div className="flex items-center justify-center gap-1 px-3 pt-2 mt-1 border-t border-white/5 flex-shrink-0">
+          <button
+            onClick={() => setTab("stickers")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition ${tab === "stickers" ? "bg-white/12 text-white" : "text-muted-foreground hover:bg-white/8"}`}
+          >
+            <Icon name="Sticker" size={16} /> Стикеры
+          </button>
+          <button
+            onClick={() => setTab("emoji")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition ${tab === "emoji" ? "bg-white/12 text-white" : "text-muted-foreground hover:bg-white/8"}`}
+          >
+            <Icon name="Smile" size={16} /> Эмодзи
+          </button>
+        </div>
       </div>
     </div>
   );

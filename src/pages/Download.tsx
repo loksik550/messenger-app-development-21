@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
-import { APP_VERSION, APK_URL, APK_SIZE } from "@/lib/version";
+import { APP_VERSION } from "@/lib/version";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -34,7 +34,6 @@ export default function Download() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [showIOSHint, setShowIOSHint] = useState(false);
-  const [showApkSteps, setShowApkSteps] = useState(false);
 
   useEffect(() => {
     setPlatform(detectPlatform());
@@ -145,58 +144,6 @@ export default function Download() {
                 </Link>
               </div>
             )}
-
-            {/* Скачать .apk для Android */}
-            <div className="mb-6 max-w-md">
-              {APK_URL ? (
-                <a href={APK_URL} download className="block">
-                  <div className="flex items-center gap-3 px-5 py-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition cursor-pointer">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center flex-shrink-0">
-                      <Icon name="Smartphone" size={22} className="text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold flex items-center gap-2">
-                        Скачать для Android (.apk)
-                      </div>
-                      <div className="text-xs text-white/60">Файл приложения · {APK_SIZE} · версия {APP_VERSION}</div>
-                    </div>
-                    <Icon name="Download" size={20} className="text-emerald-400 flex-shrink-0" />
-                  </div>
-                </a>
-              ) : (
-                <button onClick={() => setShowApkSteps(v => !v)} className="w-full text-left">
-                  <div className="flex items-center gap-3 px-5 py-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center flex-shrink-0">
-                      <Icon name="Smartphone" size={22} className="text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold">Версия для Android (.apk)</div>
-                      <div className="text-xs text-white/60">Скоро появится — как установить</div>
-                    </div>
-                    <Icon name={showApkSteps ? "ChevronUp" : "ChevronDown"} size={20} className="text-white/50 flex-shrink-0" />
-                  </div>
-                </button>
-              )}
-
-              {(showApkSteps || APK_URL) && (
-                <div className="mt-3 px-5 py-4 rounded-2xl bg-black/20 border border-white/5 space-y-2.5">
-                  <p className="text-xs font-semibold text-white/80 mb-1">Как установить .apk:</p>
-                  {[
-                    "Скачай файл по кнопке выше",
-                    "Открой его — телефон попросит разрешить установку из этого источника, нажми «Разрешить»",
-                    "Подтверди установку — иконка Nova появится на экране",
-                  ].map((t, i) => (
-                    <div key={i} className="flex items-start gap-2.5">
-                      <span className="w-5 h-5 rounded-full bg-gradient-to-br from-violet-500 to-blue-500 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                      <span className="text-xs text-white/70 leading-relaxed">{t}</span>
-                    </div>
-                  ))}
-                  <p className="text-[11px] text-white/40 pt-1">
-                    .apk работает только на Android. На iPhone пользуйся установкой через браузер (кнопка выше).
-                  </p>
-                </div>
-              )}
-            </div>
 
             <div className="flex flex-wrap gap-4 text-sm text-white/60">
               <span className="flex items-center gap-1.5">

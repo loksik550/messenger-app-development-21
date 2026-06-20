@@ -10,7 +10,6 @@ import Index from "./pages/Index";
 import Download from "./pages/Download";
 import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
-import UpdatePrompt from "@/components/messenger/UpdatePrompt";
 
 const queryClient = new QueryClient();
 
@@ -53,7 +52,6 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <NativeShell />
-        <UpdatePrompt />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/download" element={<Download />} />

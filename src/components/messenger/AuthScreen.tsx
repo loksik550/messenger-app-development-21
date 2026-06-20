@@ -1,25 +1,18 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { api, smsApi, type User, type BeforeInstallPromptEvent } from "@/lib/api";
+import { api, type User, type BeforeInstallPromptEvent } from "@/lib/api";
 
 export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
-  const [step, setStep] = useState<"phone" | "code" | "name">("phone");
+  const [step, setStep] = useState<"phone" | "password" | "name">("phone");
   const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
   const [showInstall, setShowInstall] = useState(false);
-  const [tempUserId, setTempUserId] = useState<number | null>(null);
-  const [resendIn, setResendIn] = useState(0);
-
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const t = setInterval(() => setResendIn(s => (s <= 1 ? 0 : s - 1)), 1000);
-    return () => clearInterval(t);
-  }, [resendIn]);
 
   useEffect(() => {
     const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); setShowInstall(true); };
@@ -49,68 +42,27 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
     setTimeout(() => setShake(false), 500);
   };
 
-  const handlePhoneSubmit = async () => {
+  const handlePhoneSubmit = () => {
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 11) { triggerShake(); return; }
-    setLoading(true);
     setErrorMsg("");
-    try {
-      const r = await smsApi("send", { phone: digits });
-      if (r.ok) {
-        setStep("code");
-        setCode("");
-        setResendIn(60);
-      } else {
-        setErrorMsg(r.error || "Не удалось отправить код");
-        triggerShake();
-      }
-    } catch {
-      setErrorMsg("Нет соединения, попробуйте позже");
-      triggerShake();
-    } finally {
-      setLoading(false);
-    }
+    setStep("password");
   };
 
-  const handleResend = async () => {
-    if (resendIn > 0 || loading) return;
+  const handlePasswordSubmit = async () => {
     const digits = phone.replace(/\D/g, "");
+    if (password.length < 4) { setErrorMsg("Пароль не короче 4 символов"); triggerShake(); return; }
     setLoading(true);
     setErrorMsg("");
     try {
-      const r = await smsApi("send", { phone: digits });
-      if (r.ok) { setResendIn(60); } else { setErrorMsg(r.error || "Не удалось отправить код"); }
-    } catch {
-      setErrorMsg("Нет соединения, попробуйте позже");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCodeSubmit = async () => {
-    const digits = phone.replace(/\D/g, "");
-    const codeDigits = code.replace(/\D/g, "");
-    if (codeDigits.length < 4) { triggerShake(); return; }
-    setLoading(true);
-    setErrorMsg("");
-    try {
-      const v = await smsApi("verify", { phone: digits, code: codeDigits });
-      if (!v.ok) {
-        setErrorMsg(v.error || "Неверный код");
-        triggerShake();
-        return;
-      }
-      // Код верный — проверяем, есть ли уже аккаунт
-      const data = await api("register", { phone: digits, name: "_check_" });
-      if (data.user && data.existed) {
+      const data = await api("auth_password", { phone: digits, password });
+      if (data.user) {
         onDone(data.user);
-      } else if (data.user && !data.existed) {
-        setTempUserId(data.user.id);
-        setStep("name");
-      } else if (data.error) {
+      } else if (data.need_name) {
+        // Новый пользователь — спрашиваем имя
         setStep("name");
       } else {
-        setErrorMsg("Ошибка входа, попробуйте позже");
+        setErrorMsg(data.error || "Ошибка входа");
         triggerShake();
       }
     } catch {
@@ -127,12 +79,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
     setErrorMsg("");
     try {
       const digits = phone.replace(/\D/g, "");
-      if (tempUserId) {
-        // Обновляем имя у уже созданного пользователя
-        const data = await api("update_profile", { name: name.trim() }, tempUserId);
-        if (data.user) { onDone(data.user); return; }
-      }
-      const data = await api("register", { phone: digits, name: name.trim() });
+      const data = await api("auth_password", { phone: digits, password, name: name.trim() });
       if (data.user) {
         onDone(data.user);
       } else {
@@ -197,11 +144,11 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
 
         {/* Step indicators */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          {(["phone", "code", "name"] as const).map((s, i) => (
+          {(["phone", "password", "name"] as const).map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div className={`h-2 rounded-full transition-all duration-300 ${
                 step === s ? "w-6 grad-primary" :
-                (["phone", "code", "name"].indexOf(step) > i ? "w-2 bg-violet-500" : "w-2 bg-white/15")
+                (["phone", "password", "name"].indexOf(step) > i ? "w-2 bg-violet-500" : "w-2 bg-white/15")
               }`} />
             </div>
           ))}
@@ -247,47 +194,42 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
           </div>
         )}
 
-        {/* Code step */}
-        {step === "code" && (
+        {/* Password step */}
+        {step === "password" && (
           <div className="animate-fade-in space-y-4">
             <div>
               <button onClick={() => { setStep("phone"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
                 <Icon name="ChevronLeft" size={16} /> Изменить номер
               </button>
-              <h2 className="text-xl font-bold mb-1">Введите код из SMS</h2>
-              <p className="text-sm text-muted-foreground">Мы отправили код на {formatPhone(phone)}</p>
+              <h2 className="text-xl font-bold mb-1">Введите пароль</h2>
+              <p className="text-sm text-muted-foreground">Для номера {formatPhone(phone)}. Новый пользователь — придумайте пароль.</p>
             </div>
             <div className={`flex items-center gap-3 glass rounded-2xl px-4 py-4 border ${shake ? "border-red-500/50" : "border-white/0 focus-within:border-violet-500/40"} transition-colors`}>
-              <Icon name="ShieldCheck" size={18} className="text-muted-foreground" />
+              <Icon name="Lock" size={18} className="text-muted-foreground" />
               <input
                 autoFocus
-                value={code}
-                onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                onKeyDown={e => e.key === "Enter" && handleCodeSubmit()}
-                placeholder="Код из SMS"
-                inputMode="numeric"
-                className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium tracking-[0.3em]"
-                type="tel"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handlePasswordSubmit()}
+                placeholder="Пароль"
+                className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
+                type={showPassword ? "text" : "password"}
               />
+              <button onClick={() => setShowPassword(v => !v)} className="text-muted-foreground hover:text-foreground">
+                <Icon name={showPassword ? "EyeOff" : "Eye"} size={18} />
+              </button>
             </div>
             {errorMsg && <p className="text-center text-sm text-red-400 animate-fade-in">{errorMsg}</p>}
             <button
-              onClick={handleCodeSubmit}
+              onClick={handlePasswordSubmit}
               disabled={loading}
               className="w-full py-4 grad-primary rounded-2xl text-white font-bold text-base glow-primary hover:opacity-90 transition-opacity disabled:opacity-70 flex items-center justify-center gap-2"
             >
               {loading ? (
                 <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Проверяем...</>
               ) : (
-                <>Подтвердить <Icon name="ArrowRight" size={18} /></>
+                <>Войти <Icon name="ArrowRight" size={18} /></>
               )}
-            </button>
-            <button
-              onClick={handleResend}
-              disabled={resendIn > 0 || loading}
-              className="w-full text-center text-sm text-violet-400 hover:text-violet-300 transition-colors disabled:text-muted-foreground disabled:cursor-default"
-            >
-              {resendIn > 0 ? `Отправить код повторно через ${resendIn} с` : "Отправить код повторно"}
             </button>
           </div>
         )}
@@ -296,8 +238,8 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
         {step === "name" && (
           <div className="animate-fade-in space-y-4">
             <div>
-              <button onClick={() => setStep("phone")} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
-                <Icon name="ChevronLeft" size={16} /> Изменить номер
+              <button onClick={() => { setStep("password"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
+                <Icon name="ChevronLeft" size={16} /> Назад
               </button>
               <h2 className="text-xl font-bold mb-1">Как вас зовут?</h2>
               <p className="text-sm text-muted-foreground">Ваше имя увидят собеседники</p>
