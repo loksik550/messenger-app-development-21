@@ -9,6 +9,7 @@ import { native } from "@/lib/native";
 import Index from "./pages/Index";
 import Download from "./pages/Download";
 import Privacy from "./pages/Privacy";
+import Security from "./pages/Security";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -60,6 +61,7 @@ const App = () => (
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/privacy-policy" element={<Privacy />} />
           <Route path="/politika-konfidencialnosti" element={<Privacy />} />
+          <Route path="/security" element={<Security />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
