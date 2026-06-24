@@ -4,9 +4,9 @@ import Icon from "@/components/ui/icon";
 
 // ── Подставь свои ссылки ──────────────────────────────────────────────
 // Ссылка на отчёт VirusTotal (скопируй из адресной строки на странице отчёта)
-const VIRUSTOTAL_URL = "https://www.virustotal.com/";
+const VIRUSTOTAL_URL = "https://www.virustotal.com/gui/file/027218c606dcf810baf3db48982258124b2b984a6d3c6e1f6b1b22863050dcca/detection";
 // Ссылка на публичный репозиторий GitHub (после подключения через «Скачать → Подключить GitHub»)
-const GITHUB_URL = "https://github.com/";
+const GITHUB_URL = "https://github.com/loksik550/messenger-app-development-21";
 // ──────────────────────────────────────────────────────────────────────
 
 const UPDATED = "24 июня 2026 г.";
