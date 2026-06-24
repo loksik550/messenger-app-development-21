@@ -298,8 +298,16 @@ export default function Download() {
           </p>
         </div>
 
-        <footer className="mt-20 text-center text-sm text-white/40">
-          © {new Date().getFullYear()} Nova • Сделано с любовью
+        <footer className="mt-20 text-center text-sm text-white/40 space-y-3">
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+            <Link to="/privacy" className="hover:text-white/70 transition underline-offset-2 hover:underline">
+              Политика конфиденциальности
+            </Link>
+            <Link to="/security" className="hover:text-white/70 transition underline-offset-2 hover:underline">
+              Безопасность
+            </Link>
+          </div>
+          <div>© {new Date().getFullYear()} Nova • Сделано с любовью</div>
         </footer>
       </main>
 
