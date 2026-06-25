@@ -1,7 +1,7 @@
 {
-  "name": "Nova — социальная сеть",
+  "name": "Nova — мессенджер",
   "short_name": "Nova",
-  "description": "Nova — социальная сеть для общения: истории, сообщества, друзья и звонки",
+  "description": "Nova — мессенджер для приватного общения: личные и групповые чаты, звонки, фото, видео и голосовые сообщения",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",
@@ -35,5 +35,5 @@
       "form_factor": "narrow"
     }
   ],
-  "categories": ["social", "communication"]
+  "categories": ["communication", "social"]
 }

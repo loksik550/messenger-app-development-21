@@ -399,7 +399,7 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
           onClick={() => {
             const url = window.location.origin;
             if (navigator.share) {
-              navigator.share({ title: "Nova — социальная сеть", text: `Привет! Давай общаться в Nova — социальной сети. Мой номер: ${currentUser.phone}`, url });
+              navigator.share({ title: "Nova — мессенджер", text: `Привет! Давай общаться в Nova — мессенджере. Мой номер: ${currentUser.phone}`, url });
             } else {
               navigator.clipboard.writeText(url).then(() => alert("Ссылка скопирована!"));
             }

@@ -722,7 +722,7 @@ export function ChatWindow({
               </button>
               <button
                 onClick={async () => {
-                  await api("block_user", { blocked_id: chat.partner_id }, currentUser.id);
+                  await api("block_user", { target_user_id: chat.partner_id }, currentUser.id);
                   onChatDeleted?.();
                   onBack();
                 }}

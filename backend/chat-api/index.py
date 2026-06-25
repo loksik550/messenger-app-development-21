@@ -1441,6 +1441,22 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return err("Укажите chat_id и text или media")
 
+        # Блокировка: нельзя писать, если получатель заблокировал отправителя
+        cur.execute(
+            f"""SELECT CASE WHEN c.user1_id = %s THEN c.user2_id ELSE c.user1_id END AS partner_id
+                FROM {SCHEMA}.chats c WHERE c.id = %s""",
+            (int(user_id), int(chat_id))
+        )
+        _pr = cur.fetchone()
+        if _pr and _pr[0]:
+            cur.execute(
+                f"SELECT 1 FROM {SCHEMA}.user_blocks WHERE blocker_id=%s AND blocked_id=%s",
+                (int(_pr[0]), int(user_id))
+            )
+            if cur.fetchone():
+                conn.close()
+                return err("Вы не можете писать этому пользователю", 403)
+
         # Валидация sticker: юзер должен владеть паком
         if kind == "sticker":
             pack_id = (payload or {}).get("pack_id") if isinstance(payload, dict) else None
@@ -1598,6 +1614,90 @@ def handler(event: dict, context) -> dict:
                     ON CONFLICT (message_id, user_id) DO UPDATE SET emoji = EXCLUDED.emoji, created_at = EXCLUDED.created_at""",
                 (int(msg_id), int(user_id), emoji, now)
             )
+        conn.close()
+        return ok({"ok": True})
+
+    # ── block_user (заблокировать пользователя) ───────────────────────────────
+    if action == "block_user":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        target = body.get("target_user_id") or body.get("blocked_id")
+        if not target:
+            conn.close()
+            return err("Укажите target_user_id")
+        try:
+            target_id = int(target)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Неверный target_user_id")
+        if target_id == int(user_id):
+            conn.close()
+            return err("Нельзя заблокировать себя")
+        now = int(time.time())
+        cur.execute(
+            f"""SELECT 1 FROM {SCHEMA}.user_blocks WHERE blocker_id=%s AND blocked_id=%s""",
+            (int(user_id), target_id)
+        )
+        if not cur.fetchone():
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.user_blocks (blocker_id, blocked_id, created_at)
+                    VALUES (%s, %s, %s)""",
+                (int(user_id), target_id, now)
+            )
+        conn.close()
+        return ok({"ok": True, "blocked": target_id})
+
+    # ── unblock_user (разблокировать) ─────────────────────────────────────────
+    if action == "unblock_user":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        target = body.get("target_user_id") or body.get("blocked_id")
+        if not target:
+            conn.close()
+            return err("Укажите target_user_id")
+        try:
+            target_id = int(target)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Неверный target_user_id")
+        cur.execute(
+            f"""DELETE FROM {SCHEMA}.user_blocks WHERE blocker_id=%s AND blocked_id=%s""",
+            (int(user_id), target_id)
+        )
+        conn.close()
+        return ok({"ok": True, "unblocked": target_id})
+
+    # ── report (жалоба на пользователя/контент) ───────────────────────────────
+    if action == "report":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        reported = body.get("reported_user_id")
+        reason = (body.get("reason") or "").strip()[:40]
+        comment = (body.get("comment") or "").strip()[:1000] or None
+        chat_id = body.get("chat_id")
+        if not reported or not reason:
+            conn.close()
+            return err("Укажите reported_user_id и reason")
+        try:
+            reported_id = int(reported)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Неверный reported_user_id")
+        # Rate-limit: не более 10 жалоб в минуту
+        if not _rate_limit(cur, f"report:{user_id}", 10):
+            conn.close()
+            return err("Слишком много жалоб. Подождите минуту.", 429)
+        now = int(time.time())
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.reports
+                (reporter_id, reported_user_id, chat_id, reason, comment, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, 'open', %s)""",
+            (int(user_id), reported_id,
+             int(chat_id) if chat_id else None, reason, comment, now)
+        )
         conn.close()
         return ok({"ok": True})
 

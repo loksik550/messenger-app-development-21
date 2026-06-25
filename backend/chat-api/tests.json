@@ -98,6 +98,31 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "block_user requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "block_user", "target_user_id": 2},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "block_user requires target_user_id",
+      "method": "POST",
+      "path": "/",
+      "headers": {"X-User-Id": "1"},
+      "body": {"action": "block_user"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "unblock_user requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "unblock_user", "target_user_id": 2},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "clear_group_history requires X-User-Id",
       "method": "POST",
       "path": "/",
