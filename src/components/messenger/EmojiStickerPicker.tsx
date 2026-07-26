@@ -98,17 +98,11 @@ export function EmojiStickerPicker({
     : [];
 
   return (
-    <div className="fixed inset-0 z-[120] flex flex-col justify-end" onClick={onClose}>
-      <div
-        ref={ref}
-        onClick={e => e.stopPropagation()}
-        className="relative w-full bg-background border-t border-white/10 rounded-t-2xl pt-2 shadow-2xl animate-slide-up flex flex-col"
-        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))", height: "50vh" }}
-      >
-        {/* Ручка */}
-        <div className="flex justify-center pb-2 flex-shrink-0">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
-        </div>
+    <div
+      ref={ref}
+      className="fixed left-0 right-0 bottom-0 z-[120] bg-background border-t border-white/10 shadow-2xl animate-slide-up flex flex-col"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)", height: "45vh" }}
+    >
 
         {/* Поиск + категории-эмодзи сверху (как в Telegram) */}
         {tab === "emoji" && (
@@ -208,7 +202,6 @@ export function EmojiStickerPicker({
             <Icon name="Smile" size={16} /> Эмодзи
           </button>
         </div>
-      </div>
     </div>
   );
 }
