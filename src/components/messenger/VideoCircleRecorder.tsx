@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 
-const MAX_SECONDS = 15;
+const MAX_SECONDS = 12;
+const MAX_CIRCLE_BYTES = 5 * 1024 * 1024;
 
 export function VideoCircleRecorder({
   open,
@@ -35,7 +36,7 @@ export function VideoCircleRecorder({
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 360 }, height: { ideal: 360 }, facingMode: "user", frameRate: { ideal: 24, max: 30 } },
+          video: { width: { ideal: 320 }, height: { ideal: 320 }, facingMode: "user", frameRate: { ideal: 20, max: 24 } },
           audio: { echoCancellation: true, noiseSuppression: true },
         });
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -92,7 +93,7 @@ export function VideoCircleRecorder({
     }
 
     // Ограничиваем битрейт, чтобы кружок гарантированно влезал в лимит загрузки
-    const opts: MediaRecorderOptions = { videoBitsPerSecond: 700_000, audioBitsPerSecond: 48_000 };
+    const opts: MediaRecorderOptions = { videoBitsPerSecond: 500_000, audioBitsPerSecond: 32_000 };
     if (mime) opts.mimeType = mime;
     let rec: MediaRecorder;
     try {
@@ -115,8 +116,8 @@ export function VideoCircleRecorder({
         alert("Кружок не записался. Попробуй ещё раз.");
         return;
       }
-      if (file.size > 4.5 * 1024 * 1024) {
-        alert("Кружок получился слишком большой. Запиши покороче (до 10-15 секунд).");
+      if (file.size > MAX_CIRCLE_BYTES) {
+        alert(`Кружок получился большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Запиши покороче — до 8 секунд.`);
         return;
       }
       onRecorded(file, dur);

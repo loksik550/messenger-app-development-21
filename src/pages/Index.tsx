@@ -38,6 +38,7 @@ import PaymentRequestsPanel from "@/components/messenger/PaymentRequestsPanel";
 import AccountDeletePanel from "@/components/messenger/AccountDeletePanel";
 import ConsentScreen, { hasConsent } from "@/components/messenger/ConsentScreen";
 import PrivacyPolicyPanel from "@/components/messenger/PrivacyPolicyPanel";
+import PinLockScreen from "@/components/messenger/PinLockScreen";
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
@@ -73,6 +74,8 @@ function mapChat(c: ChatRaw): Chat {
 export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  // PIN-блокировка: если код установлен — требуем ввод при запуске
+  const [pinUnlocked, setPinUnlocked] = useState(false);
   // Требование RuStore / 152-ФЗ: явное согласие на обработку ПД при первом запуске
   const [consentGiven, setConsentGiven] = useState<boolean>(() => hasConsent());
   // Внутренние экраны (открываются из настроек)
@@ -463,6 +466,11 @@ export default function Index() {
       <InstallWelcome />
     </>
   );
+
+  // PIN-блокировка: если код установлен и ещё не разблокировано в этой сессии
+  if (!pinUnlocked && localStorage.getItem("nova_sec_pin")) {
+    return <PinLockScreen onUnlock={() => setPinUnlocked(true)} />;
+  }
 
   // Экран политики конфиденциальности (доступен из настроек)
   if (showPrivacyPolicy) {

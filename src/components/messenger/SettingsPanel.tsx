@@ -36,7 +36,7 @@ export function SettingsPanel({
 
   const [e2e, setE2e] = useState(() => readBool("nova_sec_e2e", true));
   const [twofa, setTwofa] = useState(() => Boolean(localStorage.getItem("nova_sec_pin")));
-  const [biometric, setBiometric] = useState(() => readBool("nova_sec_biometric", true));
+  const [biometric, setBiometric] = useState(() => Boolean(localStorage.getItem("nova_sec_bio_cred")));
   const [notifications, setNotifications] = useState(() => readBool("nova_sec_notifications", true));
   const [msgPreview, setMsgPreview] = useState(() => readBool("nova_sec_msg_preview", false));
 
@@ -81,13 +81,72 @@ export function SettingsPanel({
   const [pinFlow, setPinFlow] = useState<null | { step: "set" | "confirm" | "verify"; first?: string; value: string; error?: string }>(null);
 
   useEffect(() => { writeBool("nova_sec_e2e", e2e); }, [e2e]);
-  useEffect(() => { writeBool("nova_sec_biometric", biometric); }, [biometric]);
+  useEffect(() => { writeBool("nova_sec_biometric", biometric && Boolean(localStorage.getItem("nova_sec_bio_cred"))); }, [biometric]);
   useEffect(() => { writeBool("nova_sec_notifications", notifications); }, [notifications]);
   useEffect(() => { writeBool("nova_sec_msg_preview", msgPreview); }, [msgPreview]);
 
   const toggle2FA = () => {
     if (twofa) setPinFlow({ step: "verify", value: "" });
     else setPinFlow({ step: "set", value: "" });
+  };
+
+  const [bioError, setBioError] = useState("");
+  const toggleBiometric = async () => {
+    if (biometric) {
+      // Выключаем
+      localStorage.removeItem("nova_sec_bio_cred");
+      setBiometric(false);
+      return;
+    }
+    // Включаем — требуем PIN как запасной способ
+    if (!localStorage.getItem("nova_sec_pin")) {
+      setBioError("Сначала включите PIN-код — он нужен как запасной вход");
+      setTimeout(() => setBioError(""), 4000);
+      return;
+    }
+    try {
+      if (typeof window === "undefined" || !window.PublicKeyCredential) {
+        setBioError("Устройство не поддерживает биометрию");
+        setTimeout(() => setBioError(""), 4000);
+        return;
+      }
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      const userId = new Uint8Array(16);
+      crypto.getRandomValues(userId);
+      const cred = (await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "Nova" },
+          user: {
+            id: userId,
+            name: currentUser?.phone || "user",
+            displayName: currentUser?.name || "Nova",
+          },
+          pubKeyCredParams: [
+            { type: "public-key", alg: -7 },
+            { type: "public-key", alg: -257 },
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+          },
+          timeout: 60000,
+        },
+      })) as PublicKeyCredential | null;
+      if (cred) {
+        const raw = new Uint8Array(cred.rawId);
+        const b64 = btoa(String.fromCharCode(...raw));
+        localStorage.setItem("nova_sec_bio_cred", b64);
+        setBiometric(true);
+      } else {
+        setBioError("Не удалось включить биометрию");
+        setTimeout(() => setBioError(""), 4000);
+      }
+    } catch {
+      setBioError("Биометрия недоступна или отклонена");
+      setTimeout(() => setBioError(""), 4000);
+    }
   };
 
   const submitPin = () => {
@@ -176,7 +235,7 @@ export function SettingsPanel({
         {[
           { icon: "Lock", label: "Сквозное шифрование", sub: "E2E для всех чатов", state: e2e, toggle: () => setE2e(v => !v), badge: "Signal" },
           { icon: "KeyRound", label: "Двухфакторная аутентификация", sub: twofa ? "PIN установлен" : "Код при входе", state: twofa, toggle: toggle2FA },
-          { icon: "Fingerprint", label: "Биометрия", sub: "Вход по Face ID / Touch ID", state: biometric, toggle: () => setBiometric(v => !v) },
+          { icon: "Fingerprint", label: "Биометрия", sub: biometric ? "Включена — вход по Face ID / Touch ID" : "Вход по Face ID / Touch ID", state: biometric, toggle: toggleBiometric },
           { icon: "Bell", label: "Уведомления", sub: "Показывать оповещения", state: notifications, toggle: () => setNotifications(v => !v) },
           { icon: "Eye", label: "Предпросмотр сообщений", sub: "Текст в уведомлениях", state: msgPreview, toggle: () => setMsgPreview(v => !v) },
         ].map((item, i) => (
@@ -194,6 +253,13 @@ export function SettingsPanel({
             <Toggle on={item.state} onToggle={item.toggle} />
           </div>
         ))}
+
+        {bioError && (
+          <div className="px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-sm text-red-400 animate-fade-in flex items-center gap-2">
+            <Icon name="TriangleAlert" size={16} className="flex-shrink-0" />
+            {bioError}
+          </div>
+        )}
 
         <div className="px-4 py-3 glass rounded-2xl mt-1">
           <div className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Пример уведомления</div>
