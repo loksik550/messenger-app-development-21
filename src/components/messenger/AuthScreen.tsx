@@ -139,7 +139,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
             <Icon name="Zap" size={36} className="text-white" />
           </div>
           <h1 className="text-4xl font-black grad-text tracking-tight">Nova</h1>
-          <p className="text-muted-foreground text-sm mt-1">Социальная сеть для общения</p>
+          <p className="text-muted-foreground text-sm mt-1">Мессенджер для общения</p>
         </div>
 
         {/* Step indicators */}

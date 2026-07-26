@@ -36,3 +36,6 @@ android/app/release/
 android/app/*.jks
 android/app/*.keystore
 android/app/google-services.json
+
+# warmup/handoff артефакты
+tmp/
