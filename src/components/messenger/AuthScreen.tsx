@@ -3,11 +3,13 @@ import Icon from "@/components/ui/icon";
 import { api, type User, type BeforeInstallPromptEvent } from "@/lib/api";
 
 export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
-  const [step, setStep] = useState<"phone" | "password" | "name">("phone");
+  const [step, setStep] = useState<"phone" | "password" | "name" | "reset">("phone");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
+  const [resetName, setResetName] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -88,6 +90,28 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
       }
     } catch {
       setErrorMsg("Нет соединения");
+      triggerShake();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetSubmit = async () => {
+    const digits = phone.replace(/\D/g, "");
+    if (resetName.trim().length < 2) { setErrorMsg("Укажите имя аккаунта"); triggerShake(); return; }
+    if (resetPassword.length < 4) { setErrorMsg("Новый пароль не короче 4 символов"); triggerShake(); return; }
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      const data = await api("reset_password", { phone: digits, name: resetName.trim(), new_password: resetPassword });
+      if (data.user) {
+        onDone(data.user);
+      } else {
+        setErrorMsg(data.error || "Не удалось восстановить доступ");
+        triggerShake();
+      }
+    } catch {
+      setErrorMsg("Нет соединения, попробуйте позже");
       triggerShake();
     } finally {
       setLoading(false);
@@ -229,6 +253,61 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
                 <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Проверяем...</>
               ) : (
                 <>Войти <Icon name="ArrowRight" size={18} /></>
+              )}
+            </button>
+            <button
+              onClick={() => { setStep("reset"); setErrorMsg(""); setResetName(""); setResetPassword(""); }}
+              className="w-full text-center text-sm text-violet-400 hover:text-violet-300 transition-colors py-1"
+            >
+              Забыли пароль?
+            </button>
+          </div>
+        )}
+
+        {/* Reset password step */}
+        {step === "reset" && (
+          <div className="animate-fade-in space-y-4">
+            <div>
+              <button onClick={() => { setStep("password"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
+                <Icon name="ChevronLeft" size={16} /> Назад
+              </button>
+              <h2 className="text-xl font-bold mb-1">Восстановление доступа</h2>
+              <p className="text-sm text-muted-foreground">Для номера {formatPhone(phone)}. Подтвердите имя аккаунта и задайте новый пароль.</p>
+            </div>
+            <div className={`flex items-center gap-3 glass rounded-2xl px-4 py-4 border ${shake ? "border-red-500/50" : "border-white/0 focus-within:border-violet-500/40"} transition-colors`}>
+              <Icon name="User" size={18} className="text-muted-foreground" />
+              <input
+                autoFocus
+                value={resetName}
+                onChange={e => setResetName(e.target.value)}
+                placeholder="Имя аккаунта"
+                className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
+              />
+            </div>
+            <div className={`flex items-center gap-3 glass rounded-2xl px-4 py-4 border ${shake ? "border-red-500/50" : "border-white/0 focus-within:border-violet-500/40"} transition-colors`}>
+              <Icon name="Lock" size={18} className="text-muted-foreground" />
+              <input
+                value={resetPassword}
+                onChange={e => setResetPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleResetSubmit()}
+                placeholder="Новый пароль"
+                className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
+                type={showPassword ? "text" : "password"}
+              />
+              <button onClick={() => setShowPassword(v => !v)} className="text-muted-foreground hover:text-foreground">
+                <Icon name={showPassword ? "EyeOff" : "Eye"} size={18} />
+              </button>
+            </div>
+            {errorMsg && <p className="text-center text-sm text-red-400 animate-fade-in">{errorMsg}</p>}
+            <button
+              onClick={handleResetSubmit}
+              disabled={loading}
+              className="w-full py-4 grad-primary rounded-2xl text-white font-bold text-base glow-primary hover:opacity-90 transition-opacity disabled:opacity-70 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Сохраняем...</>
+              ) : (
+                <>Сбросить пароль <Icon name="KeyRound" size={18} /></>
               )}
             </button>
           </div>

@@ -380,6 +380,47 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return ok({"user": serialize_user(row), "existed": False})
 
+    # ── reset_password (восстановление доступа по имени аккаунта) ──────────────
+    if action == "reset_password":
+        phone = (body.get("phone") or "").strip()
+        name = (body.get("name") or "").strip()
+        new_password = (body.get("new_password") or "")
+        digits = "".join(c for c in phone if c.isdigit())
+        if not digits or len(digits) < 11:
+            conn.close()
+            return err("Введите корректный номер телефона")
+        if not name:
+            conn.close()
+            return err("Укажите имя аккаунта")
+        if len(new_password) < 4:
+            conn.close()
+            return err("Пароль должен быть не короче 4 символов")
+
+        # Rate-limit по IP: защита от перебора
+        ip = (event.get("requestContext", {}) or {}).get("identity", {}).get("sourceIp", "anon")
+        if not _rate_limit(cur, f"reset:{ip}", 10):
+            conn.close()
+            return err("Слишком много попыток, подождите минуту", 429)
+
+        cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE phone = %s", (digits,))
+        found = cur.fetchone()
+        if not found:
+            conn.close()
+            return err("Аккаунт с таким номером не найден")
+        user_id_db, real_name = found
+        # Имя должно совпадать (без учёта регистра и пробелов) — контрольная проверка
+        if (real_name or "").strip().lower() != name.strip().lower():
+            conn.close()
+            return err("Имя аккаунта не совпадает")
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET password_hash = %s, last_seen = %s WHERE id = %s",
+            (_hash_password(new_password), int(time.time()), user_id_db)
+        )
+        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (user_id_db,))
+        row = cur.fetchone()
+        conn.close()
+        return ok({"user": serialize_user(row), "reset": True})
+
     # ── get_me ────────────────────────────────────────────────────────────────
     if action == "get_me":
         phone = (body.get("phone") or params.get("phone") or "").strip()
