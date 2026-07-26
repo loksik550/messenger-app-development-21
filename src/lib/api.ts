@@ -26,7 +26,9 @@ export async function uploadMedia(file: File, userId: number): Promise<UploadRes
           headers: { "Content-Type": "application/json", "X-User-Id": String(userId) },
           body: JSON.stringify({ data: base64, mime: file.type, file_name: file.name, file_size: file.size }),
         });
-        const data = await res.json();
+        if (res.status === 413) { reject(new Error("Файл слишком большой для отправки")); return; }
+        if (!res.ok) { reject(new Error(`Ошибка загрузки (${res.status})`)); return; }
+        const data = await res.json().catch(() => ({}));
         if (data.url) resolve(data);
         else reject(new Error(data.error || "Ошибка загрузки"));
       } catch (e) { reject(e); }

@@ -99,12 +99,11 @@ export function EmojiStickerPicker({
 
   return (
     <div className="fixed inset-0 z-[120] flex flex-col justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40 animate-fade-in" />
       <div
         ref={ref}
         onClick={e => e.stopPropagation()}
-        className="relative w-full glass-strong rounded-t-3xl pt-2 shadow-2xl animate-slide-up flex flex-col"
-        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))", maxHeight: "70vh" }}
+        className="relative w-full bg-background border-t border-white/10 rounded-t-2xl pt-2 shadow-2xl animate-slide-up flex flex-col"
+        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))", height: "50vh" }}
       >
         {/* Ручка */}
         <div className="flex justify-center pb-2 flex-shrink-0">

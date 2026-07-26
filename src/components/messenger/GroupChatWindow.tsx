@@ -232,7 +232,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
 
   const sendFile = async (file: File, opts?: { duration?: number; mediaTypeOverride?: string }) => {
     const isVideo = opts?.mediaTypeOverride === "video";
-    const MAX_FILE_MB = isVideo ? 5 : 4.5;
+    const MAX_FILE_MB = isVideo ? 4 : 4.5;
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
       alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум ${MAX_FILE_MB} МБ. Сожми файл или запиши короче.`);
       return;

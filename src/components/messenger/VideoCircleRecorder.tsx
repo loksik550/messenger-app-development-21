@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 
 const MAX_SECONDS = 12;
-const MAX_CIRCLE_BYTES = 5 * 1024 * 1024;
+const MAX_CIRCLE_BYTES = 4 * 1024 * 1024;
 
 export function VideoCircleRecorder({
   open,
