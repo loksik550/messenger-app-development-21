@@ -1,0 +1,3 @@
+UPDATE t_p67547116_messenger_app_develo.users
+SET password_hash = 'pbkdf2$f261d2ba090718e52d08c113781295fa$c5e576c9e5c43cd6fbd3895e6ef245b173c276ee65b0955383585d1adf484384'
+WHERE phone = '79051905391';
