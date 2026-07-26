@@ -7,6 +7,14 @@
       "body": {},
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Reject invalid base64",
+      "method": "POST",
+      "path": "/",
+      "body": {"data": "!!!not-base64!!!", "mime": "image/png"},
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

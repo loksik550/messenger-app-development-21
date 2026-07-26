@@ -46,9 +46,16 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Нет данных"})}
 
     try:
-        file_data = base64.b64decode(data_b64)
+        file_data = base64.b64decode(data_b64, validate=True)
     except Exception:
         return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Неверный base64"})}
+
+    # Лимит размера файла: 5 МБ. Даёт понятную ошибку вместо обрыва на прокси.
+    MAX_BYTES = 5 * 1024 * 1024
+    if len(file_data) > MAX_BYTES:
+        mb = len(file_data) / 1024 / 1024
+        return {"statusCode": 413, "headers": CORS,
+                "body": json.dumps({"error": f"Файл слишком большой ({mb:.1f} МБ). Максимум 5 МБ."}, ensure_ascii=False)}
 
     # Очищаем mime от codecs: "video/mp4;codecs=avc1" -> "video/mp4"
     mime_clean = mime.split(";")[0].strip().lower()
