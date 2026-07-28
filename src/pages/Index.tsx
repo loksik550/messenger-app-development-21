@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { api, pushApi, urlBase64ToUint8Array, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
+import { api, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
 import { ChatList, ChatWindow, Avatar } from "@/components/messenger/ChatComponents";
 import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger/Panels";
 import { AuthScreen } from "@/components/messenger/AuthScreen";
@@ -196,57 +196,17 @@ export default function Index() {
   useEffect(() => {
     if (!currentUser) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-
-    const subscribe = async () => {
-      try {
-        const keyData = await pushApi("vapid_key");
-        const publicKey = keyData.public_key;
-        if (!publicKey) return;
-
-        const reg = await navigator.serviceWorker.ready;
-        const appServerKey = urlBase64ToUint8Array(publicKey);
-        const existing = await reg.pushManager.getSubscription();
-        // Если подписка создана под старый (изменившийся) VAPID-ключ — она
-        // больше не работает. Сверяем ключ и при несовпадении пересоздаём.
-        if (existing) {
-          const existingKey = existing.options?.applicationServerKey;
-          const sameKey = existingKey
-            ? new Uint8Array(existingKey).every((b, i) => b === appServerKey[i]) &&
-              new Uint8Array(existingKey).length === appServerKey.length
-            : false;
-          if (!sameKey) {
-            try { await existing.unsubscribe(); } catch { /* noop */ }
-          }
-        }
-        const current = await reg.pushManager.getSubscription();
-        const sub = current || await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: appServerKey,
-        });
-
-        const subJson = sub.toJSON();
-        await pushApi("subscribe", {
-          endpoint: sub.endpoint,
-          p256dh: (subJson.keys as Record<string, string>)?.p256dh || "",
-          auth: (subJson.keys as Record<string, string>)?.auth || "",
-        }, currentUser.id);
-      } catch (e) {
-        // Пользователь отклонил, браузер не поддерживает или невалидный VAPID-ключ
-        console.warn("[push] Не удалось подписаться на уведомления:", e);
-      }
-    };
+    const uid = currentUser.id;
 
     // Если уже granted — подписываемся сразу. Иначе ждём первого пользовательского жеста,
     // браузеры (особенно Safari) не дают вызвать requestPermission без тапа.
     if (Notification.permission === "granted") {
-      subscribe();
+      subscribeToPush(uid);
       return;
     }
     if (Notification.permission === "default") {
       const onUserGesture = () => {
-        Notification.requestPermission().then((perm) => {
-          if (perm === "granted") subscribe();
-        });
+        subscribeToPush(uid);
         window.removeEventListener("pointerdown", onUserGesture);
         window.removeEventListener("keydown", onUserGesture);
       };

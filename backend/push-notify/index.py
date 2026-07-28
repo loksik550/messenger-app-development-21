@@ -123,14 +123,15 @@ def handler(event: dict, context) -> dict:
                 (int(chat_id) if chat_id else 0, int(recipient_id))
             )
         subs = cur.fetchall()
-        conn.close()
 
         if not subs:
+            conn.close()
             return ok({"ok": True, "sent": 0})
 
         vapid_private = _vapid_private()
         vapid_public = _vapid_public()
         if not vapid_private or not vapid_public:
+            conn.close()
             return err("VAPID ключи не настроены", 500)
 
         call_id = body.get("call_id")
@@ -147,6 +148,7 @@ def handler(event: dict, context) -> dict:
         })
 
         sent = 0
+        stale = []
         for endpoint, p256dh, auth_key in subs:
             try:
                 webpush(
@@ -159,8 +161,27 @@ def handler(event: dict, context) -> dict:
                     vapid_claims={"sub": "mailto:nova@poehali.dev"},
                 )
                 sent += 1
-            except WebPushException:
+            except WebPushException as e:
+                # Подписка недействительна:
+                #  404/410 — браузер отписался;
+                #  403/401 — подпись не проходит (создана под старый VAPID-ключ).
+                # Все эти случаи безвозвратны — удаляем подписку.
+                code = getattr(getattr(e, "response", None), "status_code", None)
+                if code in (401, 403, 404, 410):
+                    stale.append(endpoint)
+            except Exception:
                 pass
+
+        # Чистим мёртвые подписки, чтобы они не копились
+        if stale:
+            try:
+                cur.execute(
+                    f"DELETE FROM {SCHEMA}.push_subscriptions WHERE endpoint = ANY(%s)",
+                    (stale,)
+                )
+            except Exception:
+                pass
+        conn.close()
 
         return ok({"ok": True, "sent": sent})
 

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { api, type User } from "@/lib/api";
+import { api, subscribeToPush, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
 
@@ -18,6 +18,24 @@ export default function NotificationsPanel({
   const [sound, setSound] = useState<string>(currentUser.notify_sound || "default");
   const [qFrom, setQFrom] = useState<number | null>(currentUser.quiet_hours_from ?? null);
   const [qTo, setQTo] = useState<number | null>(currentUser.quiet_hours_to ?? null);
+
+  // Статус разрешения на push в браузере
+  const [pushPerm, setPushPerm] = useState<NotificationPermission | "unsupported">(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+  const [pushBusy, setPushBusy] = useState(false);
+  useEffect(() => {
+    if (typeof Notification === "undefined") setPushPerm("unsupported");
+  }, []);
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    const res = await subscribeToPush(currentUser.id);
+    if (res === "ok") setPushPerm("granted");
+    else if (res === "denied") setPushPerm("denied");
+    else if (res === "unsupported") setPushPerm("unsupported");
+    setPushBusy(false);
+  };
 
   const update = async (field: string, value: unknown) => {
     await api("update_user_settings", { [field]: value }, currentUser.id);
@@ -50,6 +68,30 @@ export default function NotificationsPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {pushPerm !== "unsupported" && (
+          <div className={`glass rounded-2xl p-4 flex items-center gap-3 ${pushPerm === "granted" ? "" : "border border-violet-400/30"}`}>
+            <Icon name={pushPerm === "granted" ? "BellRing" : "BellOff"} size={20} className={pushPerm === "granted" ? "text-emerald-400" : "text-violet-400"} />
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-sm">Push-уведомления</div>
+              <p className="text-[11px] text-muted-foreground">
+                {pushPerm === "granted"
+                  ? "Уведомления включены на этом устройстве"
+                  : pushPerm === "denied"
+                    ? "Разрешение отклонено. Включите его в настройках браузера"
+                    : "Получайте сообщения, даже когда приложение закрыто"}
+              </p>
+            </div>
+            {pushPerm === "granted" ? (
+              <button onClick={enablePush} disabled={pushBusy} className="px-3 py-1.5 rounded-xl glass text-xs font-semibold text-muted-foreground disabled:opacity-50">
+                {pushBusy ? "..." : "Обновить"}
+              </button>
+            ) : pushPerm === "default" ? (
+              <button onClick={enablePush} disabled={pushBusy} className="px-3 py-1.5 rounded-xl grad-primary text-white text-xs font-bold disabled:opacity-50">
+                {pushBusy ? "..." : "Включить"}
+              </button>
+            ) : null}
+          </div>
+        )}
         <Toggle label="Личные сообщения" icon="MessageCircle" color="text-violet-400" value={msg} onChange={v => { setMsg(v); update("notify_messages", v); }} />
         <Toggle label="Группы и каналы" icon="Users" color="text-cyan-400" value={grp} onChange={v => { setGrp(v); update("notify_groups", v); }} />
         <Toggle label="Звонки" icon="Phone" color="text-emerald-400" value={calls} onChange={v => { setCalls(v); update("notify_calls", v); }} />

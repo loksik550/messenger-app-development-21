@@ -114,6 +114,53 @@ export function urlBase64ToUint8Array(base64String: string) {
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 }
 
+// Подписка браузера на push. Запрашивает разрешение, пересоздаёт подписку
+// под актуальный VAPID-ключ и сохраняет её на сервере.
+// Возвращает: "ok" | "denied" | "unsupported" | "error"
+export async function subscribeToPush(userId: number): Promise<"ok" | "denied" | "unsupported" | "error"> {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      return "unsupported";
+    }
+    if (Notification.permission === "denied") return "denied";
+    if (Notification.permission === "default") {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") return "denied";
+    }
+    const keyData = await pushApi("vapid_key");
+    const publicKey = keyData.public_key;
+    if (!publicKey) return "error";
+
+    const reg = await navigator.serviceWorker.ready;
+    const appServerKey = urlBase64ToUint8Array(publicKey);
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      const existingKey = existing.options?.applicationServerKey;
+      const sameKey = existingKey
+        ? new Uint8Array(existingKey).length === appServerKey.length &&
+          new Uint8Array(existingKey).every((b, i) => b === appServerKey[i])
+        : false;
+      if (!sameKey) {
+        try { await existing.unsubscribe(); } catch { /* noop */ }
+      }
+    }
+    const current = await reg.pushManager.getSubscription();
+    const sub = current || await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: appServerKey,
+    });
+    const subJson = sub.toJSON();
+    await pushApi("subscribe", {
+      endpoint: sub.endpoint,
+      p256dh: (subJson.keys as Record<string, string>)?.p256dh || "",
+      auth: (subJson.keys as Record<string, string>)?.auth || "",
+    }, userId);
+    return "ok";
+  } catch {
+    return "error";
+  }
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type View = "chats" | "stories" | "search" | "profile" | "settings" | "contacts";
