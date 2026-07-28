@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { api, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
-import { ChatList, ChatWindow, Avatar } from "@/components/messenger/ChatComponents";
+import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
 import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger/Panels";
 import { AuthScreen } from "@/components/messenger/AuthScreen";
 import { ContactsPanel } from "@/components/messenger/ContactsPanel";
@@ -9,6 +9,7 @@ import { CallScreen } from "@/components/messenger/CallScreen";
 import { AdminPanel } from "@/components/messenger/AdminPanel";
 import InstallPrompt from "@/components/messenger/InstallPrompt";
 import InstallWelcome from "@/components/messenger/InstallWelcome";
+import EnableNotificationsBanner from "@/components/messenger/EnableNotificationsBanner";
 import { toast } from "@/hooks/use-toast";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
@@ -479,6 +480,9 @@ export default function Index() {
     <div className="flex overflow-hidden relative" style={{ height: "100dvh", minHeight: "100dvh" }}>
       {/* Mesh background */}
       <div className="mesh-bg" />
+
+      {/* Подсказка о включении push-уведомлений */}
+      {currentUser && <EnableNotificationsBanner userId={currentUser.id} />}
 
       {/* Nova Pro panel */}
       {showPro && currentUser && (
