@@ -60,15 +60,18 @@ export function SettingsPanel({
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
-    if (!f.type.startsWith("audio/")) { setSoundError("Можно загрузить только аудио"); return; }
+    const audioExt = /\.(mp3|m4a|aac|ogg|oga|opus|wav|weba|webm|flac|caf|3gp|amr)$/i.test(f.name);
+    // На некоторых устройствах MIME-тип пустой — тогда проверяем по расширению
+    if (!f.type.startsWith("audio/") && !audioExt) { setSoundError("Можно загрузить только аудио"); return; }
     if (f.size > MAX_RINGTONE_SIZE) { setSoundError("Файл слишком большой (макс 10 МБ)"); return; }
     try {
       const meta = await saveCustomRingtone(f);
       setCustomMeta({ name: meta.name, size: meta.size, type: f.type });
       setRingtoneId("custom");
       setRingtone("custom");
-    } catch {
-      setSoundError("Не удалось сохранить файл");
+    } catch (err) {
+      console.error("[ringtone] save failed:", err);
+      setSoundError((err as Error)?.message || "Не удалось сохранить файл");
     }
   };
 
@@ -369,7 +372,7 @@ export function SettingsPanel({
               </div>
             ))}
           </div>
-          <input ref={ringFileRef} type="file" accept="audio/*" className="hidden" onChange={onRingFile} />
+          <input ref={ringFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onRingFile} />
           <p className="text-[11px] text-muted-foreground mt-2">Загрузи MP3, WAV или другой аудиофайл — он будет играть как в Telegram при входящем звонке.</p>
         </div>
 

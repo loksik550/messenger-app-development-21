@@ -59,13 +59,25 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 export async function saveCustomRingtone(file: File): Promise<{ name: string; size: number }> {
+  if (typeof indexedDB === "undefined") {
+    throw new Error("Хранилище недоступно в этом браузере (возможно, приватный режим)");
+  }
+  // Читаем файл в ArrayBuffer заранее: в Safari сохранение File-объекта в
+  // IndexedDB бывает нестабильным, а бинарные данные + тип хранятся надёжно.
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch {
+    throw new Error("Не удалось прочитать файл");
+  }
   const db = await openDB();
   await new Promise<void>((res, rej) => {
     const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(file, "ringtone");
-    tx.objectStore(STORE).put({ name: file.name, size: file.size, type: file.type }, "ringtone_meta");
+    tx.objectStore(STORE).put(buffer, "ringtone");
+    tx.objectStore(STORE).put({ name: file.name, size: file.size, type: file.type || "audio/mpeg" }, "ringtone_meta");
     tx.oncomplete = () => res();
-    tx.onerror = () => rej(tx.error);
+    tx.onerror = () => rej(tx.error || new Error("Ошибка записи в хранилище"));
+    tx.onabort = () => rej(tx.error || new Error("Запись прервана (нехватка места?)"));
   });
   return { name: file.name, size: file.size };
 }
@@ -73,12 +85,22 @@ export async function saveCustomRingtone(file: File): Promise<{ name: string; si
 export async function getCustomRingtoneBlob(): Promise<Blob | null> {
   try {
     const db = await openDB();
-    return await new Promise<Blob | null>((res, rej) => {
-      const tx = db.transaction(STORE, "readonly");
-      const req = tx.objectStore(STORE).get("ringtone");
-      req.onsuccess = () => res((req.result as Blob) || null);
-      req.onerror = () => rej(req.error);
-    });
+    const [data, meta] = await Promise.all([
+      new Promise<unknown>((res, rej) => {
+        const tx = db.transaction(STORE, "readonly");
+        const req = tx.objectStore(STORE).get("ringtone");
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej(req.error);
+      }),
+      getCustomRingtoneMeta(),
+    ]);
+    if (!data) return null;
+    // Поддерживаем и старый формат (Blob), и новый (ArrayBuffer)
+    if (data instanceof Blob) return data;
+    if (data instanceof ArrayBuffer) {
+      return new Blob([data], { type: meta?.type || "audio/mpeg" });
+    }
+    return null;
   } catch { return null; }
 }
 
