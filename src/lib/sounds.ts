@@ -1,7 +1,7 @@
 // Звуки уведомлений и звонков. Web Audio для стандартных, HTMLAudio для кастомных.
 
 export type RingtoneId = "nova" | "classic" | "chime" | "pulse" | "marimba" | "custom";
-export type NotifyId = "ping" | "drop" | "pop" | "click" | "soft";
+export type NotifyId = "ping" | "drop" | "pop" | "click" | "soft" | "custom";
 
 export const RINGTONES: { id: RingtoneId; name: string }[] = [
   { id: "nova",    name: "Nova" },
@@ -18,6 +18,7 @@ export const NOTIFY_SOUNDS: { id: NotifyId; name: string }[] = [
   { id: "pop",   name: "Поп" },
   { id: "click", name: "Клик" },
   { id: "soft",  name: "Мягкий" },
+  { id: "custom", name: "Свой звук" },
 ];
 
 const LS_RINGTONE = "nova_ringtone";       // RingtoneId
@@ -123,6 +124,72 @@ export async function clearCustomRingtone() {
       const tx = db.transaction(STORE, "readwrite");
       tx.objectStore(STORE).delete("ringtone");
       tx.objectStore(STORE).delete("ringtone_meta");
+      tx.oncomplete = () => res();
+    });
+  } catch { /* ignore */ }
+}
+
+// ─── Custom notify sound (свой звук уведомления сообщений, IndexedDB) ──────
+export async function saveCustomNotify(file: File): Promise<{ name: string; size: number }> {
+  if (typeof indexedDB === "undefined") {
+    throw new Error("Хранилище недоступно в этом браузере (возможно, приватный режим)");
+  }
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch {
+    throw new Error("Не удалось прочитать файл");
+  }
+  const db = await openDB();
+  await new Promise<void>((res, rej) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).put(buffer, "notify");
+    tx.objectStore(STORE).put({ name: file.name, size: file.size, type: file.type || "audio/mpeg" }, "notify_meta");
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error || new Error("Ошибка записи в хранилище"));
+    tx.onabort = () => rej(tx.error || new Error("Запись прервана (нехватка места?)"));
+  });
+  return { name: file.name, size: file.size };
+}
+
+export async function getCustomNotifyBlob(): Promise<Blob | null> {
+  try {
+    const db = await openDB();
+    const [data, meta] = await Promise.all([
+      new Promise<unknown>((res, rej) => {
+        const tx = db.transaction(STORE, "readonly");
+        const req = tx.objectStore(STORE).get("notify");
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej(req.error);
+      }),
+      getCustomNotifyMeta(),
+    ]);
+    if (!data) return null;
+    if (data instanceof Blob) return data;
+    if (data instanceof ArrayBuffer) return new Blob([data], { type: meta?.type || "audio/mpeg" });
+    return null;
+  } catch { return null; }
+}
+
+export async function getCustomNotifyMeta(): Promise<{ name: string; size: number; type: string } | null> {
+  try {
+    const db = await openDB();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).get("notify_meta");
+      req.onsuccess = () => res(req.result || null);
+      req.onerror = () => rej(req.error);
+    });
+  } catch { return null; }
+}
+
+export async function clearCustomNotify() {
+  try {
+    const db = await openDB();
+    await new Promise<void>((res) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).delete("notify");
+      tx.objectStore(STORE).delete("notify_meta");
       tx.oncomplete = () => res();
     });
   } catch { /* ignore */ }
@@ -302,7 +369,7 @@ export function stopDialTone() {
 }
 
 // ─── Notify sounds (короткие, для входящих сообщений) ─────────────────────
-const NOTIFY_PATTERNS: Record<NotifyId, () => Note[]> = {
+const NOTIFY_PATTERNS: Record<Exclude<NotifyId, "custom">, () => Note[]> = {
   ping:  () => [{ freq: 880, dur: 0.08, start: 0, type: "sine", gain: 0.18 }, { freq: 1320, dur: 0.1, start: 0.1, type: "sine", gain: 0.18 }],
   drop:  () => [{ freq: 600, dur: 0.05, start: 0, type: "sine", gain: 0.2 }, { freq: 1100, dur: 0.12, start: 0.05, type: "sine", gain: 0.2 }],
   pop:   () => [{ freq: 1200, dur: 0.06, start: 0, type: "triangle", gain: 0.22 }],
@@ -310,18 +377,39 @@ const NOTIFY_PATTERNS: Record<NotifyId, () => Note[]> = {
   soft:  () => [{ freq: 523, dur: 0.18, start: 0, type: "sine", gain: 0.15 }, { freq: 784, dur: 0.18, start: 0.1, type: "sine", gain: 0.15 }],
 };
 
+let notifyAudio: HTMLAudioElement | null = null;
+let notifyUrl: string | null = null;
+
+async function playCustomNotify() {
+  try {
+    const blob = await getCustomNotifyBlob();
+    if (!blob) { playSequence(NOTIFY_PATTERNS.ping(), 0.18); return; }
+    if (notifyUrl) { URL.revokeObjectURL(notifyUrl); notifyUrl = null; }
+    notifyUrl = URL.createObjectURL(blob);
+    if (!notifyAudio) notifyAudio = new Audio();
+    notifyAudio.src = notifyUrl;
+    notifyAudio.volume = getVolume();
+    notifyAudio.currentTime = 0;
+    await notifyAudio.play().catch(() => { /* нет жеста — тихо игнорируем */ });
+  } catch {
+    try { playSequence(NOTIFY_PATTERNS.ping(), 0.18); } catch { /* ignore */ }
+  }
+}
+
 export function playMessageSound(idOverride?: NotifyId) {
   if (!isNotifyOn()) return;
   try {
     const id = idOverride || getNotifyId();
-    const fn = NOTIFY_PATTERNS[id] || NOTIFY_PATTERNS.ping;
+    if (id === "custom") { playCustomNotify(); return; }
+    const fn = NOTIFY_PATTERNS[id as Exclude<NotifyId, "custom">] || NOTIFY_PATTERNS.ping;
     playSequence(fn(), 0.18);
   } catch { /* ignore */ }
 }
 
 export function previewNotifySound(id: NotifyId) {
   try {
-    const fn = NOTIFY_PATTERNS[id] || NOTIFY_PATTERNS.ping;
+    if (id === "custom") { playCustomNotify(); return; }
+    const fn = NOTIFY_PATTERNS[id as Exclude<NotifyId, "custom">] || NOTIFY_PATTERNS.ping;
     playSequence(fn(), 0.18);
   } catch { /* ignore */ }
 }

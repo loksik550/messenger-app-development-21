@@ -161,6 +161,42 @@ export async function subscribeToPush(userId: number): Promise<"ok" | "denied" |
   }
 }
 
+// ─── Свой аватар на звонок для контакта (локально, только на этом устройстве) ──
+export function getCallAvatar(userId: number): string | null {
+  try { return localStorage.getItem(`nova_call_avatar_${userId}`); } catch { return null; }
+}
+export function setCallAvatar(userId: number, dataUrl: string) {
+  try { localStorage.setItem(`nova_call_avatar_${userId}`, dataUrl); } catch { /* quota */ }
+}
+export function clearCallAvatar(userId: number) {
+  try { localStorage.removeItem(`nova_call_avatar_${userId}`); } catch { /* ignore */ }
+}
+// Читает файл-картинку, сжимает до ~256px и возвращает data-URL (JPEG)
+export function fileToCallAvatar(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 256;
+        const canvas = document.createElement("canvas");
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("no canvas")); return; }
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => reject(new Error("bad image"));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error("read error"));
+    reader.readAsDataURL(file);
+  });
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type View = "chats" | "stories" | "search" | "profile" | "settings" | "contacts";

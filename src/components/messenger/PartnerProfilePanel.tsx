@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import { type Chat, type IconName, api } from "@/lib/api";
+import { type Chat, type IconName, api, getCallAvatar, setCallAvatar, clearCallAvatar, fileToCallAvatar } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
@@ -40,6 +40,32 @@ export default function PartnerProfilePanel({
   const [comment, setComment] = useState("");
   const [toast, setToast] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const callAvatarFileRef = useRef<HTMLInputElement | null>(null);
+  const [callAvatar, setCallAvatarState] = useState<string | null>(() => chat.partner_id ? getCallAvatar(chat.partner_id) : null);
+
+  const onPickCallAvatar = () => callAvatarFileRef.current?.click();
+  const onCallAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f || !chat.partner_id) return;
+    if (!f.type.startsWith("image/")) { setToast("Нужен файл-картинка"); window.setTimeout(() => setToast(""), 2200); return; }
+    try {
+      const dataUrl = await fileToCallAvatar(f);
+      setCallAvatar(chat.partner_id, dataUrl);
+      setCallAvatarState(dataUrl);
+      setToast("Фото на звонок установлено");
+    } catch {
+      setToast("Не удалось загрузить фото");
+    }
+    window.setTimeout(() => setToast(""), 2200);
+  };
+  const removeCallAvatar = () => {
+    if (!chat.partner_id) return;
+    clearCallAvatar(chat.partner_id);
+    setCallAvatarState(null);
+    setToast("Фото на звонок убрано");
+    window.setTimeout(() => setToast(""), 2200);
+  };
 
   const disappearingLabel = (sec?: number | null): string => {
     if (!sec) return t("report.off");
@@ -121,7 +147,26 @@ export default function PartnerProfilePanel({
           <Row icon="Image" label={t("partner.wallpaper")} onClick={() => { onClose(); onChooseWallpaper(); }} />
           <div className="h-px bg-white/5 ml-12" />
           <Row icon="Timer" label={t("partner.disappearing")} value={disappearingLabel(disappearingSeconds)} active={!!disappearingSeconds} onClick={() => { onClose(); onSetDisappearing(); }} />
+          {chat.partner_id && (
+            <>
+              <div className="h-px bg-white/5 ml-12" />
+              <div className="w-full flex items-center gap-3 px-4 py-3.5 text-sm">
+                <Icon name="ImagePlus" size={18} className={callAvatar ? "text-violet-400" : "text-muted-foreground"} />
+                <span className="flex-1 text-left">Фото на звонок</span>
+                {callAvatar && <img src={callAvatar} alt="" className="w-8 h-8 rounded-full object-cover" />}
+                <button onClick={onPickCallAvatar} className="p-1.5 rounded-lg hover:bg-white/8" title="Загрузить">
+                  <Icon name="Upload" size={15} className="text-violet-400" />
+                </button>
+                {callAvatar && (
+                  <button onClick={removeCallAvatar} className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" title="Убрать">
+                    <Icon name="Trash2" size={15} />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
+        <input ref={callAvatarFileRef} type="file" accept="image/*" className="hidden" onChange={onCallAvatarFile} />
 
         <div className="mx-3 mb-6 rounded-2xl overflow-hidden bg-white/[0.03] border border-white/5">
           <Row icon="Flag" label={t("partner.report")} red onClick={() => setShowReport(true)} />

@@ -299,10 +299,59 @@ def handler(event: dict, context) -> dict:
         _award_badge(cur, new_id, "newcomer")
         cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id=%s", (new_id,))
         row = cur.fetchone()
+
+        # Кого уведомить: те, кто добавил этот номер как "отложенный контакт".
+        # Нормализуем телефон так же, как в add_contact.
+        norm_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        if norm_phone.startswith("8"):
+            norm_phone = "7" + norm_phone[1:]
+        if norm_phone.startswith("+"):
+            norm_phone = norm_phone[1:]
+        waiters = []
+        try:
+            cur.execute(
+                f"""SELECT id, user_id, name_override FROM {SCHEMA}.pending_contacts
+                    WHERE phone = %s AND notified = 0""",
+                (norm_phone,)
+            )
+            waiters = cur.fetchall()
+            if waiters:
+                # Автоматически добавляем нового юзера в контакты тех, кто его ждал
+                for _pid, waiter_uid, waiter_name in waiters:
+                    cur.execute(
+                        f"""INSERT INTO {SCHEMA}.contacts (user_id, contact_id, name_override, created_at)
+                            VALUES (%s, %s, %s, %s)
+                            ON CONFLICT (user_id, contact_id) DO NOTHING""",
+                        (int(waiter_uid), new_id, waiter_name, int(time.time()))
+                    )
+                cur.execute(
+                    f"UPDATE {SCHEMA}.pending_contacts SET notified = 1 WHERE phone = %s",
+                    (norm_phone,)
+                )
+        except Exception:
+            waiters = []
         conn.close()
+
         # Push admin'у о новой регистрации
         admin_id = os.environ.get("ADMIN_USER_ID", "").strip()
         push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+
+        # Push тем, кто ждал регистрацию этого контакта
+        if push_url and waiters:
+            for _pid, waiter_uid, waiter_name in waiters:
+                try:
+                    disp = (waiter_name or row[2])
+                    wbody = json.dumps({
+                        "action": "send",
+                        "recipient_id": int(waiter_uid),
+                        "title": "🎉 Контакт в Nova",
+                        "sender_name": "Nova",
+                        "message": f"{disp} теперь в Nova — можно написать или позвонить",
+                        "tag": f"contact_joined_{new_id}",
+                    }).encode("utf-8")
+                    _fire_and_forget_http(push_url, wbody, timeout=5.0)
+                except Exception:
+                    pass
         if admin_id and admin_id.isdigit() and push_url and int(admin_id) != row[0]:
             try:
                 push_body = json.dumps({
@@ -1986,6 +2035,17 @@ def handler(event: dict, context) -> dict:
                 return err("Укажите phone или contact_id")
             cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE phone = %s", (phone,))
             found = cur.fetchone()
+            if not found:
+                # Пользователя ещё нет в Nova — запоминаем номер как "отложенный контакт".
+                # Когда он зарегистрируется, добавивший получит push-уведомление.
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.pending_contacts (user_id, phone, name_override, notified, created_at)
+                        VALUES (%s, %s, %s, 0, %s)
+                        ON CONFLICT (user_id, phone) DO UPDATE SET name_override = EXCLUDED.name_override, notified = 0""",
+                    (int(user_id), phone, name_override, int(time.time()))
+                )
+                conn.close()
+                return err("Пользователь ещё не в Nova. Мы уведомим вас, когда он зарегистрируется.")
         if not found:
             conn.close()
             return err("Пользователь не найден")

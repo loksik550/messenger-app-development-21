@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import { api, avatarGrad, type User } from "@/lib/api";
+import { api, avatarGrad, getCallAvatar, type User } from "@/lib/api";
 import { startRingtone, stopRingtone, startDialTone, stopDialTone, playHangupSound, unlockAudioContext } from "@/lib/sounds";
 
 type CallState = "calling" | "ringing" | "connected" | "ended";
@@ -26,6 +26,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const [videoOff, setVideoOff] = useState(false);
   const [speaker, setSpeaker] = useState(true);
   const [duration, setDuration] = useState(0);
+  // Своя картинка на звонок для этого контакта (хранится локально, видна только мне)
+  const callAvatar = getCallAvatar(remoteUserId);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -331,9 +333,17 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       {/* Top info — по центру свободного пространства */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 relative z-10">
         {(!isVideo || state !== "connected") && (
-          <div className={`w-28 h-28 rounded-full flex items-center justify-center text-5xl font-bold text-white animate-pulse-glow bg-gradient-to-br ${avatarGrad(remoteUserId)}`}>
-            {remoteName[0]?.toUpperCase()}
-          </div>
+          callAvatar ? (
+            <img
+              src={callAvatar}
+              alt={remoteName}
+              className="w-28 h-28 rounded-full object-cover animate-pulse-glow border-2 border-white/20"
+            />
+          ) : (
+            <div className={`w-28 h-28 rounded-full flex items-center justify-center text-5xl font-bold text-white animate-pulse-glow bg-gradient-to-br ${avatarGrad(remoteUserId)}`}>
+              {remoteName[0]?.toUpperCase()}
+            </div>
+          )
         )}
         <h2 className="text-2xl font-bold text-white drop-shadow">{remoteName}</h2>
         <p className={`text-sm font-medium ${state === "connected" ? "text-emerald-400" : "text-muted-foreground"}`}>

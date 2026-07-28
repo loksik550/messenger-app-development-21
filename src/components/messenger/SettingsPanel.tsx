@@ -9,6 +9,7 @@ import {
   getVolume, setVolume,
   previewRingtone, previewNotifySound, stopRingtone,
   saveCustomRingtone, getCustomRingtoneMeta, clearCustomRingtone,
+  saveCustomNotify, getCustomNotifyMeta, clearCustomNotify,
   type RingtoneId, type NotifyId,
 } from "@/lib/sounds";
 
@@ -44,11 +45,14 @@ export function SettingsPanel({
   const [notifySnd, setNotifySnd] = useState<NotifyId>(() => getNotifyId());
   const [volume, setVolumeS] = useState<number>(() => getVolume());
   const [customMeta, setCustomMeta] = useState<{ name: string; size: number; type: string } | null>(null);
+  const [customNotifyMeta, setCustomNotifyMeta] = useState<{ name: string; size: number; type: string } | null>(null);
   const ringFileRef = useRef<HTMLInputElement | null>(null);
+  const notifyFileRef = useRef<HTMLInputElement | null>(null);
   const [pushPerm, setPushPerm] = useState<NotificationPermission>(() => (typeof Notification !== "undefined" ? Notification.permission : "default"));
   const [soundError, setSoundError] = useState<string>("");
 
   useEffect(() => { getCustomRingtoneMeta().then(setCustomMeta); }, []);
+  useEffect(() => { getCustomNotifyMeta().then(setCustomNotifyMeta); }, []);
   useEffect(() => {
     if (!soundError) return;
     const t = setTimeout(() => setSoundError(""), 3500);
@@ -71,6 +75,25 @@ export function SettingsPanel({
       setRingtone("custom");
     } catch (err) {
       console.error("[ringtone] save failed:", err);
+      setSoundError((err as Error)?.message || "Не удалось сохранить файл");
+    }
+  };
+
+  const onPickNotifyFile = () => notifyFileRef.current?.click();
+  const onNotifyFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const audioExt = /\.(mp3|m4a|aac|ogg|oga|opus|wav|weba|webm|flac|caf|3gp|amr)$/i.test(f.name);
+    if (!f.type.startsWith("audio/") && !audioExt) { setSoundError("Можно загрузить только аудио"); return; }
+    if (f.size > MAX_RINGTONE_SIZE) { setSoundError("Файл слишком большой (макс 10 МБ)"); return; }
+    try {
+      const meta = await saveCustomNotify(f);
+      setCustomNotifyMeta({ name: meta.name, size: meta.size, type: f.type });
+      setNotifyId("custom");
+      setNotifySnd("custom");
+    } catch (err) {
+      console.error("[notify] save failed:", err);
       setSoundError((err as Error)?.message || "Не удалось сохранить файл");
     }
   };
@@ -385,20 +408,47 @@ export function SettingsPanel({
             {NOTIFY_SOUNDS.map((s) => (
               <div key={s.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${notifySnd === s.id ? "border-violet-500 bg-violet-500/10" : "border-white/5 hover:bg-white/5"}`}>
                 <button
-                  onClick={() => { setNotifySnd(s.id); setNotifyId(s.id); previewNotifySound(s.id); }}
-                  className="flex items-center gap-3 flex-1 text-left"
+                  onClick={() => {
+                    if (s.id === "custom" && !customNotifyMeta) { onPickNotifyFile(); return; }
+                    setNotifySnd(s.id); setNotifyId(s.id); previewNotifySound(s.id);
+                  }}
+                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
                 >
                   <div className={`w-5 h-5 rounded-full border-2 ${notifySnd === s.id ? "border-violet-500" : "border-white/20"} flex items-center justify-center flex-shrink-0`}>
                     {notifySnd === s.id && <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />}
                   </div>
-                  <span className="text-sm">{s.name}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate">{s.name}</div>
+                    {s.id === "custom" && customNotifyMeta && <div className="text-[11px] text-muted-foreground truncate">{customNotifyMeta.name}</div>}
+                    {s.id === "custom" && !customNotifyMeta && <div className="text-[11px] text-muted-foreground">Файл не загружен</div>}
+                  </div>
                 </button>
-                <button onClick={() => previewNotifySound(s.id)} className="p-1.5 rounded-lg hover:bg-white/8">
-                  <Icon name="Play" size={14} />
-                </button>
+                {s.id === "custom" ? (
+                  <>
+                    <button onClick={onPickNotifyFile} className="p-1.5 rounded-lg hover:bg-white/8" title="Загрузить">
+                      <Icon name="Upload" size={14} className="text-violet-400" />
+                    </button>
+                    {customNotifyMeta && (
+                      <>
+                        <button onClick={() => previewNotifySound("custom")} className="p-1.5 rounded-lg hover:bg-white/8" title="Прослушать">
+                          <Icon name="Play" size={14} />
+                        </button>
+                        <button onClick={async () => { await clearCustomNotify(); setCustomNotifyMeta(null); if (notifySnd === "custom") { setNotifySnd("ping"); setNotifyId("ping"); } }} className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" title="Удалить">
+                          <Icon name="Trash2" size={14} />
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <button onClick={() => previewNotifySound(s.id)} className="p-1.5 rounded-lg hover:bg-white/8">
+                    <Icon name="Play" size={14} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
+          <input ref={notifyFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onNotifyFile} />
+          <p className="text-[11px] text-muted-foreground mt-2">Можно загрузить свой короткий звук для входящих сообщений.</p>
         </div>
 
         <button
