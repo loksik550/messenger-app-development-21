@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import Icon from "@/components/ui/icon";
 import { api, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
 import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
@@ -6,40 +6,42 @@ import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger
 import { AuthScreen } from "@/components/messenger/AuthScreen";
 import { ContactsPanel } from "@/components/messenger/ContactsPanel";
 import { CallScreen } from "@/components/messenger/CallScreen";
-import { AdminPanel } from "@/components/messenger/AdminPanel";
 import InstallPrompt from "@/components/messenger/InstallPrompt";
 import InstallWelcome from "@/components/messenger/InstallWelcome";
 import EnableNotificationsBanner from "@/components/messenger/EnableNotificationsBanner";
 import { toast } from "@/hooks/use-toast";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
-import GroupCreateModal from "@/components/messenger/GroupCreateModal";
-import JoinChannelModal from "@/components/messenger/JoinChannelModal";
 import { GroupChatWindow } from "@/components/messenger/GroupChatWindow";
-import WalletPanel from "@/components/messenger/WalletPanel";
-import ProPanel from "@/components/messenger/ProPanel";
-import ProSettingsPanel from "@/components/messenger/ProSettingsPanel";
-import LightningPanel from "@/components/messenger/LightningPanel";
-import StickersStorePanel from "@/components/messenger/StickersStorePanel";
-import FundraiserPanel from "@/components/messenger/FundraiserPanel";
-import { AdminStickersPanel } from "@/components/messenger/AdminStickersPanel";
-import BotsPanel from "@/components/messenger/BotsPanel";
 import { RealStoriesBar, RealStoryViewer, type StoryGroup } from "@/components/messenger/RealStories";
-import ProgressPanel from "@/components/messenger/ProgressPanel";
-import SupportPanel from "@/components/messenger/SupportPanel";
 import { useOverlays } from "@/hooks/useOverlays";
 import { LanguageSwitcher } from "@/components/messenger/LanguageSwitcher";
 import { useT } from "@/hooks/useT";
-import PremiumPanel from "@/components/messenger/PremiumPanel";
-import PrivacyPanel from "@/components/messenger/PrivacyPanel";
-import NotificationsPanel from "@/components/messenger/NotificationsPanel";
-import AppearancePanel from "@/components/messenger/AppearancePanel";
-import SavedNotesPanel from "@/components/messenger/SavedNotesPanel";
-import PaymentRequestsPanel from "@/components/messenger/PaymentRequestsPanel";
-import AccountDeletePanel from "@/components/messenger/AccountDeletePanel";
 import ConsentScreen, { hasConsent } from "@/components/messenger/ConsentScreen";
-import PrivacyPolicyPanel from "@/components/messenger/PrivacyPolicyPanel";
 import PinLockScreen from "@/components/messenger/PinLockScreen";
+
+// Редкие панели грузятся лениво — это ускоряет первый запуск приложения
+const AdminPanel = lazy(() => import("@/components/messenger/AdminPanel").then(m => ({ default: m.AdminPanel })));
+const GroupCreateModal = lazy(() => import("@/components/messenger/GroupCreateModal"));
+const JoinChannelModal = lazy(() => import("@/components/messenger/JoinChannelModal"));
+const WalletPanel = lazy(() => import("@/components/messenger/WalletPanel"));
+const ProPanel = lazy(() => import("@/components/messenger/ProPanel"));
+const ProSettingsPanel = lazy(() => import("@/components/messenger/ProSettingsPanel"));
+const LightningPanel = lazy(() => import("@/components/messenger/LightningPanel"));
+const StickersStorePanel = lazy(() => import("@/components/messenger/StickersStorePanel"));
+const FundraiserPanel = lazy(() => import("@/components/messenger/FundraiserPanel"));
+const AdminStickersPanel = lazy(() => import("@/components/messenger/AdminStickersPanel").then(m => ({ default: m.AdminStickersPanel })));
+const BotsPanel = lazy(() => import("@/components/messenger/BotsPanel"));
+const ProgressPanel = lazy(() => import("@/components/messenger/ProgressPanel"));
+const SupportPanel = lazy(() => import("@/components/messenger/SupportPanel"));
+const PremiumPanel = lazy(() => import("@/components/messenger/PremiumPanel"));
+const PrivacyPanel = lazy(() => import("@/components/messenger/PrivacyPanel"));
+const NotificationsPanel = lazy(() => import("@/components/messenger/NotificationsPanel"));
+const AppearancePanel = lazy(() => import("@/components/messenger/AppearancePanel"));
+const SavedNotesPanel = lazy(() => import("@/components/messenger/SavedNotesPanel"));
+const PaymentRequestsPanel = lazy(() => import("@/components/messenger/PaymentRequestsPanel"));
+const AccountDeletePanel = lazy(() => import("@/components/messenger/AccountDeletePanel"));
+const PrivacyPolicyPanel = lazy(() => import("@/components/messenger/PrivacyPolicyPanel"));
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
@@ -66,11 +68,18 @@ function mapChat(c: ChatRaw): Chat {
     unread: c.unread || 0,
     online: Date.now() / 1000 - (c.partner.last_seen || 0) < 60,
     partner_id: c.partner.id,
+    lastSeen: c.partner.last_seen,
     muted: c.muted || false,
     pinned: c.pinned || false,
     favorite: c.favorite || false,
   };
 }
+
+const LAZY_FALLBACK = (
+  <div className="fixed inset-0 z-[280] flex items-center justify-center bg-background/60 backdrop-blur-sm">
+    <div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+  </div>
+);
 
 export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -359,7 +368,7 @@ export default function Index() {
         since.val = data.call.created_at;
         setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
       }
-    }, 5000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [currentUser, activeCall]);
 
@@ -449,20 +458,22 @@ export default function Index() {
 
   // Экран политики конфиденциальности (доступен из настроек)
   if (showPrivacyPolicy) {
-    return <PrivacyPolicyPanel onBack={() => setShowPrivacyPolicy(false)} />;
+    return <Suspense fallback={LAZY_FALLBACK}><PrivacyPolicyPanel onBack={() => setShowPrivacyPolicy(false)} /></Suspense>;
   }
 
   // Экран удаления аккаунта (доступен из настроек)
   if (showAccountDelete) {
     return (
-      <AccountDeletePanel
-        user={currentUser}
-        onBack={() => setShowAccountDelete(false)}
-        onDeleted={() => {
-          setShowAccountDelete(false);
-          logout();
-        }}
-      />
+      <Suspense fallback={LAZY_FALLBACK}>
+        <AccountDeletePanel
+          user={currentUser}
+          onBack={() => setShowAccountDelete(false)}
+          onDeleted={() => {
+            setShowAccountDelete(false);
+            logout();
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -477,6 +488,7 @@ export default function Index() {
   };
 
   return (
+    <Suspense fallback={LAZY_FALLBACK}>
     <div className="flex overflow-hidden relative" style={{ height: "100dvh", minHeight: "100dvh" }}>
       {/* Mesh background */}
       <div className="mesh-bg" />
@@ -1077,5 +1089,6 @@ export default function Index() {
         />
       )}
     </div>
+    </Suspense>
   );
 }

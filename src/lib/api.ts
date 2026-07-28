@@ -288,6 +288,20 @@ export interface Chat {
   favorite?: boolean;
   archived?: boolean;
   partner_id?: number;
+  lastSeen?: number;
+}
+
+// "был в сети N назад" / "в сети" по unix-времени last_seen
+export function formatLastSeen(lastSeen?: number | null): string {
+  if (!lastSeen) return "был(а) недавно";
+  const diff = Math.floor(Date.now() / 1000) - lastSeen;
+  if (diff < 60) return "в сети";
+  if (diff < 3600) { const m = Math.floor(diff / 60); return `был(а) ${m} мин назад`; }
+  if (diff < 86400) { const h = Math.floor(diff / 3600); return `был(а) ${h} ч назад`; }
+  const d = Math.floor(diff / 86400);
+  if (d === 1) return "был(а) вчера";
+  if (d < 7) return `был(а) ${d} дн назад`;
+  return "был(а) давно";
 }
 
 export interface User {

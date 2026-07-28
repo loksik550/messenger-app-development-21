@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { avatarGrad, type Chat } from "@/lib/api";
+import { avatarGrad, getCallAvatar, type Chat } from "@/lib/api";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
 import usePullToRefresh from "@/hooks/usePullToRefresh";
 
@@ -177,7 +177,7 @@ export function ChatList({
           className={`w-full flex items-center gap-3 px-4 py-3 transition-colors rounded-2xl
             ${selectedId === chat.id ? "bg-white/8 glass" : "bg-[hsl(var(--background))] hover:bg-white/4"}`}
         >
-          <Avatar label={chat.avatar} id={chat.id} online={chat.online} src={chat.avatar_url || undefined} />
+          <Avatar label={chat.avatar} id={chat.id} online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} />
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 min-w-0">

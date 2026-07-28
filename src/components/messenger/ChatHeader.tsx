@@ -1,5 +1,5 @@
 import Icon from "@/components/ui/icon";
-import { type Chat, type IconName } from "@/lib/api";
+import { type Chat, type IconName, getCallAvatar, formatLastSeen } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import { useT } from "@/hooks/useT";
 
@@ -86,7 +86,7 @@ export function ChatHeader({
         onClick={() => onOpenProfile?.()}
         onContextMenu={(e) => { e.preventDefault(); onOpenProfile?.(); }}
       >
-        <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={chat.avatar_url || undefined} />
+        <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-foreground truncate">{chat.name}</span>
@@ -99,8 +99,10 @@ export function ChatHeader({
               <span className="text-violet-400">{t("common.typing")}</span>
             ) : chat.online ? (
               <span className="text-emerald-400">{t("partner.online")}</span>
-            ) : (
+            ) : chat.group ? (
               t("partner.recently")
+            ) : (
+              formatLastSeen(chat.lastSeen)
             )}
           </div>
         </div>

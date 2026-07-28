@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import { type Chat, type IconName, api, getCallAvatar, setCallAvatar, clearCallAvatar, fileToCallAvatar } from "@/lib/api";
+import { type Chat, type IconName, api, getCallAvatar, setCallAvatar, clearCallAvatar, fileToCallAvatar, formatLastSeen } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
@@ -121,10 +121,10 @@ export default function PartnerProfilePanel({
 
       <div className="flex-1 overflow-y-auto max-w-md mx-auto w-full">
         <div className="flex flex-col items-center py-8 px-4">
-          <Avatar label={chat.avatar} id={chat.id} size="xl" online={chat.online} src={chat.avatar_url || undefined} zoomable />
+          <Avatar label={chat.avatar} id={chat.id} size="xl" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} zoomable />
           <h1 className="mt-4 text-xl font-bold text-foreground">{chat.name}</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            {chat.online ? <span className="text-emerald-400">{t("partner.online")}</span> : t("partner.recently")}
+            {chat.online ? <span className="text-emerald-400">{t("partner.online")}</span> : formatLastSeen(chat.lastSeen)}
           </p>
 
           <div className="flex items-center gap-3 mt-6">

@@ -1,4 +1,4 @@
-const CACHE = "nova-v8";
+const CACHE = "nova-v9";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -77,11 +77,15 @@ self.addEventListener("push", (e) => {
 
   e.waitUntil(
     (async () => {
-      // Проверяем — если приложение уже открыто и видимо, не показываем системное уведомление
       const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const visible = list.find((c) => c.visibilityState === "visible" && c.focused);
-      if (visible && !isCall) {
-        // Передадим в окно, пусть само рендерит in-app тост
+      if (visible) {
+        if (isCall) {
+          // Приложение открыто — сразу показываем экран входящего вызова внутри приложения
+          visible.postMessage({ type: "incoming_call", call_id: data.call_id });
+          return;
+        }
+        // Входящее сообщение — рендерим in-app тост, без системного уведомления
         visible.postMessage({ type: "in_app_message", chat_id: data.chat_id, title: data.title || "Nova", body: options.body });
         return;
       }
