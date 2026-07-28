@@ -65,25 +65,6 @@ def handler(event: dict, context) -> dict:
     if action == "vapid_key":
         return ok({"public_key": _vapid_public()})
 
-    # ── vapid_debug — безопасная диагностика формата ключей (без значений) ─────
-    if action == "vapid_debug":
-        priv = _vapid_private()
-        pub = _vapid_public()
-        info = {
-            "priv_len": len(priv),
-            "priv_has_pem": "BEGIN" in priv,
-            "priv_has_newline": "\n" in os.environ.get("VAPID_PRIVATE_KEY", ""),
-            "pub_len": len(pub),
-            "pub_has_pem": "BEGIN" in pub,
-        }
-        try:
-            from py_vapid import Vapid
-            Vapid.from_string(private_key=priv)
-            info["parse_ok"] = True
-        except Exception as e:
-            info["parse_ok"] = False
-            info["parse_error"] = str(e)[:120]
-        return ok(info)
 
     conn = get_conn()
     cur = conn.cursor()

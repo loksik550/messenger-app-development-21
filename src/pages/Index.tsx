@@ -204,10 +204,24 @@ export default function Index() {
         if (!publicKey) return;
 
         const reg = await navigator.serviceWorker.ready;
+        const appServerKey = urlBase64ToUint8Array(publicKey);
         const existing = await reg.pushManager.getSubscription();
-        const sub = existing || await reg.pushManager.subscribe({
+        // Если подписка создана под старый (изменившийся) VAPID-ключ — она
+        // больше не работает. Сверяем ключ и при несовпадении пересоздаём.
+        if (existing) {
+          const existingKey = existing.options?.applicationServerKey;
+          const sameKey = existingKey
+            ? new Uint8Array(existingKey).every((b, i) => b === appServerKey[i]) &&
+              new Uint8Array(existingKey).length === appServerKey.length
+            : false;
+          if (!sameKey) {
+            try { await existing.unsubscribe(); } catch { /* noop */ }
+          }
+        }
+        const current = await reg.pushManager.getSubscription();
+        const sub = current || await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
+          applicationServerKey: appServerKey,
         });
 
         const subJson = sub.toJSON();
