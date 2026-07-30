@@ -1,6 +1,8 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import Icon from "@/components/ui/icon";
 import { api, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
+import { playMessageSound } from "@/lib/sounds";
+import { native } from "@/lib/native";
 import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
 import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger/Panels";
 import { AuthScreen } from "@/components/messenger/AuthScreen";
@@ -12,8 +14,7 @@ import EnableNotificationsBanner from "@/components/messenger/EnableNotification
 import { toast } from "@/hooks/use-toast";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
-import { GroupChatWindow } from "@/components/messenger/GroupChatWindow";
-import { RealStoriesBar, RealStoryViewer, type StoryGroup } from "@/components/messenger/RealStories";
+import { RealStoriesBar, type StoryGroup } from "@/components/messenger/RealStories";
 import { useOverlays } from "@/hooks/useOverlays";
 import { LanguageSwitcher } from "@/components/messenger/LanguageSwitcher";
 import { useT } from "@/hooks/useT";
@@ -22,6 +23,8 @@ import PinLockScreen from "@/components/messenger/PinLockScreen";
 
 // Редкие панели грузятся лениво — это ускоряет первый запуск приложения
 const AdminPanel = lazy(() => import("@/components/messenger/AdminPanel").then(m => ({ default: m.AdminPanel })));
+const GroupChatWindow = lazy(() => import("@/components/messenger/GroupChatWindow"));
+const RealStoryViewer = lazy(() => import("@/components/messenger/RealStories").then(m => ({ default: m.RealStoryViewer })));
 const GroupCreateModal = lazy(() => import("@/components/messenger/GroupCreateModal"));
 const JoinChannelModal = lazy(() => import("@/components/messenger/JoinChannelModal"));
 const WalletPanel = lazy(() => import("@/components/messenger/WalletPanel"));
@@ -170,6 +173,7 @@ export default function Index() {
   const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCall, setActiveCall] = useState<{ userId: number; name: string; callId: string; incoming: boolean } | null>(null);
+  const unreadRef = useRef<Map<number, number> | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archivedCount, setArchivedCount] = useState(0);
   const [chatFolder, setChatFolder] = useChatFolder();
@@ -259,6 +263,23 @@ export default function Index() {
       if (typeof data.archived_count === "number") setArchivedCount(data.archived_count);
       if (data.chats) {
         const mapped: Chat[] = data.chats.map(mapChat);
+        // Детект новых входящих сообщений: если непрочитанных стало больше —
+        // показываем локальное уведомление и звук (работает пока приложение открыто,
+        // это резерв на случай, когда Web Push не доходит, напр. на iOS в браузере).
+        const prevUnread = unreadRef.current;
+        if (prevUnread !== null) {
+          for (const c of mapped) {
+            const before = prevUnread.get(c.id) || 0;
+            const now = c.unread || 0;
+            const isActiveOpen = selectedChat?.id === c.id && document.visibilityState === "visible";
+            if (now > before && !c.muted && !isActiveOpen) {
+              playMessageSound();
+              native.localNotify.show(c.name, c.lastMsg || "Новое сообщение");
+              break;
+            }
+          }
+        }
+        unreadRef.current = new Map(mapped.map(c => [c.id, c.unread || 0]));
         // Обновляем только если реально что-то изменилось — иначе мигают ники
         setRealChats(prev => {
           const prevStr = JSON.stringify(prev.map(c => ({ id: c.id, lastMsg: c.lastMsg, unread: c.unread, online: c.online, time: c.time, muted: c.muted, pinned: c.pinned, favorite: c.favorite })));
@@ -356,17 +377,22 @@ export default function Index() {
     setActiveCall({ userId: contact.id, name: contact.name, callId, incoming: false });
   };
 
-  // Polling входящих звонков (только когда вкладка активна)
+  // Polling входящих звонков. Работает и в фоне — если вкладка не активна,
+  // показываем локальное уведомление о звонке (резерв к Web Push).
   useEffect(() => {
     if (!currentUser) return;
     const since = { val: Math.floor(Date.now() / 1000) - 5 };
     const interval = setInterval(async () => {
       if (activeCall) return;
-      if (document.visibilityState !== "visible") return;
       const data = await api("poll_incoming_call", { since: since.val }, currentUser.id);
       if (data.call) {
         since.val = data.call.created_at;
-        setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
+        if (document.visibilityState === "visible") {
+          setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
+        } else {
+          // Приложение свёрнуто — уведомляем звонком-уведомлением
+          native.localNotify.show(`📞 ${data.call.from_name}`, "Входящий звонок");
+        }
       }
     }, 3000);
     return () => clearInterval(interval);
