@@ -19,12 +19,16 @@ const FALLBACK_ICE: RTCIceServer[] = [
 ];
 export async function getIceServers(): Promise<RTCIceServer[]> {
   try {
-    const res = await fetch(ICE_API, { method: "GET" });
+    // Таймаут: если сервер не ответил быстро — не тормозим звонок, берём запасной набор
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch(ICE_API, { method: "GET", signal: ctrl.signal });
+    clearTimeout(t);
     const data = await res.json();
     if (Array.isArray(data.iceServers) && data.iceServers.length) {
       return data.iceServers as RTCIceServer[];
     }
-  } catch { /* сеть — используем запасной список */ }
+  } catch { /* сеть/таймаут — используем запасной список */ }
   return FALLBACK_ICE;
 }
 

@@ -40,6 +40,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const endedRef = useRef(false);
   const processedRef = useRef<Set<number>>(new Set()); // id уже обработанных сигналов
   const restartingRef = useRef(false);
+  const iceServersRef = useRef<RTCIceServer[] | null>(null);
   const [mediaError, setMediaError] = useState<string>("");
 
   const cleanup = () => {
@@ -132,12 +133,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       localVideoRef.current.play().catch(() => { /* ignore */ });
     }
 
-    // Загружаем актуальные ICE-серверы (с рабочим TURN) с бэкенда
-    const iceServers = await getIceServers();
-    const pc = new RTCPeerConnection({
-      iceServers,
-      iceCandidatePoolSize: 4,
-    });
+    // ICE-серверы уже предзагружены при монтировании (iceServersRef), чтобы
+    // не задерживать создание соединения и сбор ICE-кандидатов.
+    const iceServers = iceServersRef.current || await getIceServers();
+    const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
 
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -147,11 +146,16 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     };
 
     pc.ontrack = (e) => {
-      // Поток собеседника пошёл — рингтон/гудки больше не нужны
+      // Поток собеседника реально пошёл — это честный признак соединения.
+      // Именно здесь ставим "connected" и запускаем таймер, чтобы у обеих
+      // сторон время шло синхронно (а не по факту ICE у одной стороны).
       stopRingtone();
       stopDialTone();
       const incoming = e.streams[0] || new MediaStream([e.track]);
       attachRemoteStream(incoming);
+      setNetPoor(false);
+      setState("connected");
+      startTimer();
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -159,9 +163,13 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       if (s === "connected" || s === "completed") {
         restartingRef.current = false;
         setNetPoor(false);
-        setState("connected");
-        startTimer();
-        if (remoteStreamRef.current) attachRemoteStream(remoteStreamRef.current);
+        // "connected" ставим только если реально есть поток собеседника,
+        // иначе получалось: у одной стороны время идёт, у другой «соединение».
+        if (remoteStreamRef.current) {
+          attachRemoteStream(remoteStreamRef.current);
+          setState("connected");
+          startTimer();
+        }
       } else if (s === "disconnected") {
         // Временный обрыв — показываем «слабое соединение», но не завершаем звонок
         setNetPoor(true);
@@ -180,9 +188,11 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       if (cs === "connected") {
         restartingRef.current = false;
         setNetPoor(false);
-        setState("connected");
-        startTimer();
-        if (remoteStreamRef.current) attachRemoteStream(remoteStreamRef.current);
+        if (remoteStreamRef.current) {
+          attachRemoteStream(remoteStreamRef.current);
+          setState("connected");
+          startTimer();
+        }
       } else if (cs === "failed" && !isIncoming && !restartingRef.current) {
         restartingRef.current = true;
         restartIce(pc);
@@ -294,11 +304,16 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   useEffect(() => {
     // Разблокируем AudioContext, иначе на мобильных гудки/рингтон не играют
     unlockAudioContext();
+    // Предзагружаем ICE-серверы заранее, чтобы соединение создавалось мгновенно
+    // и сбор ICE-кандидатов не срывался (иначе звонящий генерировал мало
+    // кандидатов и связь была односторонней).
+    getIceServers().then(s => { iceServersRef.current = s; }).catch(() => { /* fallback внутри */ });
     if (isIncoming) {
       startRingtone();
     } else {
       startDialTone();
-      startCall();
+      // Небольшая задержка, чтобы ICE успели предзагрузиться до offer
+      getIceServers().then(s => { iceServersRef.current = s; startCall(); }).catch(() => startCall());
     }
     return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
