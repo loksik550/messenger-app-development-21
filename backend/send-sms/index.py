@@ -96,29 +96,39 @@ def handler(event: dict, context) -> dict:
         sender = os.environ.get("SMSC_SENDER", "")
 
         if login and password:
-            sms_params = {
-                "login": login,
-                "psw": password,
-                "phones": digits,
-                "mes": f"Nova: ваш код подтверждения {code}",
-                "fmt": 3,
-                "charset": "utf-8",
-            }
-            if sender:
-                sms_params["sender"] = sender
-            params = urllib.parse.urlencode(sms_params)
-            url = f"https://smsc.ru/sys/send.php?{params}"
+            def _smsc_send(with_sender: bool):
+                p = {
+                    "login": login,
+                    "psw": password,
+                    "phones": digits,
+                    "mes": f"Nova: ваш код подтверждения {code}",
+                    "fmt": 3,
+                    "charset": "utf-8",
+                }
+                if with_sender and sender:
+                    p["sender"] = sender
+                u = f"https://smsc.ru/sys/send.php?{urllib.parse.urlencode(p)}"
+                r = urllib.request.urlopen(u, timeout=10)
+                return json.loads(r.read().decode("utf-8"))
+
             try:
-                req = urllib.request.urlopen(url, timeout=10)
-                result = json.loads(req.read().decode("utf-8"))
-            except Exception:
+                result = _smsc_send(with_sender=True)
+                # "message is denied" часто означает, что имя отправителя (sender)
+                # не одобрено. Пробуем повторить без sender — уйдёт с общего номера.
+                if result.get("error") and sender:
+                    print(f"SMSC first attempt denied (code={result.get('error_code')}), retry without sender")
+                    result = _smsc_send(with_sender=False)
+            except Exception as ex:
+                print(f"SMSC request failed: {ex}")
                 conn.close()
                 return {"statusCode": 502, "headers": headers, "body": json.dumps({"error": "Не удалось отправить SMS. Попробуйте позже."})}
             if result.get("error"):
-                # Не логируем код, только тех. ошибку SMSC
-                print(f"SMSC error: code={result.get('error_code')} msg={result.get('error')}")
+                err_code = result.get("error_code")
+                print(f"SMSC error: code={err_code} msg={result.get('error')}")
                 conn.close()
-                return {"statusCode": 502, "headers": headers, "body": json.dumps({"error": "Не удалось отправить SMS. Проверьте номер и попробуйте позже."})}
+                # error_code SMSC: 2=неверный логин/пароль, 3=недостаточно средств,
+                # 5=неверный формат, 6=запрещено (sender/модерация), 7=номер запрещён
+                return {"statusCode": 502, "headers": headers, "body": json.dumps({"error": "Не удалось отправить SMS. Проверьте номер и попробуйте позже.", "smsc_error_code": err_code})}
             conn.close()
             return {"statusCode": 200, "headers": headers, "body": json.dumps({"ok": True, "demo": False})}
 
