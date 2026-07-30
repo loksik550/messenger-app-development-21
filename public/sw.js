@@ -1,4 +1,7 @@
-const CACHE = "nova-v9";
+const CACHE = "nova-v10";
+// Иконка уведомлений — берём с CDN (локальных /icons/*.png в проекте нет,
+// и из-за 404 некоторые устройства вообще не показывали уведомление).
+const NOTIF_ICON = "https://cdn.poehali.dev/projects/6364bfec-87ef-4e7b-8203-730d57164065/files/52e946a1-a32a-4a01-ac9e-228ced39895d.jpg";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -49,8 +52,8 @@ self.addEventListener("push", (e) => {
 
   const options = isCall ? {
     body: data.body || "Входящий звонок",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    icon: NOTIF_ICON,
+    badge: NOTIF_ICON,
     image: data.image,
     vibrate: [500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500],
     tag: data.tag || `call_${data.call_id}`,
@@ -65,8 +68,8 @@ self.addEventListener("push", (e) => {
     ],
   } : {
     body: data.body || "Новое сообщение",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    icon: NOTIF_ICON,
+    badge: NOTIF_ICON,
     vibrate: [200, 100, 200],
     tag: data.tag || `msg_${data.chat_id || "x"}`,
     renotify: true,

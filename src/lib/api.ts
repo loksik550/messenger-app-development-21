@@ -4,6 +4,29 @@ export const PUSH_API = "https://functions.poehali.dev/c9d141ca-3552-433f-a968-a
 export const UPLOAD_API = "https://functions.poehali.dev/c0e361f0-438f-44b3-8886-26f5afb7d935";
 export const YOOKASSA_PAY_API = "https://functions.poehali.dev/2feb7862-ee04-4945-8549-c0596f30bdc9";
 export const SMS_API = "https://functions.poehali.dev/d5b81fb8-fe85-4a15-84a6-cc602997298c";
+export const ICE_API = "https://functions.poehali.dev/b47750f2-27d7-416d-9a72-c9b855945258";
+
+// Загружает ICE-серверы (STUN+TURN) для звонков с бэкенда.
+// TURN нужен, чтобы голос проходил между устройствами за NAT (мобильный интернет).
+const FALLBACK_ICE: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  {
+    urls: ["turn:openrelay.metered.ca:443", "turn:openrelay.metered.ca:443?transport=tcp"],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+export async function getIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch(ICE_API, { method: "GET" });
+    const data = await res.json();
+    if (Array.isArray(data.iceServers) && data.iceServers.length) {
+      return data.iceServers as RTCIceServer[];
+    }
+  } catch { /* сеть — используем запасной список */ }
+  return FALLBACK_ICE;
+}
 
 // Лёгкие polling-эндпоинты вынесены в отдельную функцию chat-poll
 const POLL_ACTIONS = new Set(["get_typing", "get_call_signals", "poll_incoming_call", "scheduled_run_due"]);

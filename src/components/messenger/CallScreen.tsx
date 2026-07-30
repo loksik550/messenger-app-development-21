@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import { api, avatarGrad, getCallAvatar, type User } from "@/lib/api";
+import { api, avatarGrad, getCallAvatar, getIceServers, type User } from "@/lib/api";
 import { startRingtone, stopRingtone, startDialTone, stopDialTone, playHangupSound, unlockAudioContext } from "@/lib/sounds";
 
 type CallState = "calling" | "ringing" | "connected" | "ended";
@@ -14,31 +14,6 @@ interface CallScreenProps {
   onClose: () => void;
 }
 
-const ICE_SERVERS = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-  { urls: "stun:stun.cloudflare.com:3478" },
-  // TURN-серверы (ретрансляция) нужны, когда оба собеседника за NAT — например
-  // оба в мобильном интернете. Без них голос не проходит и собеседника не слышно.
-  // Держим несколько публичных релеев для надёжности (как в мессенджерах).
-  {
-    urls: [
-      "turn:openrelay.metered.ca:80",
-      "turn:openrelay.metered.ca:443",
-      "turn:openrelay.metered.ca:443?transport=tcp",
-    ],
-    username: "openrelayproject",
-    credential: "openrelayproject",
-  },
-  {
-    urls: [
-      "turn:relay1.expressturn.com:3478",
-      "turn:relay1.expressturn.com:3478?transport=tcp",
-    ],
-    username: "ef2X8ODBQZ8PXHNXQL",
-    credential: "ymS3tZmVQ0kR6Xt3",
-  },
-];
 
 export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIncoming, onClose }: CallScreenProps) {
   const isVideo = callId.startsWith("video_");
@@ -157,8 +132,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       localVideoRef.current.play().catch(() => { /* ignore */ });
     }
 
+    // Загружаем актуальные ICE-серверы (с рабочим TURN) с бэкенда
+    const iceServers = await getIceServers();
     const pc = new RTCPeerConnection({
-      iceServers: ICE_SERVERS,
+      iceServers,
       iceCandidatePoolSize: 4,
     });
     pcRef.current = pc;

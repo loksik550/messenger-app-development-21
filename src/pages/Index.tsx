@@ -207,6 +207,22 @@ export default function Index() {
   const openOverlay = overlays.open;
 
   // Push-подписка
+  // Нативные push (FCM) на Android-приложении: регистрируем токен и показываем
+  // локальное уведомление при получении пуша — чтобы уведомления приходили в фоне.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!native.isNative) return;
+    native.push.register(
+      () => { /* токен получен — доставка идёт через нативный слой */ },
+      (msg: unknown) => {
+        const m = msg as { title?: string; body?: string; notification?: { title?: string; body?: string }; data?: Record<string, string> };
+        const title = m.title || m.notification?.title || m.data?.title || "Nova";
+        const body = m.body || m.notification?.body || m.data?.message || "Новое сообщение";
+        native.localNotify.show(title, body);
+      }
+    );
+  }, [currentUser]);
+
   useEffect(() => {
     if (!currentUser) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
