@@ -47,7 +47,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const sinceRef = useRef(Math.floor(Date.now() / 1000) - 30);
+  const sinceRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const remoteDescSetRef = useRef(false);
@@ -187,7 +187,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     return pc;
   };
 
-  const handleSignal = async (pc: RTCPeerConnection, sig: { type: string; payload: unknown; created_at: number }) => {
+  const handleSignal = async (pc: RTCPeerConnection, sig: { id?: number; type: string; payload: unknown; created_at: number }) => {
     if (sig.type === "offer") {
       // Принимающий получает offer
       if (pc.signalingState !== "stable") return;
@@ -223,20 +223,26 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     }
   };
 
+  const pollOnce = async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    try {
+      const data = await api("get_call_signals", { call_id: callId, since_id: sinceRef.current }, currentUser.id);
+      if (!data.signals) return;
+      for (const sig of data.signals) {
+        sinceRef.current = Math.max(sinceRef.current, sig.id || 0);
+        await handleSignal(pc, sig);
+      }
+    } catch { /* network ignore */ }
+  };
+
   const pollSignals = () => {
     if (pollRef.current) return;
-    pollRef.current = setInterval(async () => {
-      const pc = pcRef.current;
-      if (!pc) return;
-      try {
-        const data = await api("get_call_signals", { call_id: callId, since: sinceRef.current }, currentUser.id);
-        if (!data.signals) return;
-        for (const sig of data.signals) {
-          sinceRef.current = Math.max(sinceRef.current, sig.created_at);
-          await handleSignal(pc, sig);
-        }
-      } catch { /* network ignore */ }
-    }, 1200);
+    // Первый опрос — сразу и с id=0, чтобы гарантированно поймать все сигналы
+    // звонка (offer/candidate), даже если приняли не сразу.
+    sinceRef.current = 0;
+    pollOnce();
+    pollRef.current = setInterval(pollOnce, 1000);
   };
 
   const startCall = async () => {
@@ -295,6 +301,25 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       if (canVibrate) navigator.vibrate(0);
     };
   }, [state]);
+
+  // Когда звонок соединился — настойчиво пытаемся воспроизвести звук собеседника.
+  // На Android/мобильных play() часто требует повтора после прихода потока.
+  useEffect(() => {
+    if (state !== "connected") return;
+    let tries = 0;
+    const tryPlay = () => {
+      const el = isVideo ? remoteVideoRef.current : remoteAudioRef.current;
+      if (el && el.srcObject) {
+        if (!isVideo) { el.muted = false; el.volume = 1.0; }
+        el.play().catch(() => { /* ждём следующего тика/жеста */ });
+      }
+      tries += 1;
+      if (tries >= 6) clearInterval(iv);
+    };
+    tryPlay();
+    const iv = setInterval(tryPlay, 700);
+    return () => clearInterval(iv);
+  }, [state, isVideo]);
 
   const hangup = () => endCall("hangup");
   const reject = () => endCall("hangup");

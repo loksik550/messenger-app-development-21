@@ -2268,17 +2268,32 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return err("Нужен X-User-Id")
         call_id = (body.get("call_id") or params.get("call_id") or "").strip()
-        since = int(body.get("since") or params.get("since") or 0)
         if not call_id:
             conn.close()
             return err("Укажите call_id")
-        cur.execute(
-            f"""SELECT id, from_user_id, type, payload, created_at
-                FROM {SCHEMA}.call_signals
-                WHERE call_id = %s AND to_user_id = %s AND created_at > %s
-                ORDER BY id ASC LIMIT 20""",
-            (call_id, int(user_id), since)
-        )
+        # Фильтруем по id (since_id) — надёжнее, чем по секундам created_at:
+        # несколько сигналов (offer + candidate) создаются в одну секунду и
+        # фильтр по времени их терял, из-за чего ICE не собирался и не было звука.
+        since_id_raw = body.get("since_id")
+        if since_id_raw is None:
+            since_id_raw = params.get("since_id")
+        if since_id_raw is not None:
+            cur.execute(
+                f"""SELECT id, from_user_id, type, payload, created_at
+                    FROM {SCHEMA}.call_signals
+                    WHERE call_id = %s AND to_user_id = %s AND id > %s
+                    ORDER BY id ASC LIMIT 30""",
+                (call_id, int(user_id), int(since_id_raw))
+            )
+        else:
+            since = int(body.get("since") or params.get("since") or 0)
+            cur.execute(
+                f"""SELECT id, from_user_id, type, payload, created_at
+                    FROM {SCHEMA}.call_signals
+                    WHERE call_id = %s AND to_user_id = %s AND created_at > %s
+                    ORDER BY id ASC LIMIT 30""",
+                (call_id, int(user_id), since)
+            )
         rows = cur.fetchall()
         conn.close()
         signals = [{"id": r[0], "from_user_id": r[1], "type": r[2], "payload": json.loads(r[3]) if r[3] else None, "created_at": r[4]} for r in rows]
