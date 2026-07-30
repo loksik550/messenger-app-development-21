@@ -17,8 +17,10 @@ interface CallScreenProps {
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
-  // TURN-серверы нужны, когда оба собеседника за NAT (мобильный интернет и т.п.).
-  // Без них голос/видео могут не пройти и собеседника не слышно.
+  { urls: "stun:stun.cloudflare.com:3478" },
+  // TURN-серверы (ретрансляция) нужны, когда оба собеседника за NAT — например
+  // оба в мобильном интернете. Без них голос не проходит и собеседника не слышно.
+  // Держим несколько публичных релеев для надёжности (как в мессенджерах).
   {
     urls: [
       "turn:openrelay.metered.ca:80",
@@ -28,6 +30,14 @@ const ICE_SERVERS = [
     username: "openrelayproject",
     credential: "openrelayproject",
   },
+  {
+    urls: [
+      "turn:relay1.expressturn.com:3478",
+      "turn:relay1.expressturn.com:3478?transport=tcp",
+    ],
+    username: "ef2X8ODBQZ8PXHNXQL",
+    credential: "ymS3tZmVQ0kR6Xt3",
+  },
 ];
 
 export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIncoming, onClose }: CallScreenProps) {
@@ -36,6 +46,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const [muted, setMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
   const [speaker, setSpeaker] = useState(true);
+  const [netPoor, setNetPoor] = useState(false);
   const [duration, setDuration] = useState(0);
   // Своя картинка на звонок для этого контакта (хранится локально, видна только мне)
   const callAvatar = getCallAvatar(remoteUserId);
@@ -52,6 +63,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const remoteDescSetRef = useRef(false);
   const endedRef = useRef(false);
+  const processedRef = useRef<Set<number>>(new Set()); // id уже обработанных сигналов
+  const restartingRef = useRef(false);
   const [mediaError, setMediaError] = useState<string>("");
 
   const cleanup = () => {
@@ -144,7 +157,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       localVideoRef.current.play().catch(() => { /* ignore */ });
     }
 
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 4,
+    });
     pcRef.current = pc;
 
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -154,42 +170,65 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     };
 
     pc.ontrack = (e) => {
-      // Поток собеседника пошёл — рингтон/гудки больше не нужны, считаем что соединились
+      // Поток собеседника пошёл — рингтон/гудки больше не нужны
       stopRingtone();
       stopDialTone();
       const incoming = e.streams[0] || new MediaStream([e.track]);
       attachRemoteStream(incoming);
-      setState("connected");
-      startTimer();
     };
 
     pc.oniceconnectionstatechange = () => {
       const s = pc.iceConnectionState;
       if (s === "connected" || s === "completed") {
+        restartingRef.current = false;
+        setNetPoor(false);
         setState("connected");
         startTimer();
         if (remoteStreamRef.current) attachRemoteStream(remoteStreamRef.current);
-      } else if (s === "failed" || s === "closed") {
-        endCall("remote_hangup");
+      } else if (s === "disconnected") {
+        // Временный обрыв — показываем «слабое соединение», но не завершаем звонок
+        setNetPoor(true);
+      } else if (s === "failed") {
+        // Пытаемся восстановить связь через ICE-restart (только инициатор звонка)
+        setNetPoor(true);
+        if (!isIncoming && !restartingRef.current) {
+          restartingRef.current = true;
+          restartIce(pc);
+        }
       }
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "connected") {
+      const cs = pc.connectionState;
+      if (cs === "connected") {
+        restartingRef.current = false;
+        setNetPoor(false);
         setState("connected");
         startTimer();
         if (remoteStreamRef.current) attachRemoteStream(remoteStreamRef.current);
-      } else if (pc.connectionState === "failed") {
-        endCall("remote_hangup");
+      } else if (cs === "failed" && !isIncoming && !restartingRef.current) {
+        restartingRef.current = true;
+        restartIce(pc);
       }
     };
 
     return pc;
   };
 
+  // Переустановка ICE-соединения при обрыве (как переподключение в Telegram).
+  const restartIce = async (pc: RTCPeerConnection) => {
+    try {
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      await sendSignal("offer", { sdp: offer.sdp, type: offer.type });
+    } catch { restartingRef.current = false; }
+  };
+
   const handleSignal = async (pc: RTCPeerConnection, sig: { id?: number; type: string; payload: unknown; created_at: number }) => {
     if (sig.type === "offer") {
-      // Принимающий получает offer
+      // Дедуп по id (в pollOnce) уже гарантирует, что один и тот же offer
+      // не применится дважды. Новый offer (напр. ICE-restart) имеет другой id
+      // и будет обработан. Применяем только когда соединение в stable.
       if (pc.signalingState !== "stable") return;
       await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
       remoteDescSetRef.current = true;
@@ -199,18 +238,14 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       await sendSignal("answer", { sdp: answer.sdp, type: answer.type });
       stopRingtone();
       stopDialTone();
-      setState("connected");
-      startTimer();
     } else if (sig.type === "answer") {
+      // Применяем answer только если ждём его (иначе SDP-состояние сломается)
       if (pc.signalingState !== "have-local-offer") return;
       await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
       remoteDescSetRef.current = true;
       await flushPendingCandidates(pc);
-      // Собеседник принял — запускаем счётчик и снимаем гудки даже если ICE задерживается
       stopRingtone();
       stopDialTone();
-      setState("connected");
-      startTimer();
     } else if (sig.type === "candidate") {
       const cand = sig.payload as RTCIceCandidateInit;
       if (!remoteDescSetRef.current) {
@@ -230,7 +265,11 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       const data = await api("get_call_signals", { call_id: callId, since_id: sinceRef.current }, currentUser.id);
       if (!data.signals) return;
       for (const sig of data.signals) {
-        sinceRef.current = Math.max(sinceRef.current, sig.id || 0);
+        const sid = sig.id || 0;
+        sinceRef.current = Math.max(sinceRef.current, sid);
+        // Дедуп: каждый сигнал обрабатываем ровно один раз
+        if (sid && processedRef.current.has(sid)) continue;
+        if (sid) processedRef.current.add(sid);
         await handleSignal(pc, sig);
       }
     } catch { /* network ignore */ }
@@ -327,12 +366,14 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const fmtDuration = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-  const stateLabel = {
-    calling: "Вызов...",
-    ringing: "Входящий звонок",
-    connected: fmtDuration(duration),
-    ended: "Звонок завершён",
-  }[state];
+  const stateLabel = state === "connected" && netPoor
+    ? "Слабое соединение…"
+    : {
+        calling: "Соединение…",
+        ringing: "Входящий звонок",
+        connected: fmtDuration(duration),
+        ended: "Звонок завершён",
+      }[state];
 
   const unlockAudio = async () => {
     unlockAudioContext();
@@ -404,7 +445,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           </div>
         )}
         <h2 className="text-2xl font-bold text-white drop-shadow">{remoteName}</h2>
-        <p className={`font-medium ${state === "connected" ? "text-emerald-400 text-sm" : state === "ringing" ? "text-emerald-400 text-base animate-pulse" : "text-muted-foreground text-sm"}`}>
+        <p className={`font-medium ${state === "connected" && netPoor ? "text-amber-400 text-sm" : state === "connected" ? "text-emerald-400 text-sm" : state === "ringing" ? "text-emerald-400 text-base animate-pulse" : "text-muted-foreground text-sm"}`}>
           {stateLabel}
         </p>
         {isVideo && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs text-white/70"><Icon name="Video" size={12} />Видеозвонок</div>}
