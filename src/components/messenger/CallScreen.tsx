@@ -129,26 +129,22 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     }
 
     const iceServers = iceServersRef.current || await getIceServers();
-    const pc = new RTCPeerConnection({ iceServers, bundlePolicy: "max-bundle" });
+    const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
 
-    // Добавляем локальные треки
+    // Добавляем локальные треки. Этого достаточно для двустороннего аудио —
+    // отдельный addTransceiver создавал бы лишнюю дорожку и ломал SDP.
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
-
-    // Гарантируем приём аудио (и видео) даже если удалённый addTrack задержится
-    try {
-      if (!isVideo) pc.addTransceiver("audio", { direction: "sendrecv" });
-    } catch { /* некоторые старые движки не поддерживают — не критично */ }
 
     pc.onicecandidate = (e) => {
       if (e.candidate) sendSignal("candidate", e.candidate.toJSON());
     };
 
     pc.ontrack = (e) => {
-      // Складываем все входящие треки в один общий remoteStream
-      const rs = remoteStreamRef.current;
-      e.streams[0]?.getTracks().forEach(t => { if (!rs.getTracks().includes(t)) rs.addTrack(t); });
-      if (e.track && !rs.getTracks().includes(e.track)) rs.addTrack(e.track);
+      // Берём поток собеседника как есть (как в рабочей версии) — надёжнее для
+      // воспроизведения, чем ручная сборка дорожек.
+      const incoming = e.streams[0] || new MediaStream([e.track]);
+      remoteStreamRef.current = incoming;
       stopRingtone();
       stopDialTone();
       bindRemoteMedia();
@@ -252,7 +248,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     const pc = await createPC();
     if (!pc) return;
     startPolling();
-    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo });
+    const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await sendSignal("offer", { sdp: offer.sdp, type: offer.type });
   };
