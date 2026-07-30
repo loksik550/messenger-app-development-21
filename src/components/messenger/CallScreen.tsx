@@ -14,7 +14,6 @@ interface CallScreenProps {
   onClose: () => void;
 }
 
-
 export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIncoming, onClose }: CallScreenProps) {
   const isVideo = callId.startsWith("video_");
   const [state, setState] = useState<CallState>(isIncoming ? "ringing" : "calling");
@@ -23,12 +22,12 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const [speaker, setSpeaker] = useState(true);
   const [netPoor, setNetPoor] = useState(false);
   const [duration, setDuration] = useState(0);
-  // Своя картинка на звонок для этого контакта (хранится локально, видна только мне)
+  const [mediaError, setMediaError] = useState<string>("");
   const callAvatar = getCallAvatar(remoteUserId);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream>(new MediaStream());
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -38,11 +37,12 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const remoteDescSetRef = useRef(false);
   const endedRef = useRef(false);
-  const processedRef = useRef<Set<number>>(new Set()); // id уже обработанных сигналов
+  const startedRef = useRef(false);
+  const processedRef = useRef<Set<number>>(new Set());
   const restartingRef = useRef(false);
   const iceServersRef = useRef<RTCIceServer[] | null>(null);
-  const [mediaError, setMediaError] = useState<string>("");
 
+  // ── Завершение / очистка ──────────────────────────────────────────────────
   const cleanup = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -50,12 +50,17 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     pcRef.current = null;
     localStreamRef.current?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
     localStreamRef.current = null;
-    remoteStreamRef.current = null;
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     stopRingtone();
     stopDialTone();
+  };
+
+  const sendSignal = async (type: string, payload?: unknown) => {
+    try {
+      await api("call_signal", { call_id: callId, to_user_id: remoteUserId, type, payload }, currentUser.id);
+    } catch { /* network ignore */ }
   };
 
   const endCall = (reason: "hangup" | "remote_hangup") => {
@@ -64,13 +69,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     if (reason === "hangup") sendSignal("hangup").catch(() => { /* ignore */ });
     playHangupSound();
     setState("ended");
-    setTimeout(() => { cleanup(); onClose(); }, 800);
-  };
-
-  const sendSignal = async (type: string, payload?: unknown) => {
-    try {
-      await api("call_signal", { call_id: callId, to_user_id: remoteUserId, type, payload }, currentUser.id);
-    } catch { /* ignore network */ }
+    setTimeout(() => { cleanup(); onClose(); }, 700);
   };
 
   const startTimer = () => {
@@ -80,23 +79,20 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
   };
 
-  const attachRemoteStream = (stream: MediaStream) => {
-    remoteStreamRef.current = stream;
+  // Привязка входящего медиапотока к элементам и настойчивое воспроизведение.
+  const bindRemoteMedia = () => {
+    const stream = remoteStreamRef.current;
     if (isVideo && remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = stream;
-      remoteVideoRef.current.muted = false;
-      remoteVideoRef.current.volume = 1.0;
-      remoteVideoRef.current.play().catch(() => { /* autoplay-блокировка — разблокируется по тапу */ });
-      // На видеозвонке audio-элемент — резерв, держим без звука чтобы не дублировать
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = stream;
-        remoteAudioRef.current.muted = true;
-      }
-    } else if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = stream;
-      remoteAudioRef.current.muted = false;
+      if (remoteVideoRef.current.srcObject !== stream) remoteVideoRef.current.srcObject = stream;
+      remoteVideoRef.current.muted = !speaker;
+      remoteVideoRef.current.play().catch(() => { /* разблокируется по тапу */ });
+    }
+    if (remoteAudioRef.current) {
+      if (remoteAudioRef.current.srcObject !== stream) remoteAudioRef.current.srcObject = stream;
+      // На видео звук идёт через video-элемент, аудио-элемент — резерв (без дубля)
+      remoteAudioRef.current.muted = isVideo ? true : !speaker;
       remoteAudioRef.current.volume = 1.0;
-      remoteAudioRef.current.play().catch(() => { /* autoplay-блокировка — разблокируется по тапу */ });
+      remoteAudioRef.current.play().catch(() => { /* разблокируется по тапу */ });
     }
   };
 
@@ -108,7 +104,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     }
   };
 
-  const initPC = async (): Promise<RTCPeerConnection | null> => {
+  // ── Создание PeerConnection ───────────────────────────────────────────────
+  const createPC = async (): Promise<RTCPeerConnection | null> => {
     let stream: MediaStream;
     try {
       const constraints: MediaStreamConstraints = isVideo
@@ -117,92 +114,77 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
       const err = e as DOMException;
-      const msg = err.name === "NotAllowedError"
-        ? "Доступ к микрофону/камере запрещён. Разреши в настройках браузера."
-        : err.name === "NotFoundError"
-          ? "Микрофон/камера не найдены"
-          : `Не удалось получить доступ: ${err.message || err.name}`;
-      setMediaError(msg);
+      setMediaError(
+        err.name === "NotAllowedError" ? "Доступ к микрофону/камере запрещён. Разреши в настройках."
+        : err.name === "NotFoundError" ? "Микрофон/камера не найдены"
+        : `Не удалось получить доступ: ${err.message || err.name}`
+      );
       return null;
     }
     localStreamRef.current = stream;
-
     if (isVideo && localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
       localVideoRef.current.muted = true;
       localVideoRef.current.play().catch(() => { /* ignore */ });
     }
 
-    // ICE-серверы уже предзагружены при монтировании (iceServersRef), чтобы
-    // не задерживать создание соединения и сбор ICE-кандидатов.
     const iceServers = iceServersRef.current || await getIceServers();
-    const pc = new RTCPeerConnection({ iceServers });
+    const pc = new RTCPeerConnection({ iceServers, bundlePolicy: "max-bundle" });
     pcRef.current = pc;
 
+    // Добавляем локальные треки
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+    // Гарантируем приём аудио (и видео) даже если удалённый addTrack задержится
+    try {
+      if (!isVideo) pc.addTransceiver("audio", { direction: "sendrecv" });
+    } catch { /* некоторые старые движки не поддерживают — не критично */ }
 
     pc.onicecandidate = (e) => {
       if (e.candidate) sendSignal("candidate", e.candidate.toJSON());
     };
 
     pc.ontrack = (e) => {
-      // Поток собеседника реально пошёл — это честный признак соединения.
-      // Именно здесь ставим "connected" и запускаем таймер, чтобы у обеих
-      // сторон время шло синхронно (а не по факту ICE у одной стороны).
+      // Складываем все входящие треки в один общий remoteStream
+      const rs = remoteStreamRef.current;
+      e.streams[0]?.getTracks().forEach(t => { if (!rs.getTracks().includes(t)) rs.addTrack(t); });
+      if (e.track && !rs.getTracks().includes(e.track)) rs.addTrack(e.track);
       stopRingtone();
       stopDialTone();
-      const incoming = e.streams[0] || new MediaStream([e.track]);
-      attachRemoteStream(incoming);
+      bindRemoteMedia();
       setNetPoor(false);
       setState("connected");
       startTimer();
     };
 
-    pc.oniceconnectionstatechange = () => {
-      const s = pc.iceConnectionState;
-      if (s === "connected" || s === "completed") {
+    const onConn = () => {
+      const ice = pc.iceConnectionState;
+      const conn = pc.connectionState;
+      if (ice === "connected" || ice === "completed" || conn === "connected") {
         restartingRef.current = false;
         setNetPoor(false);
-        // "connected" ставим только если реально есть поток собеседника,
-        // иначе получалось: у одной стороны время идёт, у другой «соединение».
-        if (remoteStreamRef.current) {
-          attachRemoteStream(remoteStreamRef.current);
+        bindRemoteMedia();
+        if (remoteStreamRef.current.getTracks().length) {
           setState("connected");
           startTimer();
         }
-      } else if (s === "disconnected") {
-        // Временный обрыв — показываем «слабое соединение», но не завершаем звонок
+      } else if (ice === "disconnected") {
         setNetPoor(true);
-      } else if (s === "failed") {
-        // Пытаемся восстановить связь через ICE-restart (только инициатор звонка)
+      } else if (ice === "failed" || conn === "failed") {
         setNetPoor(true);
+        // Восстанавливаем связь ICE-рестартом — инициирует только звонящий
         if (!isIncoming && !restartingRef.current) {
           restartingRef.current = true;
           restartIce(pc);
         }
       }
     };
-
-    pc.onconnectionstatechange = () => {
-      const cs = pc.connectionState;
-      if (cs === "connected") {
-        restartingRef.current = false;
-        setNetPoor(false);
-        if (remoteStreamRef.current) {
-          attachRemoteStream(remoteStreamRef.current);
-          setState("connected");
-          startTimer();
-        }
-      } else if (cs === "failed" && !isIncoming && !restartingRef.current) {
-        restartingRef.current = true;
-        restartIce(pc);
-      }
-    };
+    pc.oniceconnectionstatechange = onConn;
+    pc.onconnectionstatechange = onConn;
 
     return pc;
   };
 
-  // Переустановка ICE-соединения при обрыве (как переподключение в Telegram).
   const restartIce = async (pc: RTCPeerConnection) => {
     try {
       const offer = await pc.createOffer({ iceRestart: true });
@@ -211,38 +193,33 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     } catch { restartingRef.current = false; }
   };
 
-  const handleSignal = async (pc: RTCPeerConnection, sig: { id?: number; type: string; payload: unknown; created_at: number }) => {
-    if (sig.type === "offer") {
-      // Дедуп по id (в pollOnce) уже гарантирует, что один и тот же offer
-      // не применится дважды. Новый offer (напр. ICE-restart) имеет другой id
-      // и будет обработан. Применяем только когда соединение в stable.
-      if (pc.signalingState !== "stable") return;
-      await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
-      remoteDescSetRef.current = true;
-      await flushPendingCandidates(pc);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await sendSignal("answer", { sdp: answer.sdp, type: answer.type });
-      stopRingtone();
-      stopDialTone();
-    } else if (sig.type === "answer") {
-      // Применяем answer только если ждём его (иначе SDP-состояние сломается)
-      if (pc.signalingState !== "have-local-offer") return;
-      await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
-      remoteDescSetRef.current = true;
-      await flushPendingCandidates(pc);
-      stopRingtone();
-      stopDialTone();
-    } else if (sig.type === "candidate") {
-      const cand = sig.payload as RTCIceCandidateInit;
-      if (!remoteDescSetRef.current) {
-        pendingCandidatesRef.current.push(cand);
-      } else {
-        try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch { /* ignore */ }
+  // ── Обработка входящих сигналов ───────────────────────────────────────────
+  const handleSignal = async (pc: RTCPeerConnection, sig: { id?: number; type: string; payload: unknown }) => {
+    try {
+      if (sig.type === "offer") {
+        // Применяем offer только из stable (обычный offer или ICE-restart).
+        if (pc.signalingState !== "stable") return;
+        await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
+        remoteDescSetRef.current = true;
+        await flushPendingCandidates(pc);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await sendSignal("answer", { sdp: answer.sdp, type: answer.type });
+        stopRingtone(); stopDialTone();
+      } else if (sig.type === "answer") {
+        if (pc.signalingState !== "have-local-offer") return;
+        await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
+        remoteDescSetRef.current = true;
+        await flushPendingCandidates(pc);
+        stopRingtone(); stopDialTone();
+      } else if (sig.type === "candidate") {
+        const cand = sig.payload as RTCIceCandidateInit;
+        if (!remoteDescSetRef.current) pendingCandidatesRef.current.push(cand);
+        else { try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch { /* ignore */ } }
+      } else if (["hangup", "decline", "end", "cancel"].includes(sig.type)) {
+        endCall("remote_hangup");
       }
-    } else if (sig.type === "hangup" || sig.type === "decline" || sig.type === "end" || sig.type === "cancel") {
-      endCall("remote_hangup");
-    }
+    } catch { /* ignore malformed signal */ }
   };
 
   const pollOnce = async () => {
@@ -254,7 +231,6 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       for (const sig of data.signals) {
         const sid = sig.id || 0;
         sinceRef.current = Math.max(sinceRef.current, sid);
-        // Дедуп: каждый сигнал обрабатываем ровно один раз
         if (sid && processedRef.current.has(sid)) continue;
         if (sid) processedRef.current.add(sid);
         await handleSignal(pc, sig);
@@ -262,95 +238,79 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     } catch { /* network ignore */ }
   };
 
-  const pollSignals = () => {
+  const startPolling = () => {
     if (pollRef.current) return;
-    // Первый опрос — сразу и с id=0, чтобы гарантированно поймать все сигналы
-    // звонка (offer/candidate), даже если приняли не сразу.
     sinceRef.current = 0;
     pollOnce();
     pollRef.current = setInterval(pollOnce, 1000);
   };
 
-  const startCall = async () => {
-    const pc = await initPC();
+  // Звонящий: создаёт PC, шлёт offer
+  const startOutgoing = async () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    const pc = await createPC();
     if (!pc) return;
-    pollSignals(); // запускаем polling ДО отправки offer
-    const offer = await pc.createOffer();
+    startPolling();
+    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo });
     await pc.setLocalDescription(offer);
     await sendSignal("offer", { sdp: offer.sdp, type: offer.type });
   };
 
+  // Принимающий: создаёт PC, ждёт offer (polling сам обработает и ответит)
   const acceptCall = async () => {
-    // Сразу глушим рингтон/гудки — иначе они забивают голос собеседника
-    stopRingtone();
-    stopDialTone();
+    if (startedRef.current) return;
+    startedRef.current = true;
+    stopRingtone(); stopDialTone();
     setState("calling");
-    const pc = await initPC();
+    const pc = await createPC();
     if (!pc) return;
-    pollSignals();
-    // Жест пользователя — самое время разблокировать audio.play()
-    if (remoteAudioRef.current) {
-      try {
-        remoteAudioRef.current.muted = false;
-        remoteAudioRef.current.volume = 1.0;
-        await remoteAudioRef.current.play();
-      } catch { /* ignore */ }
-    }
-    if (remoteVideoRef.current) {
-      try { remoteVideoRef.current.muted = false; await remoteVideoRef.current.play(); } catch { /* ignore */ }
-    }
+    startPolling();
+    // Жест пользователя — разблокируем воспроизведение
+    unlockAudioContext();
+    bindRemoteMedia();
   };
 
+  // ── Запуск при монтировании ───────────────────────────────────────────────
   useEffect(() => {
-    // Разблокируем AudioContext, иначе на мобильных гудки/рингтон не играют
     unlockAudioContext();
-    // Предзагружаем ICE-серверы заранее, чтобы соединение создавалось мгновенно
-    // и сбор ICE-кандидатов не срывался (иначе звонящий генерировал мало
-    // кандидатов и связь была односторонней).
-    getIceServers().then(s => { iceServersRef.current = s; }).catch(() => { /* fallback внутри */ });
+    getIceServers().then(s => { iceServersRef.current = s; }).catch(() => { /* fallback */ });
     if (isIncoming) {
       startRingtone();
     } else {
       startDialTone();
-      // Небольшая задержка, чтобы ICE успели предзагрузиться до offer
-      getIceServers().then(s => { iceServersRef.current = s; startCall(); }).catch(() => startCall());
+      // Дожидаемся ICE-серверов, затем стартуем исходящий звонок
+      getIceServers()
+        .then(s => { iceServersRef.current = s; startOutgoing(); })
+        .catch(() => startOutgoing());
     }
     return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Виброзвонок при входящем звонке — повторяется, пока идёт "ringing".
+  // Виброзвонок при входящем
   useEffect(() => {
     if (state !== "ringing") return;
     const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
     if (canVibrate) navigator.vibrate([600, 400, 600, 400]);
-    const iv = setInterval(() => {
-      if (canVibrate) navigator.vibrate([600, 400, 600, 400]);
-    }, 2000);
-    return () => {
-      clearInterval(iv);
-      if (canVibrate) navigator.vibrate(0);
-    };
+    const iv = setInterval(() => { if (canVibrate) navigator.vibrate([600, 400, 600, 400]); }, 2000);
+    return () => { clearInterval(iv); if (canVibrate) navigator.vibrate(0); };
   }, [state]);
 
-  // Когда звонок соединился — настойчиво пытаемся воспроизвести звук собеседника.
-  // На Android/мобильных play() часто требует повтора после прихода потока.
+  // После соединения — настойчиво воспроизводим звук собеседника (важно для Android)
   useEffect(() => {
     if (state !== "connected") return;
     let tries = 0;
     const tryPlay = () => {
-      const el = isVideo ? remoteVideoRef.current : remoteAudioRef.current;
-      if (el && el.srcObject) {
-        if (!isVideo) { el.muted = false; el.volume = 1.0; }
-        el.play().catch(() => { /* ждём следующего тика/жеста */ });
-      }
+      bindRemoteMedia();
       tries += 1;
-      if (tries >= 6) clearInterval(iv);
+      if (tries >= 8) clearInterval(iv);
     };
     tryPlay();
-    const iv = setInterval(tryPlay, 700);
+    const iv = setInterval(tryPlay, 600);
     return () => clearInterval(iv);
-  }, [state, isVideo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, speaker]);
 
   const hangup = () => endCall("hangup");
   const reject = () => endCall("hangup");
@@ -360,21 +320,11 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
 
   const stateLabel = state === "connected" && netPoor
     ? "Слабое соединение…"
-    : {
-        calling: "Соединение…",
-        ringing: "Входящий звонок",
-        connected: fmtDuration(duration),
-        ended: "Звонок завершён",
-      }[state];
+    : { calling: "Соединение…", ringing: "Входящий звонок", connected: fmtDuration(duration), ended: "Звонок завершён" }[state];
 
   const unlockAudio = async () => {
     unlockAudioContext();
-    if (remoteAudioRef.current) {
-      try { remoteAudioRef.current.muted = false; await remoteAudioRef.current.play(); } catch { /* ignore */ }
-    }
-    if (remoteVideoRef.current) {
-      try { remoteVideoRef.current.muted = false; await remoteVideoRef.current.play(); } catch { /* ignore */ }
-    }
+    bindRemoteMedia();
   };
 
   return (
@@ -392,7 +342,6 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         </div>
       )}
 
-      {/* Video views */}
       {isVideo && (
         <>
           <video
@@ -413,7 +362,6 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         </>
       )}
 
-      {/* Top info — по центру свободного пространства */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 relative z-10">
         {(!isVideo || state !== "connected") && (
           <div className="relative">
@@ -424,11 +372,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
               </>
             )}
             {callAvatar ? (
-              <img
-                src={callAvatar}
-                alt={remoteName}
-                className="relative w-32 h-32 rounded-full object-cover animate-pulse-glow border-2 border-white/20"
-              />
+              <img src={callAvatar} alt={remoteName} className="relative w-32 h-32 rounded-full object-cover animate-pulse-glow border-2 border-white/20" />
             ) : (
               <div className={`relative w-32 h-32 rounded-full flex items-center justify-center text-6xl font-bold text-white animate-pulse-glow bg-gradient-to-br ${avatarGrad(remoteUserId)}`}>
                 {remoteName[0]?.toUpperCase()}
@@ -442,38 +386,26 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         </p>
         {isVideo && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs text-white/70"><Icon name="Video" size={12} />Видеозвонок</div>}
 
-        {/* Waveform (audio only, в соединении) */}
         {state === "connected" && !isVideo && (
           <div className="flex items-end gap-1 h-10 mt-2">
             {Array.from({ length: 20 }).map((_, i) => (
-              <div
-                key={i}
-                className="w-1.5 bg-violet-500/60 rounded-full animate-pulse"
-                style={{ height: `${8 + Math.random() * 24}px`, animationDelay: `${i * 0.07}s` }}
-              />
+              <div key={i} className="w-1.5 bg-violet-500/60 rounded-full animate-pulse" style={{ height: `${8 + Math.random() * 24}px`, animationDelay: `${i * 0.07}s` }} />
             ))}
           </div>
         )}
       </div>
 
-      {/* Controls — всегда внизу */}
       <div className="w-full relative z-20 flex-shrink-0">
         {state === "ringing" ? (
           <div className="flex items-center justify-center gap-16">
             <div className="flex flex-col items-center gap-2.5">
-              <button
-                onClick={reject}
-                className="w-[72px] h-[72px] bg-red-500 rounded-full flex items-center justify-center shadow-xl shadow-red-500/40 hover:bg-red-600 active:scale-95 transition-all"
-              >
+              <button onClick={reject} className="w-[72px] h-[72px] bg-red-500 rounded-full flex items-center justify-center shadow-xl shadow-red-500/40 hover:bg-red-600 active:scale-95 transition-all">
                 <Icon name="PhoneOff" size={30} className="text-white" />
               </button>
               <span className="text-sm font-medium text-white/80">Отклонить</span>
             </div>
             <div className="flex flex-col items-center gap-2.5">
-              <button
-                onClick={acceptCall}
-                className="w-[72px] h-[72px] bg-emerald-500 rounded-full flex items-center justify-center shadow-xl shadow-emerald-500/40 hover:bg-emerald-600 active:scale-95 transition-all animate-call-shake"
-              >
+              <button onClick={acceptCall} className="w-[72px] h-[72px] bg-emerald-500 rounded-full flex items-center justify-center shadow-xl shadow-emerald-500/40 hover:bg-emerald-600 active:scale-95 transition-all animate-call-shake">
                 <Icon name="Phone" size={30} className="text-white" />
               </button>
               <span className="text-sm font-medium text-white/80">Принять</span>
@@ -483,12 +415,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           <div className="flex items-center justify-center gap-6">
             <div className="flex flex-col items-center gap-2">
               <button
-                onClick={() => {
-                  setMuted(m => {
-                    localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = m; });
-                    return !m;
-                  });
-                }}
+                onClick={() => { setMuted(m => { localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = m; }); return !m; }); }}
                 className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${muted ? "bg-red-500/20 text-red-400" : "glass text-foreground"}`}
               >
                 <Icon name={muted ? "MicOff" : "Mic"} size={22} />
@@ -497,10 +424,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
             </div>
 
             <div className="flex flex-col items-center gap-2">
-              <button
-                onClick={hangup}
-                className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors"
-              >
+              <button onClick={hangup} className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors">
                 <Icon name="PhoneOff" size={26} className="text-white" />
               </button>
               <span className="text-xs text-muted-foreground">Завершить</span>
@@ -508,14 +432,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
 
             <div className="flex flex-col items-center gap-2">
               <button
-                onClick={() => {
-                  setSpeaker(s => {
-                    const next = !s;
-                    if (remoteAudioRef.current) remoteAudioRef.current.muted = !next;
-                    if (remoteVideoRef.current) remoteVideoRef.current.muted = !next;
-                    return next;
-                  });
-                }}
+                onClick={() => { setSpeaker(s => { const next = !s; if (remoteAudioRef.current) remoteAudioRef.current.muted = isVideo ? true : !next; if (remoteVideoRef.current) remoteVideoRef.current.muted = !next; return next; }); }}
                 className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${speaker ? "grad-primary text-white" : "glass text-muted-foreground"}`}
               >
                 <Icon name={speaker ? "Volume2" : "VolumeX"} size={22} />
@@ -526,12 +443,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
             {isVideo && (
               <div className="flex flex-col items-center gap-2">
                 <button
-                  onClick={() => {
-                    setVideoOff(v => {
-                      localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = v; });
-                      return !v;
-                    });
-                  }}
+                  onClick={() => { setVideoOff(v => { localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = v; }); return !v; }); }}
                   className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${videoOff ? "bg-red-500/20 text-red-400" : "glass text-foreground"}`}
                 >
                   <Icon name={videoOff ? "VideoOff" : "Video"} size={22} />
