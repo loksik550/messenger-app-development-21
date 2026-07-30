@@ -478,6 +478,19 @@
 .animate-float {
   animation: float 3s ease-in-out infinite;
 }
+@keyframes call-shake {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  10% { transform: rotate(-14deg) scale(1.06); }
+  20% { transform: rotate(14deg) scale(1.06); }
+  30% { transform: rotate(-12deg) scale(1.05); }
+  40% { transform: rotate(12deg) scale(1.05); }
+  50% { transform: rotate(-8deg) scale(1.03); }
+  60% { transform: rotate(8deg) scale(1.03); }
+  70% { transform: rotate(0deg) scale(1); }
+}
+.animate-call-shake {
+  animation: call-shake 1.4s ease-in-out infinite;
+}
 
 .typing-dot:nth-child(1) {
   animation: typing-dot 1.4s ease-in-out infinite;

@@ -271,6 +271,20 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Виброзвонок при входящем звонке — повторяется, пока идёт "ringing".
+  useEffect(() => {
+    if (state !== "ringing") return;
+    const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
+    if (canVibrate) navigator.vibrate([600, 400, 600, 400]);
+    const iv = setInterval(() => {
+      if (canVibrate) navigator.vibrate([600, 400, 600, 400]);
+    }, 2000);
+    return () => {
+      clearInterval(iv);
+      if (canVibrate) navigator.vibrate(0);
+    };
+  }, [state]);
+
   const hangup = () => endCall("hangup");
   const reject = () => endCall("hangup");
 
@@ -333,20 +347,28 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       {/* Top info — по центру свободного пространства */}
       <div className="flex-1 flex flex-col items-center justify-center gap-4 relative z-10">
         {(!isVideo || state !== "connected") && (
-          callAvatar ? (
-            <img
-              src={callAvatar}
-              alt={remoteName}
-              className="w-28 h-28 rounded-full object-cover animate-pulse-glow border-2 border-white/20"
-            />
-          ) : (
-            <div className={`w-28 h-28 rounded-full flex items-center justify-center text-5xl font-bold text-white animate-pulse-glow bg-gradient-to-br ${avatarGrad(remoteUserId)}`}>
-              {remoteName[0]?.toUpperCase()}
-            </div>
-          )
+          <div className="relative">
+            {state === "ringing" && (
+              <>
+                <span className="absolute inset-0 rounded-full bg-emerald-400/30 animate-ping" />
+                <span className="absolute -inset-3 rounded-full border-2 border-emerald-400/40 animate-pulse" />
+              </>
+            )}
+            {callAvatar ? (
+              <img
+                src={callAvatar}
+                alt={remoteName}
+                className="relative w-32 h-32 rounded-full object-cover animate-pulse-glow border-2 border-white/20"
+              />
+            ) : (
+              <div className={`relative w-32 h-32 rounded-full flex items-center justify-center text-6xl font-bold text-white animate-pulse-glow bg-gradient-to-br ${avatarGrad(remoteUserId)}`}>
+                {remoteName[0]?.toUpperCase()}
+              </div>
+            )}
+          </div>
         )}
         <h2 className="text-2xl font-bold text-white drop-shadow">{remoteName}</h2>
-        <p className={`text-sm font-medium ${state === "connected" ? "text-emerald-400" : "text-muted-foreground"}`}>
+        <p className={`font-medium ${state === "connected" ? "text-emerald-400 text-sm" : state === "ringing" ? "text-emerald-400 text-base animate-pulse" : "text-muted-foreground text-sm"}`}>
           {stateLabel}
         </p>
         {isVideo && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs text-white/70"><Icon name="Video" size={12} />Видеозвонок</div>}
@@ -368,24 +390,24 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       {/* Controls — всегда внизу */}
       <div className="w-full relative z-20 flex-shrink-0">
         {state === "ringing" ? (
-          <div className="flex items-center justify-center gap-12">
-            <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center justify-center gap-16">
+            <div className="flex flex-col items-center gap-2.5">
               <button
                 onClick={reject}
-                className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors"
+                className="w-[72px] h-[72px] bg-red-500 rounded-full flex items-center justify-center shadow-xl shadow-red-500/40 hover:bg-red-600 active:scale-95 transition-all"
               >
-                <Icon name="PhoneOff" size={26} className="text-white" />
+                <Icon name="PhoneOff" size={30} className="text-white" />
               </button>
-              <span className="text-xs text-muted-foreground">Отклонить</span>
+              <span className="text-sm font-medium text-white/80">Отклонить</span>
             </div>
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-2.5">
               <button
                 onClick={acceptCall}
-                className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-colors animate-pulse"
+                className="w-[72px] h-[72px] bg-emerald-500 rounded-full flex items-center justify-center shadow-xl shadow-emerald-500/40 hover:bg-emerald-600 active:scale-95 transition-all animate-call-shake"
               >
-                <Icon name="Phone" size={26} className="text-white" />
+                <Icon name="Phone" size={30} className="text-white" />
               </button>
-              <span className="text-xs text-muted-foreground">Принять</span>
+              <span className="text-sm font-medium text-white/80">Принять</span>
             </div>
           </div>
         ) : (
