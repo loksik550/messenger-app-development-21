@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { subscribeToPush } from "@/lib/api";
 
-const DISMISS_KEY = "nova_push_banner_dismissed_v1";
+const DISMISS_KEY = "nova_push_banner_dismissed_until";
+const SNOOZE_MS = 3 * 24 * 60 * 60 * 1000; // «Позже» прячет баннер на 3 дня, а не навсегда
 
 /**
- * Ненавязчивая подсказка внизу экрана: предлагает включить push-уведомления,
- * если пользователь их ещё не разрешил. Показывается один раз (пока не закроют).
+ * Подсказка внизу экрана: предлагает включить push-уведомления, если они ещё
+ * не разрешены. Если пользователь отложил — напомним снова через несколько дней,
+ * чтобы он не остался без уведомлений навсегда.
  */
 export default function EnableNotificationsBanner({ userId }: { userId: number }) {
   const [show, setShow] = useState(false);
@@ -15,9 +17,10 @@ export default function EnableNotificationsBanner({ userId }: { userId: number }
   useEffect(() => {
     if (typeof Notification === "undefined") return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    // Показываем только если разрешение ещё не выдано и баннер не закрывали
+    // Показываем, пока разрешение не выдано (default). Если уже granted/denied — не мешаем.
     if (Notification.permission !== "default") return;
-    if (localStorage.getItem(DISMISS_KEY)) return;
+    const until = Number(localStorage.getItem(DISMISS_KEY) || 0);
+    if (until && Date.now() < until) return;
     const t = setTimeout(() => setShow(true), 2500);
     return () => clearTimeout(t);
   }, []);
@@ -27,11 +30,11 @@ export default function EnableNotificationsBanner({ userId }: { userId: number }
     await subscribeToPush(userId);
     setBusy(false);
     setShow(false);
-    localStorage.setItem(DISMISS_KEY, "done");
+    localStorage.setItem(DISMISS_KEY, String(Date.now() + 365 * 24 * 60 * 60 * 1000));
   };
 
   const dismiss = () => {
-    localStorage.setItem(DISMISS_KEY, "dismissed");
+    localStorage.setItem(DISMISS_KEY, String(Date.now() + SNOOZE_MS));
     setShow(false);
   };
 
