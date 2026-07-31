@@ -41,11 +41,15 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const processedRef = useRef<Set<number>>(new Set());
   const restartingRef = useRef(false);
   const iceServersRef = useRef<RTCIceServer[] | null>(null);
+  const audioWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastAudioBytesRef = useRef(0);
+  const audioStallRef = useRef(0);
 
   // ── Завершение / очистка ──────────────────────────────────────────────────
   const cleanup = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (audioWatchRef.current) { clearInterval(audioWatchRef.current); audioWatchRef.current = null; }
     try { pcRef.current?.close(); } catch { /* ignore */ }
     pcRef.current = null;
     localStreamRef.current?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
@@ -152,6 +156,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       setNetPoor(false);
       setState("connected");
       startTimer();
+      startAudioWatch(pc);
     };
 
     const onConn = () => {
@@ -181,6 +186,40 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     pc.onconnectionstatechange = onConn;
 
     return pc;
+  };
+
+  // Сторож звука: соединение может стать "connected", но медиа не течёт
+  // (прямой путь между разными операторами "молчит"). Тогда пересобираем
+  // ICE-рестартом — WebRTC переберёт пары и пойдёт через TURN-ретранслятор.
+  const startAudioWatch = (pc: RTCPeerConnection) => {
+    if (audioWatchRef.current) return;
+    lastAudioBytesRef.current = 0;
+    audioStallRef.current = 0;
+    audioWatchRef.current = setInterval(async () => {
+      if (!pcRef.current || endedRef.current) return;
+      try {
+        const stats = await pc.getStats();
+        let bytes = 0;
+        stats.forEach((r) => {
+          if (r.type === "inbound-rtp" && (r as { kind?: string }).kind === "audio") {
+            bytes = (r as { bytesReceived?: number }).bytesReceived || 0;
+          }
+        });
+        if (bytes > lastAudioBytesRef.current) {
+          lastAudioBytesRef.current = bytes;
+          audioStallRef.current = 0;
+        } else {
+          audioStallRef.current += 1;
+          // 3 проверки подряд без нового звука (~9 сек) — пересобираем связь
+          if (audioStallRef.current >= 3 && !isIncoming && !restartingRef.current) {
+            restartingRef.current = true;
+            audioStallRef.current = 0;
+            setNetPoor(true);
+            restartIce(pc);
+          }
+        }
+      } catch { /* ignore */ }
+    }, 3000);
   };
 
   const restartIce = async (pc: RTCPeerConnection) => {
