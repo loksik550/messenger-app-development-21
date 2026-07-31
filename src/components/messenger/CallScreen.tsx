@@ -23,6 +23,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const [netPoor, setNetPoor] = useState(false);
   const [duration, setDuration] = useState(0);
   const [mediaError, setMediaError] = useState<string>("");
+  const [diag, setDiag] = useState<string>("init");
   const callAvatar = getCallAvatar(remoteUserId);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -93,8 +94,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       remoteAudioRef.current.muted = isVideo ? true : !speaker;
       remoteAudioRef.current.volume = 1.0;
       remoteAudioRef.current.play()
-        .then(() => console.log("[call] audio.play() OK, muted=" + remoteAudioRef.current?.muted))
-        .catch((err) => console.log("[call] audio.play() BLOCKED:", err?.name || err));
+        .then(() => setDiag("звук ИГРАЕТ, muted=" + remoteAudioRef.current?.muted))
+        .catch((err) => setDiag("звук ЗАБЛОКИРОВАН: " + (err?.name || err)));
     }
   };
 
@@ -147,7 +148,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       // воспроизведения, чем ручная сборка дорожек.
       const incoming = e.streams[0] || new MediaStream([e.track]);
       remoteStreamRef.current = incoming;
-      console.log("[call] ontrack:", e.track.kind, "tracks:", incoming.getTracks().map(t => t.kind + ":" + t.readyState).join(","));
+      setDiag("пришёл поток: " + incoming.getTracks().map(t => t.kind).join(",") || "?");
       stopRingtone();
       stopDialTone();
       bindRemoteMedia();
@@ -159,7 +160,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     const onConn = () => {
       const ice = pc.iceConnectionState;
       const conn = pc.connectionState;
-      console.log("[call] state ice=" + ice + " conn=" + conn + " remoteTracks=" + remoteStreamRef.current.getTracks().length);
+      setDiag("сеть ice=" + ice + " conn=" + conn + " треков=" + remoteStreamRef.current.getTracks().length);
       if (ice === "connected" || ice === "completed" || conn === "connected") {
         restartingRef.current = false;
         setNetPoor(false);
@@ -387,6 +388,9 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           {stateLabel}
         </p>
         {isVideo && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs text-white/70"><Icon name="Video" size={12} />Видеозвонок</div>}
+
+        <div className="px-3 py-1 rounded-full bg-black/40 text-[10px] text-white/60 max-w-[90vw] text-center leading-tight">{diag}</div>
+
 
         {state === "connected" && !isVideo && (
           <div className="flex items-end gap-1 h-10 mt-2">
