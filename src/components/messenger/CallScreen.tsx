@@ -23,7 +23,6 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   const [netPoor, setNetPoor] = useState(false);
   const [duration, setDuration] = useState(0);
   const [mediaError, setMediaError] = useState<string>("");
-  const [diag, setDiag] = useState<string>("init");
   const callAvatar = getCallAvatar(remoteUserId);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -93,9 +92,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       // На видео звук идёт через video-элемент, аудио-элемент — резерв (без дубля)
       remoteAudioRef.current.muted = isVideo ? true : !speaker;
       remoteAudioRef.current.volume = 1.0;
-      remoteAudioRef.current.play()
-        .then(() => setDiag("звук ИГРАЕТ, muted=" + remoteAudioRef.current?.muted))
-        .catch((err) => setDiag("звук ЗАБЛОКИРОВАН: " + (err?.name || err)));
+      remoteAudioRef.current.play().catch(() => { /* разблокируется по тапу */ });
     }
   };
 
@@ -132,10 +129,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     }
 
     const iceServers = iceServersRef.current || await getIceServers();
-    // relay: гоним звонок ТОЛЬКО через TURN-ретранслятор Metered. На мобильных
-    // сетях (LTE) прямое P2P-соединение рвётся (ice=disconnected) — ретранслятор
-    // держит связь стабильно. Чуть выше задержка, зато звук не пропадает.
-    const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: "relay", iceCandidatePoolSize: 2 });
+    // Обычный режим ICE (STUN + TURN как запас). Именно так работало изначально.
+    const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
 
     // Добавляем локальные треки. Этого достаточно для двустороннего аудио —
@@ -151,7 +146,6 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       // воспроизведения, чем ручная сборка дорожек.
       const incoming = e.streams[0] || new MediaStream([e.track]);
       remoteStreamRef.current = incoming;
-      setDiag("пришёл поток: " + incoming.getTracks().map(t => t.kind).join(",") || "?");
       stopRingtone();
       stopDialTone();
       bindRemoteMedia();
@@ -163,7 +157,6 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     const onConn = () => {
       const ice = pc.iceConnectionState;
       const conn = pc.connectionState;
-      setDiag("сеть ice=" + ice + " conn=" + conn + " треков=" + remoteStreamRef.current.getTracks().length);
       if (ice === "connected" || ice === "completed" || conn === "connected") {
         restartingRef.current = false;
         setNetPoor(false);
@@ -172,19 +165,15 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           setState("connected");
           startTimer();
         }
-      } else if (ice === "disconnected" || ice === "failed" || conn === "failed") {
+      } else if (ice === "disconnected") {
+        // Временный обрыв — не завершаем звонок, ждём восстановления
         setNetPoor(true);
-        // На мобильных сетях связь часто уходит в disconnected — восстанавливаем
-        // её ICE-рестартом (переподключение). Инициирует только звонящий.
+      } else if (ice === "failed" || conn === "failed") {
+        setNetPoor(true);
+        // Полный обрыв — пробуем переподключиться (только звонящий)
         if (!isIncoming && !restartingRef.current) {
           restartingRef.current = true;
-          setTimeout(() => {
-            if (pcRef.current && (pcRef.current.iceConnectionState === "disconnected" || pcRef.current.iceConnectionState === "failed")) {
-              restartIce(pcRef.current);
-            } else {
-              restartingRef.current = false;
-            }
-          }, 1500);
+          restartIce(pc);
         }
       }
     };
@@ -396,8 +385,6 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           {stateLabel}
         </p>
         {isVideo && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs text-white/70"><Icon name="Video" size={12} />Видеозвонок</div>}
-
-        <div className="px-3 py-1 rounded-full bg-black/40 text-[10px] text-white/60 max-w-[90vw] text-center leading-tight">{diag}</div>
 
 
         {state === "connected" && !isVideo && (
