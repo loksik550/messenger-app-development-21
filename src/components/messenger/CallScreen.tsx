@@ -92,7 +92,9 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       // На видео звук идёт через video-элемент, аудио-элемент — резерв (без дубля)
       remoteAudioRef.current.muted = isVideo ? true : !speaker;
       remoteAudioRef.current.volume = 1.0;
-      remoteAudioRef.current.play().catch(() => { /* разблокируется по тапу */ });
+      remoteAudioRef.current.play()
+        .then(() => console.log("[call] audio.play() OK, muted=" + remoteAudioRef.current?.muted))
+        .catch((err) => console.log("[call] audio.play() BLOCKED:", err?.name || err));
     }
   };
 
@@ -145,6 +147,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       // воспроизведения, чем ручная сборка дорожек.
       const incoming = e.streams[0] || new MediaStream([e.track]);
       remoteStreamRef.current = incoming;
+      console.log("[call] ontrack:", e.track.kind, "tracks:", incoming.getTracks().map(t => t.kind + ":" + t.readyState).join(","));
       stopRingtone();
       stopDialTone();
       bindRemoteMedia();
@@ -156,6 +159,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     const onConn = () => {
       const ice = pc.iceConnectionState;
       const conn = pc.connectionState;
+      console.log("[call] state ice=" + ice + " conn=" + conn + " remoteTracks=" + remoteStreamRef.current.getTracks().length);
       if (ice === "connected" || ice === "completed" || conn === "connected") {
         restartingRef.current = false;
         setNetPoor(false);
@@ -194,28 +198,30 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     try {
       if (sig.type === "offer") {
         // Применяем offer только из stable (обычный offer или ICE-restart).
-        if (pc.signalingState !== "stable") return;
+        if (pc.signalingState !== "stable") { console.log("[call] offer skipped, state=" + pc.signalingState); return; }
         await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
         remoteDescSetRef.current = true;
         await flushPendingCandidates(pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         await sendSignal("answer", { sdp: answer.sdp, type: answer.type });
+        console.log("[call] offer applied, answer sent");
         stopRingtone(); stopDialTone();
       } else if (sig.type === "answer") {
-        if (pc.signalingState !== "have-local-offer") return;
+        if (pc.signalingState !== "have-local-offer") { console.log("[call] answer skipped, state=" + pc.signalingState); return; }
         await pc.setRemoteDescription(new RTCSessionDescription(sig.payload as RTCSessionDescriptionInit));
         remoteDescSetRef.current = true;
         await flushPendingCandidates(pc);
+        console.log("[call] answer applied");
         stopRingtone(); stopDialTone();
       } else if (sig.type === "candidate") {
         const cand = sig.payload as RTCIceCandidateInit;
         if (!remoteDescSetRef.current) pendingCandidatesRef.current.push(cand);
-        else { try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch { /* ignore */ } }
+        else { try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (err) { console.log("[call] addIceCandidate err:", err); } }
       } else if (["hangup", "decline", "end", "cancel"].includes(sig.type)) {
         endCall("remote_hangup");
       }
-    } catch { /* ignore malformed signal */ }
+    } catch (err) { console.log("[call] handleSignal ERROR on " + sig.type + ":", err); }
   };
 
   const pollOnce = async () => {
