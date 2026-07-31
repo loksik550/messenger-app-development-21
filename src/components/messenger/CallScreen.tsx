@@ -132,7 +132,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     }
 
     const iceServers = iceServersRef.current || await getIceServers();
-    const pc = new RTCPeerConnection({ iceServers });
+    // relay: гоним звонок ТОЛЬКО через TURN-ретранслятор Metered. На мобильных
+    // сетях (LTE) прямое P2P-соединение рвётся (ice=disconnected) — ретранслятор
+    // держит связь стабильно. Чуть выше задержка, зато звук не пропадает.
+    const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: "relay", iceCandidatePoolSize: 2 });
     pcRef.current = pc;
 
     // Добавляем локальные треки. Этого достаточно для двустороннего аудио —
@@ -169,14 +172,19 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           setState("connected");
           startTimer();
         }
-      } else if (ice === "disconnected") {
+      } else if (ice === "disconnected" || ice === "failed" || conn === "failed") {
         setNetPoor(true);
-      } else if (ice === "failed" || conn === "failed") {
-        setNetPoor(true);
-        // Восстанавливаем связь ICE-рестартом — инициирует только звонящий
+        // На мобильных сетях связь часто уходит в disconnected — восстанавливаем
+        // её ICE-рестартом (переподключение). Инициирует только звонящий.
         if (!isIncoming && !restartingRef.current) {
           restartingRef.current = true;
-          restartIce(pc);
+          setTimeout(() => {
+            if (pcRef.current && (pcRef.current.iceConnectionState === "disconnected" || pcRef.current.iceConnectionState === "failed")) {
+              restartIce(pcRef.current);
+            } else {
+              restartingRef.current = false;
+            }
+          }, 1500);
         }
       }
     };
