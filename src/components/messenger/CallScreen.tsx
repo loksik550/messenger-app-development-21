@@ -255,19 +255,15 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           }
         });
         logDiag("audio_stats", { recv: bytes, sent });
+        // ТОЛЬКО индикатор качества. Никакого ICE-restart — он рвал соединение
+        // в момент установки медиа (в логах после restart сразу шёл disconnected).
         if (bytes > lastAudioBytesRef.current) {
           lastAudioBytesRef.current = bytes;
           audioStallRef.current = 0;
+          setNetPoor(false);
         } else {
           audioStallRef.current += 1;
-          // 3 проверки подряд без нового звука (~9 сек) — пересобираем связь
-          if (audioStallRef.current >= 3 && !isIncoming && !restartingRef.current) {
-            restartingRef.current = true;
-            audioStallRef.current = 0;
-            setNetPoor(true);
-            logDiag("audio_stall_restart", { recv: bytes, sent });
-            restartIce(pc);
-          }
+          if (audioStallRef.current >= 2) setNetPoor(true);
         }
       } catch { /* ignore */ }
     }, 3000);
