@@ -29,7 +29,6 @@ def handler(event: dict, context) -> dict:
 
     metered_key = os.environ.get("METERED_API_KEY", "").strip()
     metered_domain = os.environ.get("METERED_DOMAIN", "").strip()
-    fetched = False
     if metered_key and metered_domain:
         try:
             url = f"https://{metered_domain}/api/v1/turn/credentials?apiKey={metered_key}"
@@ -38,32 +37,32 @@ def handler(event: dict, context) -> dict:
                 data = json.loads(resp.read().decode("utf-8"))
             if isinstance(data, list) and data:
                 ice_servers = data
-                fetched = True
         except Exception:
-            fetched = False
+            pass
 
-    if not fetched:
-        # Резервные публичные TURN на :443 (TCP+UDP) — работают в большинстве
-        # мобильных сетей, где :3478/:80 заблокированы.
-        ice_servers += [
-            {
-                "urls": [
-                    "turn:openrelay.metered.ca:443",
-                    "turn:openrelay.metered.ca:443?transport=tcp",
-                    "turns:openrelay.metered.ca:443",
-                ],
-                "username": "openrelayproject",
-                "credential": "openrelayproject",
-            },
-            {
-                "urls": [
-                    "turn:relay1.expressturn.com:3478",
-                    "turn:relay1.expressturn.com:3478?transport=tcp",
-                ],
-                "username": "ef2X8ODBQZ8PXHNXQL",
-                "credential": "ymS3tZmVQ0kR6Xt3",
-            },
-        ]
+    # ВСЕГДА добавляем резервные публичные TURN (не вместо, а В ДОПОЛНЕНИЕ).
+    # Диагностика показала: relay Metered пропускает ICE-пробы, но режет DTLS/медиа
+    # (звук=0 при relay/udp). Поэтому даём браузеру ещё несколько независимых
+    # ретрансляторов — он сам выберет тот, через который реально пойдёт звук.
+    ice_servers += [
+        {
+            "urls": [
+                "turn:openrelay.metered.ca:443",
+                "turn:openrelay.metered.ca:443?transport=tcp",
+                "turns:openrelay.metered.ca:443",
+            ],
+            "username": "openrelayproject",
+            "credential": "openrelayproject",
+        },
+        {
+            "urls": [
+                "turn:relay1.expressturn.com:3478",
+                "turn:relay1.expressturn.com:3478?transport=tcp",
+            ],
+            "username": "ef2X8ODBQZ8PXHNXQL",
+            "credential": "ymS3tZmVQ0kR6Xt3",
+        },
+    ]
 
     return {
         "statusCode": 200,

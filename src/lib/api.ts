@@ -11,16 +11,22 @@ export const ICE_API = "https://functions.poehali.dev/b47750f2-27d7-416d-9a72-c9
 const FALLBACK_ICE: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
-  { urls: "stun:stun.relay.metered.ca:80" },
   {
     urls: [
-      "turn:global.relay.metered.ca:80",
-      "turn:global.relay.metered.ca:80?transport=tcp",
-      "turn:global.relay.metered.ca:443",
-      "turns:global.relay.metered.ca:443?transport=tcp",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+      "turns:openrelay.metered.ca:443",
     ],
-    username: "8c58263309302c14187d7141",
-    credential: "wPj0e/ADSZZVvaAf",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: [
+      "turn:relay1.expressturn.com:3478",
+      "turn:relay1.expressturn.com:3478?transport=tcp",
+    ],
+    username: "ef2X8ODBQZ8PXHNXQL",
+    credential: "ymS3tZmVQ0kR6Xt3",
   },
 ];
 export async function getIceServers(): Promise<RTCIceServer[]> {

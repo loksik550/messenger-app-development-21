@@ -153,11 +153,11 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       return u.includes("turn:") || u.includes("turns:");
     }).length;
     logDiag("ice_servers", { total: iceServers.length, turn: turnCount });
-    // Диагноз (проверено на телефонах): на одном Wi-Fi слышно, между разными
-    // сетями — нет. Причина: без relay-only одна сторона отдаёт prflx вместо
-    // relay-кандидата, DTLS не проходит и звук=0. Форсируем ОБЕ стороны строго
-    // через TURN-ретранслятор — тогда обе получают relay-кандидаты и звук идёт.
-    const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: "relay" });
+    // Обычный режим ICE: браузер пробует и прямой путь (работает на одном Wi-Fi),
+    // и ВСЕ доступные TURN-ретрансляторы (для разных сетей). relay-only не помог —
+    // виноват был конкретный сервер Metered (резал DTLS), а не режим. Теперь TURN
+    // несколько (Metered + OpenRelay + ExpressTURN) — сработает рабочий.
+    const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
 
     // Добавляем локальные треки. Этого достаточно для двустороннего аудио —
