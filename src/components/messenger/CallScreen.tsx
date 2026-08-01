@@ -153,8 +153,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       return u.includes("turn:") || u.includes("turns:");
     }).length;
     logDiag("ice_servers", { total: iceServers.length, turn: turnCount });
-    // Обычный режим ICE (STUN + TURN как запас). Именно так работало изначально.
-    const pc = new RTCPeerConnection({ iceServers });
+    // Гоним звонок через TURN-ретранслятор (relay). На разных сетях прямой
+    // путь (prflx) застревал в "connecting" и звук не шёл (sent=0). Ретранслятор
+    // рабочий (видеозвонок через него передаёт звук) — форсируем его.
+    const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: "relay" });
     pcRef.current = pc;
 
     // Добавляем локальные треки. Этого достаточно для двустороннего аудио —
@@ -255,19 +257,15 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
           }
         });
         logDiag("audio_stats", { recv: bytes, sent });
+        // Только индикатор качества связи. НЕ пересобираем соединение —
+        // ICE-restart во время установки медиа только рвёт звонок.
         if (bytes > lastAudioBytesRef.current) {
           lastAudioBytesRef.current = bytes;
           audioStallRef.current = 0;
+          setNetPoor(false);
         } else {
           audioStallRef.current += 1;
-          // 3 проверки подряд без нового звука (~9 сек) — пересобираем связь
-          if (audioStallRef.current >= 3 && !isIncoming && !restartingRef.current) {
-            restartingRef.current = true;
-            audioStallRef.current = 0;
-            setNetPoor(true);
-            logDiag("audio_stall_restart", { recv: bytes, sent });
-            restartIce(pc);
-          }
+          if (audioStallRef.current >= 2) setNetPoor(true);
         }
       } catch { /* ignore */ }
     }, 3000);
