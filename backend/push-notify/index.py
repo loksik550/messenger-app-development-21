@@ -7,6 +7,10 @@ from pywebpush import webpush, WebPushException
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
+# Иконка уведомлений. Локальных /icons/*.png в проекте нет — из-за 404
+# некоторые устройства (особенно Android) вообще не показывали уведомление.
+NOTIF_ICON = "https://cdn.poehali.dev/projects/6364bfec-87ef-4e7b-8203-730d57164065/files/52e946a1-a32a-4a01-ac9e-228ced39895d.jpg"
+
 
 def _clean_key(raw: str) -> str:
     """Очищает VAPID-ключ от лишних кавычек, запятых и пробелов.
@@ -141,8 +145,8 @@ def handler(event: dict, context) -> dict:
             "chat_id": chat_id,
             "call_id": call_id,
             "is_call": is_call,
-            "icon": "/icons/icon-192.png",
-            "badge": "/icons/icon-192.png",
+            "icon": NOTIF_ICON,
+            "badge": NOTIF_ICON,
             "tag": f"call_{call_id}" if is_call else f"msg_{chat_id}",
             "requireInteraction": is_call,
         })
@@ -232,8 +236,8 @@ def handler(event: dict, context) -> dict:
             "body": message,
             "group_id": int(group_id),
             "message_id": message_id,
-            "icon": "/icons/icon-192.png",
-            "badge": "/icons/icon-192.png",
+            "icon": NOTIF_ICON,
+            "badge": NOTIF_ICON,
             "tag": f"group_{group_id}",
         })
 
@@ -292,8 +296,8 @@ def handler(event: dict, context) -> dict:
             "title": f"📣 {sender_name}",
             "body": message,
             "url": "/",
-            "icon": "/icons/icon-192.png",
-            "badge": "/icons/icon-192.png",
+            "icon": NOTIF_ICON,
+            "badge": NOTIF_ICON,
             "tag": "broadcast",
         })
 

@@ -1,4 +1,4 @@
-const CACHE = "nova-v10";
+const CACHE = "nova-v11";
 // Иконка уведомлений — берём с CDN (локальных /icons/*.png в проекте нет,
 // и из-за 404 некоторые устройства вообще не показывали уведомление).
 const NOTIF_ICON = "https://cdn.poehali.dev/projects/6364bfec-87ef-4e7b-8203-730d57164065/files/52e946a1-a32a-4a01-ac9e-228ced39895d.jpg";

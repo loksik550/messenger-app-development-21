@@ -1655,11 +1655,19 @@ def handler(event: dict, context) -> dict:
             # Push-уведомление — в фоне
             push_url = os.environ.get("PUSH_NOTIFY_URL", "")
             if push_url:
+                _preview = (text or "").strip()[:100]
+                if not _preview:
+                    _preview = {
+                        "image": "📷 Фото",
+                        "video": "🎬 Видео",
+                        "audio": "🎤 Голосовое сообщение",
+                        "file": "📎 Файл",
+                    }.get(media_type or "", "Новое сообщение")
                 push_body = json.dumps({
                     "action": "send",
                     "recipient_id": recipient_id,
                     "sender_name": sender_name,
-                    "message": text[:100],
+                    "message": _preview,
                     "chat_id": int(chat_id),
                 }).encode("utf-8")
                 _fire_and_forget_http(push_url, push_body, timeout=5.0)
