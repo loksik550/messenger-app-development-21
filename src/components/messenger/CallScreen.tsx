@@ -67,6 +67,19 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     } catch { /* network ignore */ }
   };
 
+  // Диагностика: пишем технические события звонка в БД (type='diag'),
+  // чтобы разобрать причину проблем со звуком. Собеседник эти сигналы игнорирует.
+  const logDiag = (event: string, extra?: Record<string, unknown>) => {
+    try {
+      api("call_signal", {
+        call_id: callId,
+        to_user_id: remoteUserId,
+        type: "diag",
+        payload: { event, role: isIncoming ? "callee" : "caller", video: isVideo, ...extra },
+      }, currentUser.id).catch(() => { /* ignore */ });
+    } catch { /* ignore */ }
+  };
+
   const endCall = (reason: "hangup" | "remote_hangup") => {
     if (endedRef.current) return;
     endedRef.current = true;
@@ -116,8 +129,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         ? { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } }
         : { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
       stream = await navigator.mediaDevices.getUserMedia(constraints);
+      logDiag("mic_ok", { tracks: stream.getAudioTracks().map(t => `${t.kind}:${t.readyState}:${t.enabled}`) });
     } catch (e) {
       const err = e as DOMException;
+      logDiag("mic_fail", { name: (e as DOMException).name });
       setMediaError(
         err.name === "NotAllowedError" ? "Доступ к микрофону/камере запрещён. Разреши в настройках."
         : err.name === "NotFoundError" ? "Микрофон/камера не найдены"
@@ -133,6 +148,11 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     }
 
     const iceServers = iceServersRef.current || await getIceServers();
+    const turnCount = iceServers.filter(s => {
+      const u = Array.isArray(s.urls) ? s.urls.join(",") : String(s.urls);
+      return u.includes("turn:") || u.includes("turns:");
+    }).length;
+    logDiag("ice_servers", { total: iceServers.length, turn: turnCount });
     // Обычный режим ICE (STUN + TURN как запас). Именно так работало изначально.
     const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
@@ -150,6 +170,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       // воспроизведения, чем ручная сборка дорожек.
       const incoming = e.streams[0] || new MediaStream([e.track]);
       remoteStreamRef.current = incoming;
+      logDiag("ontrack", { kind: e.track.kind, tracks: incoming.getTracks().map(t => t.kind) });
       stopRingtone();
       stopDialTone();
       bindRemoteMedia();
@@ -162,10 +183,12 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     const onConn = () => {
       const ice = pc.iceConnectionState;
       const conn = pc.connectionState;
+      logDiag("ice_state", { ice, conn });
       if (ice === "connected" || ice === "completed" || conn === "connected") {
         restartingRef.current = false;
         setNetPoor(false);
         bindRemoteMedia();
+        logSelectedPair(pc);
         if (remoteStreamRef.current.getTracks().length) {
           setState("connected");
           startTimer();
@@ -188,6 +211,29 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     return pc;
   };
 
+  // Определяем, через какой путь идёт звонок: relay (TURN-ретранслятор),
+  // srflx/prflx (через NAT), host (прямой). Это ключ к диагнозу "не слышно".
+  const logSelectedPair = async (pc: RTCPeerConnection) => {
+    try {
+      const stats = await pc.getStats();
+      const cands: Record<string, { type?: string; protocol?: string; address?: string }> = {};
+      let localId = "", remoteId = "";
+      stats.forEach((r) => {
+        if (r.type === "local-candidate" || r.type === "remote-candidate") {
+          cands[r.id] = { type: (r as { candidateType?: string }).candidateType, protocol: (r as { protocol?: string }).protocol };
+        }
+        if (r.type === "candidate-pair" && (r as { nominated?: boolean; selected?: boolean; state?: string }).state === "succeeded" && ((r as { nominated?: boolean }).nominated || (r as { selected?: boolean }).selected)) {
+          localId = (r as { localCandidateId?: string }).localCandidateId || "";
+          remoteId = (r as { remoteCandidateId?: string }).remoteCandidateId || "";
+        }
+      });
+      logDiag("selected_pair", {
+        local: cands[localId]?.type + "/" + cands[localId]?.protocol,
+        remote: cands[remoteId]?.type + "/" + cands[remoteId]?.protocol,
+      });
+    } catch { /* ignore */ }
+  };
+
   // Сторож звука: соединение может стать "connected", но медиа не течёт
   // (прямой путь между разными операторами "молчит"). Тогда пересобираем
   // ICE-рестартом — WebRTC переберёт пары и пойдёт через TURN-ретранслятор.
@@ -199,12 +245,16 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
       if (!pcRef.current || endedRef.current) return;
       try {
         const stats = await pc.getStats();
-        let bytes = 0;
+        let bytes = 0, sent = 0;
         stats.forEach((r) => {
           if (r.type === "inbound-rtp" && (r as { kind?: string }).kind === "audio") {
             bytes = (r as { bytesReceived?: number }).bytesReceived || 0;
           }
+          if (r.type === "outbound-rtp" && (r as { kind?: string }).kind === "audio") {
+            sent = (r as { bytesSent?: number }).bytesSent || 0;
+          }
         });
+        logDiag("audio_stats", { recv: bytes, sent });
         if (bytes > lastAudioBytesRef.current) {
           lastAudioBytesRef.current = bytes;
           audioStallRef.current = 0;
@@ -215,6 +265,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
             restartingRef.current = true;
             audioStallRef.current = 0;
             setNetPoor(true);
+            logDiag("audio_stall_restart", { recv: bytes, sent });
             restartIce(pc);
           }
         }
