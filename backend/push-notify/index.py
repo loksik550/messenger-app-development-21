@@ -7,9 +7,9 @@ from pywebpush import webpush, WebPushException
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
-# Иконка уведомлений. Локальных /icons/*.png в проекте нет — из-за 404
-# некоторые устройства (особенно Android) вообще не показывали уведомление.
-NOTIF_ICON = "https://cdn.poehali.dev/projects/6364bfec-87ef-4e7b-8203-730d57164065/files/52e946a1-a32a-4a01-ac9e-228ced39895d.jpg"
+# Иконка уведомлений — иконка приложения Nova, лежит в public и публикуется
+# на боевом домене. FCM требует абсолютный публичный URL.
+NOTIF_ICON = os.environ.get("NOTIF_ICON_URL", "https://novaa.pro/app-icon-512.png")
 
 
 def _clean_key(raw: str) -> str:

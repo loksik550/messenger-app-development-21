@@ -7,7 +7,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 const STORAGE_KEY = "nova_install_welcome_v1";
-const ICON_URL = "https://cdn.poehali.dev/projects/6364bfec-87ef-4e7b-8203-730d57164065/files/52e946a1-a32a-4a01-ac9e-228ced39895d.jpg";
+const ICON_URL = "/app-icon-512.png";
 
 type Platform = "ios" | "android" | "desktop";
 
