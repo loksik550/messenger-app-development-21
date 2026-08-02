@@ -9,24 +9,57 @@ CORS = {
 }
 
 
+def _cloudflare_turn():
+    """Временные TURN-креды Cloudflare. Промышленный relay, реально пропускает
+    медиа между разными сетями (в отличие от перегруженных бесплатных TURN)."""
+    token_id = os.environ.get("CLOUDFLARE_TURN_TOKEN_ID", "").strip()
+    api_token = os.environ.get("CLOUDFLARE_TURN_API_TOKEN", "").strip()
+    if not token_id or not api_token:
+        return None
+    try:
+        url = f"https://rtc.live.cloudflare.com/v1/turn/keys/{token_id}/credentials/generate"
+        body = json.dumps({"ttl": 86400}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Authorization", f"Bearer {api_token}")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        ice = data.get("iceServers")
+        if isinstance(ice, dict):
+            return [ice]
+        if isinstance(ice, list) and ice:
+            return ice
+    except Exception:
+        pass
+    return None
+
+
 def handler(event: dict, context) -> dict:
     """
     Возвращает список ICE-серверов (STUN + TURN) для звонков WebRTC.
 
-    TURN-сервер критичен: без рабочего relay голос не проходит, когда оба
-    собеседника за NAT (мобильный интернет). Если задан секрет METERED_API_KEY —
-    берём свежие рабочие TURN-креды у Metered.ca. Иначе отдаём набор публичных
-    релеев на :443 (проходят через мобильных операторов) + STUN.
+    TURN-сервер критичен: без рабочего relay голос не проходит, когда
+    собеседники в разных сетях (мобильный интернет). Приоритет — Cloudflare
+    (надёжный промышленный relay). Затем свежие креды Metered и публичные
+    резервные TURN как запас.
     """
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
-    ice_servers = [
+    ice_servers = []
+
+    # 1. Cloudflare — приоритетный, реально пропускает медиа
+    cf = _cloudflare_turn()
+    if cf:
+        ice_servers += cf
+
+    # 2. STUN (для прямого пути в одной сети)
+    ice_servers += [
         {"urls": "stun:stun.l.google.com:19302"},
-        {"urls": "stun:stun1.l.google.com:19302"},
         {"urls": "stun:stun.cloudflare.com:3478"},
     ]
 
+    # 3. Metered — свежие креды, если задан ключ
     metered_key = os.environ.get("METERED_API_KEY", "").strip()
     metered_domain = os.environ.get("METERED_DOMAIN", "").strip()
     if metered_key and metered_domain:
@@ -36,14 +69,11 @@ def handler(event: dict, context) -> dict:
             with urllib.request.urlopen(req, timeout=6) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             if isinstance(data, list) and data:
-                ice_servers = data
+                ice_servers += data
         except Exception:
             pass
 
-    # ВСЕГДА добавляем резервные публичные TURN (не вместо, а В ДОПОЛНЕНИЕ).
-    # Диагностика показала: relay Metered пропускает ICE-пробы, но режет DTLS/медиа
-    # (звук=0 при relay/udp). Поэтому даём браузеру ещё несколько независимых
-    # ретрансляторов — он сам выберет тот, через который реально пойдёт звук.
+    # 4. Резервные публичные TURN
     ice_servers += [
         {
             "urls": [
@@ -53,14 +83,6 @@ def handler(event: dict, context) -> dict:
             ],
             "username": "openrelayproject",
             "credential": "openrelayproject",
-        },
-        {
-            "urls": [
-                "turn:relay1.expressturn.com:3478",
-                "turn:relay1.expressturn.com:3478?transport=tcp",
-            ],
-            "username": "ef2X8ODBQZ8PXHNXQL",
-            "credential": "ymS3tZmVQ0kR6Xt3",
         },
     ]
 
