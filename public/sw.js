@@ -1,4 +1,4 @@
-const CACHE = "nova-v13";
+const CACHE = "nova-v14";
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;
 
