@@ -149,7 +149,7 @@ export default function ConsentScreen({ onAccept }: Props) {
               className="mt-0.5"
             />
             <span className="text-sm leading-snug">
-              Мне исполнилось 14 лет
+              Мне исполнилось 18 лет
             </span>
           </label>
         </div>
