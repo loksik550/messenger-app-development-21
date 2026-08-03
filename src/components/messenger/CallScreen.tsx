@@ -84,6 +84,11 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     if (endedRef.current) return;
     endedRef.current = true;
     if (reason === "hangup") sendSignal("hangup").catch(() => { /* ignore */ });
+    // Мгновенно останавливаем таймер длительности, чтобы секунды замерли
+    // сразу при сбросе собеседником, а не через задержку cleanup().
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    stopRingtone();
+    stopDialTone();
     playHangupSound();
     setState("ended");
     setTimeout(() => { cleanup(); onClose(); }, 700);
@@ -312,8 +317,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   };
 
   const pollOnce = async () => {
-    const pc = pcRef.current;
-    if (!pc) return;
+    if (endedRef.current) return;
     try {
       const data = await api("get_call_signals", { call_id: callId, since_id: sinceRef.current }, currentUser.id);
       if (!data.signals) return;
@@ -322,6 +326,14 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         sinceRef.current = Math.max(sinceRef.current, sid);
         if (sid && processedRef.current.has(sid)) continue;
         if (sid) processedRef.current.add(sid);
+        // Сигнал завершения обрабатываем всегда, даже если PeerConnection ещё
+        // не создан или уже закрыт — иначе у собеседника таймер не остановится.
+        if (["hangup", "decline", "end", "cancel"].includes(sig.type)) {
+          endCall("remote_hangup");
+          return;
+        }
+        const pc = pcRef.current;
+        if (!pc) continue;
         await handleSignal(pc, sig);
       }
     } catch { /* network ignore */ }
