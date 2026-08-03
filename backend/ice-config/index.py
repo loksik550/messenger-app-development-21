@@ -1,5 +1,9 @@
 import os
 import json
+import time
+import hmac
+import hashlib
+import base64
 import urllib.request
 
 CORS = {
@@ -34,6 +38,29 @@ def _cloudflare_turn():
     return None
 
 
+def _own_turn():
+    """Свой TURN-сервер turn.novaa.pro на coturn с use-auth-secret.
+    Логин/пароль временные: username = unixtime истечения, пароль = HMAC-SHA1
+    от username на static-auth-secret (стандарт coturn REST API)."""
+    host = os.environ.get("TURN_HOST", "").strip()
+    secret = os.environ.get("TURN_SECRET", "").strip()
+    if not host or not secret:
+        return None
+    expiry = int(time.time()) + 24 * 3600
+    username = str(expiry)
+    digest = hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()
+    credential = base64.b64encode(digest).decode()
+    return {
+        "urls": [
+            f"turn:{host}:3478?transport=udp",
+            f"turn:{host}:3478?transport=tcp",
+            f"turns:{host}:5349?transport=tcp",
+        ],
+        "username": username,
+        "credential": credential,
+    }
+
+
 def handler(event: dict, context) -> dict:
     """
     Возвращает список ICE-серверов (STUN + TURN) для звонков WebRTC.
@@ -48,7 +75,12 @@ def handler(event: dict, context) -> dict:
 
     ice_servers = []
 
-    # 1. Cloudflare — приоритетный, реально пропускает медиа
+    # 0. Свой TURN turn.novaa.pro — приоритетный
+    own = _own_turn()
+    if own:
+        ice_servers.append(own)
+
+    # 1. Cloudflare — резервный промышленный relay
     cf = _cloudflare_turn()
     if cf:
         ice_servers += cf
