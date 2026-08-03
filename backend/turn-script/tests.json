@@ -1,0 +1,10 @@
+{
+  "tests": [
+    {
+      "name": "Отдаёт скрипт",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 {
+  "turn-script": "https://functions.poehali.dev/a1f28fea-a566-440a-ba5d-d993a0ef6f90",
   "ice-config": "https://functions.poehali.dev/b47750f2-27d7-416d-9a72-c9b855945258",
   "account-delete": "https://functions.poehali.dev/ec360df4-9f13-4f70-b7ab-e9d416cf083a",
   "chat-poll": "https://functions.poehali.dev/3fc067b7-d1b3-4aed-8ad9-98df81040f0a",
