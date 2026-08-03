@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { AdminUser, fmtDate, fmtTime } from "./AdminAPI";
 import { DevRow, DevStat } from "./AdminStatsTab";
@@ -19,6 +20,7 @@ interface AdminUsersTabProps {
   setEditName: (v: string) => void;
   saving: boolean;
   onSaveUser: () => void;
+  onTopup: (amount: number) => Promise<boolean>;
 
   showMessage: boolean;
   setShowMessage: (v: boolean) => void;
@@ -48,6 +50,7 @@ export function AdminUsersTab({
   setEditName,
   saving,
   onSaveUser,
+  onTopup,
   showMessage,
   setShowMessage,
   messageText,
@@ -58,6 +61,23 @@ export function AdminUsersTab({
   setConfirmDelete,
   onConfirmDelete,
 }: AdminUsersTabProps) {
+  const [topupAmount, setTopupAmount] = useState("");
+  const [topupBusy, setTopupBusy] = useState(false);
+  const [topupDone, setTopupDone] = useState(false);
+
+  const doTopup = async () => {
+    const a = parseFloat(topupAmount.replace(",", "."));
+    if (!a) return;
+    setTopupBusy(true);
+    const okr = await onTopup(a);
+    setTopupBusy(false);
+    if (okr) {
+      setTopupAmount("");
+      setTopupDone(true);
+      setTimeout(() => setTopupDone(false), 1500);
+    }
+  };
+
   return (
     <>
       {visible && <div className="space-y-3 animate-fade-in">
@@ -157,9 +177,47 @@ export function AdminUsersTab({
             </div>
 
             {/* Кошельки */}
-            <div className="mb-4 grid grid-cols-2 gap-2">
+            <div className="mb-3 grid grid-cols-2 gap-2">
               <DevStat label="Баланс ₽" value={(selectedUser.wallet_balance ?? 0).toFixed(2)} accent="emerald" />
               <DevStat label="Молнии ⚡" value={selectedUser.lightning_balance ?? 0} accent="amber" />
+            </div>
+
+            {/* Пополнить баланс */}
+            <div className="mb-4 glass rounded-xl p-3">
+              <div className="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1.5">
+                <Icon name="Wallet" size={13} /> Пополнить баланс
+              </div>
+              <div className="flex gap-2 mb-2">
+                <div className="flex items-center gap-1 flex-1 glass rounded-xl px-3 py-2">
+                  <input
+                    type="number"
+                    value={topupAmount}
+                    onChange={e => setTopupAmount(e.target.value)}
+                    placeholder="Сумма"
+                    className="flex-1 bg-transparent outline-none text-sm w-full"
+                  />
+                  <span className="text-sm text-muted-foreground">₽</span>
+                </div>
+                <button
+                  onClick={doTopup}
+                  disabled={topupBusy || !topupAmount}
+                  className="px-4 py-2 bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-500/25 transition-colors"
+                >
+                  {topupBusy ? "..." : topupDone ? "✓" : "Зачислить"}
+                </button>
+              </div>
+              <div className="flex gap-1.5">
+                {[100, 300, 500, 1000].map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setTopupAmount(String(v))}
+                    className="flex-1 py-1.5 glass rounded-lg text-xs font-semibold hover:bg-white/10 transition-colors"
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2">Отрицательная сумма — списание.</p>
             </div>
 
             {/* Профиль и приватность */}

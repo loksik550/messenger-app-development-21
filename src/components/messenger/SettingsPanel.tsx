@@ -6,7 +6,6 @@ import {
   RINGTONES, NOTIFY_SOUNDS,
   getRingtoneId, setRingtoneId,
   getNotifyId, setNotifyId,
-  getVolume, setVolume,
   previewRingtone, previewNotifySound, stopRingtone,
   saveCustomRingtone, getCustomRingtoneMeta, clearCustomRingtone,
   saveCustomNotify, getCustomNotifyMeta, clearCustomNotify,
@@ -43,7 +42,6 @@ export function SettingsPanel({
 
   const [ringtone, setRingtone] = useState<RingtoneId>(() => getRingtoneId());
   const [notifySnd, setNotifySnd] = useState<NotifyId>(() => getNotifyId());
-  const [volume, setVolumeS] = useState<number>(() => getVolume());
   const [customMeta, setCustomMeta] = useState<{ name: string; size: number; type: string } | null>(null);
   const [customNotifyMeta, setCustomNotifyMeta] = useState<{ name: string; size: number; type: string } | null>(null);
   const ringFileRef = useRef<HTMLInputElement | null>(null);
@@ -330,20 +328,6 @@ export function SettingsPanel({
             <span>{soundError}</span>
           </div>
         )}
-
-        <div className="px-4 py-3 glass rounded-2xl">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon name="Volume2" size={16} className="text-violet-400" />
-            <span className="text-sm font-medium">Громкость</span>
-            <span className="ml-auto text-xs text-muted-foreground">{Math.round(volume * 100)}%</span>
-          </div>
-          <input
-            type="range" min={0} max={100} step={5}
-            value={Math.round(volume * 100)}
-            onChange={(e) => { const v = Number(e.target.value) / 100; setVolumeS(v); setVolume(v); }}
-            className="w-full accent-violet-500"
-          />
-        </div>
 
         <div className="px-4 py-3 glass rounded-2xl">
           <div className="flex items-center gap-3 mb-2">

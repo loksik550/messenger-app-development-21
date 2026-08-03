@@ -777,5 +777,36 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return ok({"ok": True, "resolved": rid})
 
+    # ── topup_user — пополнить баланс пользователю (админ) ────────────────────
+    if action == "topup_user":
+        user_id = body.get("user_id")
+        try:
+            amount = float(body.get("amount") or 0)
+        except (TypeError, ValueError):
+            conn.close(); return err("Неверная сумма")
+        if not user_id:
+            conn.close(); return err("Нужен user_id")
+        if amount == 0 or amount < -1000000 or amount > 1000000:
+            conn.close(); return err("Сумма от -1000000 до 1000000, не 0")
+        description = (body.get("description") or "Пополнение от администратора")[:200]
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance,0) + %s WHERE id = %s RETURNING wallet_balance",
+            (amount, int(user_id))
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close(); return err("Пользователь не найден", 404)
+        new_balance = float(row[0])
+        try:
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
+                    VALUES (%s, %s, 'topup', %s, %s, %s)""",
+                (int(user_id), amount, description, new_balance, int(time.time()))
+            )
+        except Exception:
+            conn.rollback()
+        conn.close()
+        return ok({"ok": True, "balance": new_balance})
+
     conn.close()
     return err("Неизвестный action")

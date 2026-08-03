@@ -24,6 +24,7 @@ export default function WalletPanel({ currentUser, onClose, onUserUpdate, onOpen
   const [method, setMethod] = useState<"yookassa" | "test">("yookassa");
   const [topping, setTopping] = useState(false);
   const [error, setError] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const reload = async () => {
     const [b, h] = await Promise.all([
@@ -31,6 +32,7 @@ export default function WalletPanel({ currentUser, onClose, onUserUpdate, onOpen
       api("wallet_history", {}, currentUser.id),
     ]);
     if (typeof b.balance === "number") setBalance(b.balance);
+    if (b.is_admin === true) setIsAdmin(true);
     if (typeof b.pro_until === "number" || b.pro_until === null) setProUntil(b.pro_until);
     if (Array.isArray(h.transactions)) setTx(h.transactions);
     setLoading(false);
@@ -232,7 +234,7 @@ export default function WalletPanel({ currentUser, onClose, onUserUpdate, onOpen
             </div>
 
             {/* Способ оплаты */}
-            <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className={`grid ${isAdmin ? "grid-cols-2" : "grid-cols-1"} gap-2 mb-2`}>
               <button
                 onClick={() => setMethod("yookassa")}
                 className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 transition ${
@@ -244,17 +246,19 @@ export default function WalletPanel({ currentUser, onClose, onUserUpdate, onOpen
                 <span className="text-xs font-semibold">Картой (ЮKassa)</span>
                 <span className="text-[10px] text-muted-foreground">SberPay, СБП, карта</span>
               </button>
-              <button
-                onClick={() => setMethod("test")}
-                className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 transition ${
-                  method === "test"
-                    ? "border-amber-400 bg-amber-500/10"
-                    : "border-white/10 bg-white/5 hover:border-white/20"
-                }`}>
-                <Icon name="TestTube" size={18} className={method === "test" ? "text-amber-400" : "text-muted-foreground"} />
-                <span className="text-xs font-semibold">Тестовое</span>
-                <span className="text-[10px] text-muted-foreground">Без оплаты, мгновенно</span>
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setMethod("test")}
+                  className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 transition ${
+                    method === "test"
+                      ? "border-amber-400 bg-amber-500/10"
+                      : "border-white/10 bg-white/5 hover:border-white/20"
+                  }`}>
+                  <Icon name="TestTube" size={18} className={method === "test" ? "text-amber-400" : "text-muted-foreground"} />
+                  <span className="text-xs font-semibold">Тестовое</span>
+                  <span className="text-[10px] text-muted-foreground">Без оплаты, мгновенно</span>
+                </button>
+              )}
             </div>
 
             {/* Email для чека */}

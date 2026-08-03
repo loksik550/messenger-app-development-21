@@ -201,6 +201,18 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
     setSaving(false);
   };
 
+  const topupUser = async (amount: number): Promise<boolean> => {
+    if (!selectedUser) return false;
+    const data = await adminApi("topup_user", { user_id: selectedUser.id, amount }, token);
+    if (typeof data.balance === "number") {
+      const nb = data.balance as number;
+      setSelectedUser(prev => prev ? { ...prev, wallet_balance: nb } : prev);
+      setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, wallet_balance: nb } : u));
+      return true;
+    }
+    return false;
+  };
+
   const deleteUser = (userId: number) => {
     setConfirmDelete(userId);
   };
@@ -437,6 +449,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           setEditName={setEditName}
           saving={saving}
           onSaveUser={saveUser}
+          onTopup={topupUser}
           showMessage={showMessage}
           setShowMessage={setShowMessage}
           messageText={messageText}

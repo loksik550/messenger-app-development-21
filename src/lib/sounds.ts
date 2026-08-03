@@ -23,7 +23,6 @@ export const NOTIFY_SOUNDS: { id: NotifyId; name: string }[] = [
 
 const LS_RINGTONE = "nova_ringtone";       // RingtoneId
 const LS_NOTIFY   = "nova_notify_sound";   // NotifyId
-const LS_VOLUME   = "nova_sound_volume";   // 0..1
 const LS_NOTIFY_ON = "nova_sec_notifications"; // "1"|"0"
 
 export function getRingtoneId(): RingtoneId {
@@ -37,10 +36,9 @@ export function getNotifyId(): NotifyId {
 export function setNotifyId(id: NotifyId) { localStorage.setItem(LS_NOTIFY, id); }
 
 export function getVolume(): number {
-  const v = Number(localStorage.getItem(LS_VOLUME));
-  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 1.0;
+  return 1.0;
 }
-export function setVolume(v: number) { localStorage.setItem(LS_VOLUME, String(v)); }
+export function setVolume(_v: number) { /* громкость всегда 100% */ }
 
 export function isNotifyOn(): boolean {
   return localStorage.getItem(LS_NOTIFY_ON) !== "0";

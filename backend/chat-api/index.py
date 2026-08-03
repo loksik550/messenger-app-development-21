@@ -3439,7 +3439,9 @@ def handler(event: dict, context) -> dict:
         conn.close()
         if not r:
             return err("Пользователь не найден", 404)
-        return ok({"balance": float(r[0]), "pro_until": r[1], "is_pro": bool(r[1]) and int(r[1]) > int(time.time())})
+        admin_id = os.environ.get("ADMIN_USER_ID", "").strip()
+        is_admin = bool(admin_id) and admin_id.isdigit() and int(admin_id) == int(user_id)
+        return ok({"balance": float(r[0]), "pro_until": r[1], "is_pro": bool(r[1]) and int(r[1]) > int(time.time()), "is_admin": is_admin})
 
     # ── wallet_history ────────────────────────────────────────────────────────
     if action == "wallet_history":
@@ -3463,6 +3465,11 @@ def handler(event: dict, context) -> dict:
         if not user_id:
             conn.close()
             return err("Нужен X-User-Id")
+        # Тестовое пополнение доступно только администратору
+        admin_id = os.environ.get("ADMIN_USER_ID", "").strip()
+        if not (admin_id and admin_id.isdigit() and int(admin_id) == int(user_id)):
+            conn.close()
+            return err("Недоступно", 403)
         try:
             amount = float(body.get("amount") or 0)
         except (TypeError, ValueError):
