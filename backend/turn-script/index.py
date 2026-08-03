@@ -5,30 +5,45 @@ CORS = {
 }
 
 SCRIPT = r'''#!/bin/bash
-DOMAIN="turn.novaa.pro"
-echo "==== ДИАГНОСТИКА TLS 5349 ===="
+echo "==== ФИКС TLS 5349 ===="
 
-echo "--- 1. Права на файлы сертификата ---"
-ls -lL /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/letsencrypt/live/$DOMAIN/privkey.pem 2>&1
-echo "Группы пользователя turn:"; id turn
-
-echo ""
-echo "--- 2. Может ли turn прочитать ключ ---"
-sudo -u turn cat /etc/letsencrypt/live/$DOMAIN/privkey.pem >/dev/null 2>&1 && echo "OK: turn читает privkey" || echo "НЕТ доступа к privkey"
-
-echo ""
-echo "--- 3. Строки TLS в конфиге ---"
-grep -E 'tls-listening-port|cert=|pkey=|listening-ip' /etc/turnserver.conf
+echo "--- 1. Включаю coturn в /etc/default/coturn ---"
+if [ -f /etc/default/coturn ]; then
+  sed -i 's/^#*TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
+  grep -q TURNSERVER_ENABLED /etc/default/coturn || echo "TURNSERVER_ENABLED=1" >> /etc/default/coturn
+else
+  echo "TURNSERVER_ENABLED=1" > /etc/default/coturn
+fi
+grep TURNSERVER_ENABLED /etc/default/coturn
 
 echo ""
-echo "--- 4. Ошибки TLS/cert в логе запуска ---"
-journalctl -u coturn --no-pager | grep -iE 'tls|cert|pkey|5349|SSL|listener' | tail -20
-echo "===================================="
+echo "--- 2. Заставляю systemd-юнит использовать /etc/turnserver.conf ---"
+mkdir -p /etc/systemd/system/coturn.service.d
+cat > /etc/systemd/system/coturn.service.d/override.conf <<OVR
+[Service]
+ExecStart=
+ExecStart=/usr/bin/turnserver -c /etc/turnserver.conf --no-cli
+OVR
+
+echo ""
+echo "--- 3. Перезапуск ---"
+systemctl daemon-reload
+systemctl restart coturn
+sleep 2
+
+echo ""
+echo "============================================"
+echo " Слушающиеся порты:"
+ss -tulnp | grep -E '3478|5349' || echo "  ничего не слушается"
+echo "============================================"
+echo " Свежий лог (TLS listener):"
+journalctl -u coturn --no-pager --since "30 seconds ago" | grep -iE 'tls|cert|pkey|5349|listener|relay addr|error|WARNING' | tail -20
+echo "============================================"
 '''
 
 
 def handler(event: dict, context) -> dict:
-    """Диагностика TLS-порта 5349 на TURN-сервере."""
+    """Фикс: coturn читает /etc/turnserver.conf и поднимает TLS-порт 5349."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
