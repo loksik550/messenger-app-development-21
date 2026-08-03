@@ -9,7 +9,8 @@ const VIRUSTOTAL_URL = "https://www.virustotal.com/gui/file/027218c606dcf810baf3
 const GITHUB_URL = "https://github.com/loksik550/messenger-app-development-21";
 // ──────────────────────────────────────────────────────────────────────
 
-const UPDATED = "24 июня 2026 г.";
+const UPDATED = "3 августа 2026 г.";
+const SUPPORT_EMAIL = "support@novaa.pro";
 
 export default function Security() {
   const navigate = useNavigate();
@@ -56,10 +57,20 @@ export default function Security() {
         <section>
           <h3 className="font-semibold text-base mb-1">1. Минимальные разрешения</h3>
           <p>
-            Приложение запрашивает только доступ в интернет (разрешение INTERNET).
-            Оно <strong>не запрашивает</strong> доступ к камере, микрофону,
-            геолокации, контактам, файловой системе, SMS и иным чувствительным
-            данным устройства.
+            Приложение запрашивает только те разрешения, которые необходимы для
+            его основных функций:
+          </p>
+          <ul className="list-disc list-inside space-y-1 ml-1 mt-2">
+            <li><strong>Интернет</strong> — для обмена сообщениями и звонков;</li>
+            <li><strong>Микрофон</strong> — только во время голосовых сообщений и звонков, по явному действию пользователя;</li>
+            <li><strong>Камера</strong> — только во время видеозвонков и отправки фото, по явному действию пользователя;</li>
+            <li><strong>Уведомления</strong> — для оповещений о новых сообщениях и звонках.</li>
+          </ul>
+          <p className="mt-2">
+            Приложение <strong>не запрашивает</strong> доступ к геолокации,
+            контактам, SMS и не собирает данные в фоновом режиме. Доступ к камере
+            и микрофону активируется исключительно в момент соответствующего
+            действия и не используется скрыто.
           </p>
         </section>
 
@@ -78,6 +89,7 @@ export default function Security() {
           <h3 className="font-semibold text-base mb-1">3. Меры безопасности</h3>
           <ul className="list-disc list-inside space-y-1 ml-1 mt-2">
             <li>Все соединения с сервером работают только по защищённому протоколу HTTPS (TLS 1.2+);</li>
+            <li>Аудио- и видеозвонки передаются по технологии WebRTC с обязательным шифрованием медиапотока (DTLS-SRTP);</li>
             <li>Пароли пользователей хранятся исключительно в зашифрованном виде (хеширование PBKDF2 с уникальной солью), в открытом виде не сохраняются;</li>
             <li>Персональные данные не продаются и не передаются третьим лицам в рекламных или коммерческих целях;</li>
             <li>Реализована функция полного удаления аккаунта и связанных данных по запросу пользователя;</li>
@@ -109,6 +121,30 @@ export default function Security() {
           </p>
           <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline break-all mt-1 inline-block">
             https://novaa.pro/privacy
+          </a>
+        </section>
+
+        <section>
+          <h3 className="font-semibold text-base mb-1">6. Модерация контента и защита пользователей</h3>
+          <p>
+            В приложении реализованы механизмы защиты пользователей от
+            нежелательного контента:
+          </p>
+          <ul className="list-disc list-inside space-y-1 ml-1 mt-2">
+            <li>Возможность пожаловаться на пользователя или сообщение;</li>
+            <li>Блокировка нежелательных собеседников;</li>
+            <li>Удаление собственных сообщений и полное удаление аккаунта;</li>
+            <li>Жалобы рассматриваются в течение 24 часов, нарушители блокируются.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h3 className="font-semibold text-base mb-1">7. Связь с разработчиком</h3>
+          <p>
+            По вопросам безопасности, жалобам и запросам на удаление данных:
+          </p>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="text-violet-400 underline break-all mt-1 inline-block">
+            {SUPPORT_EMAIL}
           </a>
         </section>
 
