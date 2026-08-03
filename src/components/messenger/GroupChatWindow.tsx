@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import Icon from "@/components/ui/icon";
 import { api, uploadMedia, type User, type Group, type GroupMessage, type GroupMember } from "@/lib/api";
-import { Avatar } from "@/components/messenger/ChatAtoms";
-import { MediaMessage } from "@/components/messenger/ChatMediaMessage";
-import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
-import { LinkifiedText } from "@/components/messenger/LinkifiedText";
 import VideoCircleRecorder from "@/components/messenger/VideoCircleRecorder";
 import GroupProfilePanel from "@/components/messenger/GroupProfilePanel";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
 import GroupContextMenu from "@/components/messenger/GroupContextMenu";
 import ForwardGroupDialog from "@/components/messenger/ForwardGroupDialog";
+import GroupChatHeader from "@/components/messenger/group-chat/GroupChatHeader";
+import GroupChatMessages from "@/components/messenger/group-chat/GroupChatMessages";
+import GroupChatInput from "@/components/messenger/group-chat/GroupChatInput";
 import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
 
 const POLL_MS = 3500;
@@ -352,209 +350,36 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
 
   return (
     <div className="flex flex-col h-full min-h-0 relative">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 glass-strong border-b border-white/5 flex-shrink-0"
-        style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
-        <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-white/8 md:hidden">
-          <Icon name="ChevronLeft" size={20} />
-        </button>
-        <button onClick={() => setShowInfo(true)} className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition">
-          {group.avatar_url ? (
-            <img
-              src={group.avatar_url}
-              className="w-10 h-10 rounded-2xl object-cover flex-shrink-0 active:scale-95 transition-transform"
-              onClick={(e) => { e.stopPropagation(); setAvatarOpen(true); }}
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-2xl grad-primary flex items-center justify-center flex-shrink-0">
-              <Icon name={group.is_channel ? "Radio" : "Users"} size={18} className="text-white" />
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-sm truncate flex items-center gap-1.5">
-              {group.is_channel && <Icon name="Radio" size={12} className="text-sky-400 flex-shrink-0" />}
-              <span className="truncate">{group.name}</span>
-              {isMuted && <Icon name="BellOff" size={12} className="text-muted-foreground flex-shrink-0" />}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {group.members_count ?? members.length} {(group.members_count ?? members.length) === 1 ? "участник" : "участников"}
-            </div>
-          </div>
-        </button>
-        <button onClick={() => { setShowSearch(true); setSearchQuery(""); setSearchResults([]); }} className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground">
-          <Icon name="Search" size={18} />
-        </button>
-        <button onClick={() => setShowInfo(true)} className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground">
-          <Icon name="Info" size={18} />
-        </button>
-      </div>
+      <GroupChatHeader
+        group={group}
+        membersLength={members.length}
+        isMuted={isMuted}
+        showSearch={showSearch}
+        searchQuery={searchQuery}
+        searching={searching}
+        searchResults={searchResults}
+        onBack={onBack}
+        onOpenInfo={() => setShowInfo(true)}
+        onOpenAvatar={() => setAvatarOpen(true)}
+        onOpenSearch={() => { setShowSearch(true); setSearchQuery(""); setSearchResults([]); }}
+        onCloseSearch={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }}
+        onSearch={runSearch}
+      />
 
-      {/* Search overlay */}
-      {showSearch && (
-        <div className="absolute inset-0 z-[90] flex flex-col bg-[hsl(var(--background))] animate-fade-in">
-          <div className="flex items-center gap-2 px-3 py-2 glass-strong border-b border-white/5 flex-shrink-0"
-            style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
-            <button onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }} className="p-2 rounded-xl hover:bg-white/8">
-              <Icon name="ChevronLeft" size={20} />
-            </button>
-            <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5">
-              <Icon name="Search" size={16} className="text-muted-foreground" />
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={e => runSearch(e.target.value)}
-                placeholder="Поиск по сообщениям"
-                className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
-              />
-              {searchQuery && (
-                <button onClick={() => runSearch("")} className="text-muted-foreground hover:text-foreground">
-                  <Icon name="X" size={14} />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto px-3 py-2">
-            {searching && <div className="text-center text-sm text-muted-foreground py-6">Поиск...</div>}
-            {!searching && searchQuery.trim() && searchResults.length === 0 && (
-              <div className="text-center text-sm text-muted-foreground py-6">Ничего не найдено</div>
-            )}
-            {searchResults.map(r => (
-              <div key={r.id} className="px-3 py-2.5 rounded-xl hover:bg-white/5 transition">
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-[11px] font-semibold text-violet-400">{r.sender_name}</span>
-                  <span className="text-[10px] text-muted-foreground">{new Date(r.created_at * 1000).toLocaleDateString("ru", { day: "numeric", month: "short" })}</span>
-                </div>
-                <div className="text-sm text-foreground line-clamp-2">{r.text}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Pinned message */}
-      {pinned && (
-        <div className="px-3 py-2 glass-strong border-b border-white/5 flex items-center gap-2 flex-shrink-0">
-          <Icon name="Pin" size={14} className="text-violet-400 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-violet-400 font-bold">Закреплено</div>
-            <div className="text-xs truncate">
-              {pinned.sender_name && <span className="font-semibold mr-1">{pinned.sender_name}:</span>}
-              {pinned.text || (pinned.media_type ? `[${pinned.media_type}]` : "Сообщение")}
-            </div>
-          </div>
-          {isAdminHere && (
-            <button onClick={unpinMessage} className="p-1.5 rounded-lg hover:bg-white/8 flex-shrink-0">
-              <Icon name="X" size={14} className="text-muted-foreground" />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-1 relative">
-        {groupedMessages.map(({ date, msgs }) => (
-          <div key={date}>
-            <div className="flex justify-center my-3">
-              <span className="text-[11px] text-muted-foreground bg-white/5 px-3 py-1 rounded-full">{date}</span>
-            </div>
-            {msgs.map((msg, i) => {
-              const showAvatar = !msg.out && (i === 0 || msgs[i - 1]?.sender_id !== msg.sender_id);
-              const showName = !msg.out && showAvatar;
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex items-end gap-2 mb-0.5 ${msg.out ? "flex-row-reverse" : "flex-row"}`}
-                  onContextMenu={e => { e.preventDefault(); setCtxMenu({ msgId: msg.id, out: msg.out }); }}
-                  onMouseDown={() => { holdTimer.current = setTimeout(() => setCtxMenu({ msgId: msg.id, out: msg.out }), 500); }}
-                  onMouseUp={() => { if (holdTimer.current) clearTimeout(holdTimer.current); }}
-                >
-                  {/* Avatar (incoming) */}
-                  {!msg.out && (
-                    <div className="w-7 flex-shrink-0 self-end mb-1">
-                      {showAvatar
-                        ? <Avatar label={msg.sender_name?.[0]?.toUpperCase() || "?"} id={msg.sender_id} src={msg.sender_avatar} size="sm" />
-                        : <div className="w-7" />}
-                    </div>
-                  )}
-
-                  <div className={`max-w-[78%] flex flex-col ${msg.out ? "items-end" : "items-start"}`}>
-                    {showName && (
-                      <span className="text-[11px] font-semibold text-violet-400 px-1 mb-0.5">{msg.sender_name}</span>
-                    )}
-
-                    {msg.media_type ? (
-                      <MediaMessage
-                        msg={{ id: msg.id, text: msg.text, time: msg.time || "", out: msg.out,
-                          media_type: msg.media_type as "image"|"video"|"audio"|"file",
-                          media_url: msg.media_url || undefined, file_name: msg.file_name || undefined,
-                          file_size: msg.file_size || undefined, duration: msg.duration || undefined }}
-                        out={msg.out}
-                      />
-                    ) : (
-                      <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
-                        msg.out ? "msg-bubble-out text-white rounded-br-sm" : "bg-secondary text-foreground rounded-bl-sm"
-                      }`}>
-                        {msg.reply_to_id && (
-                          <div className={`text-[11px] mb-1 pb-1 border-b ${msg.out ? "border-white/20 text-white/70" : "border-white/10 text-muted-foreground"}`}>
-                            <Icon name="Reply" size={11} className="inline mr-1" />
-                            Ответ
-                          </div>
-                        )}
-                        <LinkifiedText text={msg.text} out={msg.out} mentions />
-                        <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-0.5 ${msg.out ? "text-white/60" : "text-muted-foreground"}`}>
-                          {msg.edited_at && <span className="opacity-70">ред.</span>}
-                          <span>{msg.time}</span>
-                          {msg.out && (
-                            <Icon name={msg.read ? "CheckCheck" : "Check"} size={12} className={msg.read ? "text-sky-300" : "text-white/60"} />
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Reactions */}
-                    {msg.reactions && msg.reactions.length > 0 && (
-                      <div className={`flex flex-wrap gap-1 mt-1 ${msg.out ? "justify-end" : "justify-start"}`}>
-                        {Object.entries(
-                          msg.reactions.reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
-                            const cur = acc[r.emoji] || { count: 0, mine: false };
-                            cur.count += 1;
-                            if (r.user_id === currentUser.id) cur.mine = true;
-                            acc[r.emoji] = cur;
-                            return acc;
-                          }, {})
-                        ).map(([emoji, info]) => (
-                          <button
-                            key={emoji}
-                            onClick={() => reactToMessage(msg.id, emoji)}
-                            className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs transition ${
-                              info.mine ? "bg-violet-500/30 border border-violet-400/50" : "bg-white/8 border border-transparent hover:bg-white/12"
-                            }`}
-                          >
-                            <span>{emoji}</span>
-                            {info.count > 1 && <span className="text-[10px] text-muted-foreground">{info.count}</span>}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-        {messages.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-            <div className="w-16 h-16 grad-primary rounded-3xl flex items-center justify-center mb-4">
-              <Icon name={group.is_channel ? "Radio" : "Users"} size={28} className="text-white" />
-            </div>
-            <p className="font-semibold mb-1">
-              {group.is_channel ? "Канал создан" : "Группа создана"}
-            </p>
-            <p className="text-sm text-muted-foreground">Напиши первое сообщение</p>
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
+      <GroupChatMessages
+        group={group}
+        currentUser={currentUser}
+        messages={messages}
+        groupedMessages={groupedMessages}
+        pinned={pinned}
+        isAdminHere={isAdminHere}
+        scrollRef={scrollRef}
+        endRef={endRef}
+        holdTimer={holdTimer}
+        onUnpin={unpinMessage}
+        onOpenContext={setCtxMenu}
+        onReact={reactToMessage}
+      />
 
       {/* Context menu */}
       {ctxMenu && (
@@ -582,131 +407,34 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         />
       )}
 
-      {/* Input */}
-      {canWrite ? (
-        <div className="px-4 py-3 glass-strong border-t border-white/5 flex-shrink-0 relative"
-          style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-          <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip"
-            className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.target.value = ""; }} />
-
-          {replyTo && !editing && (
-            <div className="flex items-center gap-2 mb-2 px-3 py-1.5 glass rounded-xl border-l-2 border-violet-400 animate-fade-in">
-              <Icon name="Reply" size={14} className="text-violet-400 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-[11px] text-violet-400">{replyTo.sender_name}</div>
-                <div className="text-xs text-muted-foreground truncate">{replyTo.text || "[медиа]"}</div>
-              </div>
-              <button onClick={() => setReplyTo(null)} className="p-1"><Icon name="X" size={14} /></button>
-            </div>
-          )}
-
-          {editing && (
-            <div className="flex items-center gap-2 mb-2 px-3 py-1.5 glass rounded-xl border-l-2 border-amber-400 animate-fade-in">
-              <Icon name="Pencil" size={14} className="text-amber-400 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-[11px] text-amber-400">Редактирование</div>
-                <div className="text-xs text-muted-foreground truncate">{editing.text || "[медиа]"}</div>
-              </div>
-              <button onClick={() => { setEditing(null); setInput(""); }} className="p-1"><Icon name="X" size={14} /></button>
-            </div>
-          )}
-
-          {showAttach && (
-            <div className="grid grid-cols-5 gap-2 mb-3 animate-fade-in">
-              {[
-                { icon: "Image", label: "Фото", color: "text-violet-400", mime: "image/*" },
-                { icon: "Video", label: "Видео", color: "text-sky-400", mime: "video/*" },
-                { icon: "Music", label: "Аудио", color: "text-pink-400", mime: "audio/*" },
-                { icon: "FileText", label: "Файл", color: "text-emerald-400", mime: "*" },
-              ].map(item => (
-                <button key={item.icon} onClick={() => { if (fileInputRef.current) { fileInputRef.current.accept = item.mime; fileInputRef.current.click(); } }}
-                  className="flex flex-col items-center gap-1 p-3 glass rounded-2xl hover:bg-white/8">
-                  <Icon name={item.icon as string} size={20} className={item.color} />
-                  <span className="text-[10px] text-muted-foreground">{item.label}</span>
-                </button>
-              ))}
-              <button onClick={() => { setShowAttach(false); setShowVideoCircle(true); }}
-                className="flex flex-col items-center gap-1 p-3 glass rounded-2xl hover:bg-white/8">
-                <Icon name="Video" size={20} className="text-rose-400" />
-                <span className="text-[10px] text-muted-foreground">Кружок</span>
-              </button>
-            </div>
-          )}
-
-          {recording && (
-            <div className="flex items-center gap-3 mb-2 animate-fade-in">
-              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-sm text-red-400 font-medium">
-                {String(Math.floor(recordSec / 60)).padStart(2, "0")}:{String(recordSec % 60).padStart(2, "0")}
-              </span>
-              <button onClick={cancelRecording} className="ml-auto text-xs text-muted-foreground">Отмена</button>
-            </div>
-          )}
-
-          {mentionCandidates.length > 0 && (
-            <div className="mb-2 glass rounded-xl overflow-hidden max-h-44 overflow-y-auto animate-fade-in">
-              {mentionCandidates.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => applyMention(m.name)}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/8 text-left"
-                >
-                  <Avatar label={m.name[0]?.toUpperCase() || "?"} id={m.id} src={m.avatar_url || undefined} size="sm" />
-                  <span className="text-sm truncate">{m.name}</span>
-                  {(m.role === "owner" || m.role === "admin") && (
-                    <span className="text-[10px] text-violet-400 ml-auto">{m.role === "owner" ? "владелец" : "админ"}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-end gap-2">
-            <button onClick={() => setShowAttach(v => !v)}
-              className={`p-2.5 rounded-xl transition ${showAttach ? "bg-violet-500/20 text-violet-400" : "hover:bg-white/8 text-muted-foreground"}`}>
-              <Icon name={showAttach ? "X" : "Paperclip"} size={20} />
-            </button>
-            <div className="flex-1 flex items-end glass rounded-2xl px-4 py-2.5 gap-2">
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder={group.is_channel ? "Написать в канал..." : "Сообщение..."}
-                rows={1}
-                className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground resize-none max-h-32"
-              />
-              <div className="relative">
-                <button onClick={() => setShowEmoji(v => !v)}
-                  className={`transition ${showEmoji ? "text-violet-400" : "text-muted-foreground hover:text-foreground"}`}>
-                  <Icon name="Smile" size={20} />
-                </button>
-                <EmojiStickerPicker open={showEmoji} onClose={() => setShowEmoji(false)}
-                  onPick={e => setInput(v => v + e)} />
-              </div>
-            </div>
-            {input.trim() ? (
-              <button onClick={send} className="p-2.5 rounded-xl grad-primary text-white glow-primary">
-                <Icon name="Send" size={20} />
-              </button>
-            ) : (
-              <button
-                onPointerDown={(e) => { e.preventDefault(); startRecording(); }}
-                onPointerUp={(e) => { e.preventDefault(); stopRecording(); }}
-                onPointerLeave={() => { if (recording) stopRecording(); }}
-                onContextMenu={(e) => e.preventDefault()}
-                className={`p-2.5 rounded-xl select-none touch-none ${recording ? "bg-red-500 text-white" : "glass text-muted-foreground hover:text-violet-400"}`}>
-                <Icon name="Mic" size={20} />
-              </button>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="px-4 py-4 border-t border-white/5 text-center text-sm text-muted-foreground"
-          style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
-          <Icon name="Radio" size={16} className="inline mr-2 text-sky-400" />
-          Канал: только администраторы могут писать
-        </div>
-      )}
+      <GroupChatInput
+        group={group}
+        canWrite={canWrite}
+        input={input}
+        replyTo={replyTo}
+        editing={editing}
+        showAttach={showAttach}
+        showEmoji={showEmoji}
+        recording={recording}
+        recordSec={recordSec}
+        mentionCandidates={mentionCandidates}
+        fileInputRef={fileInputRef}
+        onInputChange={setInput}
+        onSend={send}
+        onSendFile={(f) => sendFile(f)}
+        onCancelReply={() => setReplyTo(null)}
+        onCancelEdit={() => { setEditing(null); setInput(""); }}
+        onToggleAttach={() => setShowAttach(v => !v)}
+        onCloseAttach={() => setShowAttach(false)}
+        onOpenVideoCircle={() => setShowVideoCircle(true)}
+        onToggleEmoji={() => setShowEmoji(v => !v)}
+        onCloseEmoji={() => setShowEmoji(false)}
+        onPickEmoji={(e) => setInput(v => v + e)}
+        onApplyMention={applyMention}
+        onStartRecording={startRecording}
+        onStopRecording={stopRecording}
+        onCancelRecording={cancelRecording}
+      />
 
       {/* Video circle */}
       <VideoCircleRecorder open={showVideoCircle} onClose={() => setShowVideoCircle(false)}
