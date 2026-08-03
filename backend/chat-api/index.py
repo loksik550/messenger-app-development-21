@@ -2192,6 +2192,7 @@ def handler(event: dict, context) -> dict:
                     "sender_name": caller[0],
                     "is_call": True,
                     "call_id": call_id,
+                    "from_user_id": int(user_id),
                     "message": "Входящий звонок",
                 }).encode("utf-8")
                 # В фоне, чтобы не задерживать установку звонка у звонящего

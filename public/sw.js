@@ -1,4 +1,4 @@
-const CACHE = "nova-v14";
+const CACHE = "nova-v15";
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;
 
@@ -60,10 +60,17 @@ self.addEventListener("push", (e) => {
     renotify: true,
     silent: false,
     timestamp: Date.now(),
-    data: { call_id: data.call_id, is_call: true, url: "/", from_name: data.from_name || data.title },
+    data: {
+      call_id: data.call_id,
+      is_call: true,
+      url: "/",
+      from_name: data.from_name || data.title,
+      from_user_id: data.from_user_id,
+      recipient_id: data.recipient_id,
+    },
     actions: [
-      { action: "answer", title: "Ответить" },
-      { action: "decline", title: "Отклонить" },
+      { action: "answer", title: "✅ Ответить" },
+      { action: "decline", title: "❌ Отклонить" },
     ],
   } : {
     body: data.body || "Новое сообщение",
@@ -96,12 +103,31 @@ self.addEventListener("push", (e) => {
   );
 });
 
+const CHAT_API = "https://functions.poehali.dev/b97ade88-cc88-4702-a461-4c386efd5ca3";
+
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const notifData = e.notification.data || {};
 
-  // Отклонить звонок — просто закрываем уведомление
-  if (e.action === "decline") return;
+  // Отклонить звонок — отправляем сигнал завершения звонящему,
+  // чтобы у него сразу прекратились гудки, а не ждал до таймаута.
+  if (e.action === "decline") {
+    if (notifData.call_id && notifData.from_user_id && notifData.recipient_id) {
+      e.waitUntil(
+        fetch(CHAT_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-User-Id": String(notifData.recipient_id) },
+          body: JSON.stringify({
+            action: "call_signal",
+            call_id: notifData.call_id,
+            to_user_id: notifData.from_user_id,
+            type: "decline",
+          }),
+        }).catch(() => {})
+      );
+    }
+    return;
+  }
 
   // Если это звонок — открываем приложение с call_id в URL,
   // чтобы экран вызова открылся даже если приложение было закрыто.

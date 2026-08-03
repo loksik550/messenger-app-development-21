@@ -145,6 +145,8 @@ def handler(event: dict, context) -> dict:
             "chat_id": chat_id,
             "call_id": call_id,
             "is_call": is_call,
+            "from_user_id": body.get("from_user_id"),
+            "recipient_id": int(recipient_id),
             "icon": NOTIF_ICON,
             "badge": NOTIF_ICON,
             "tag": f"call_{call_id}" if is_call else f"msg_{chat_id}",
