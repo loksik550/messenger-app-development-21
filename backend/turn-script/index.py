@@ -6,46 +6,56 @@ CORS = {
 
 SCRIPT = r'''#!/bin/bash
 DOMAIN="turn.novaa.pro"
-echo "==== ПРАВДА О ЗАПУСКЕ + ПРЯМОЙ СТАРТ ===="
+echo "==== ФИКС: права юнита ===="
 
-echo "--- 1. Реальная команда запущенного процесса ---"
-ps -eo pid,cmd | grep turnserver | grep -v grep
-
-echo ""
-echo "--- 2. Полный ExecStart, который применяет systemd ---"
-systemctl show coturn -p ExecStart | tr ';' '\n' | grep -iE 'path|argv'
+echo "--- 1. Под каким юзером работает служба ---"
+systemctl show coturn -p User -p Group -p AmbientCapabilities
 
 echo ""
-echo "--- 3. Останавливаю службу и слушаю ПОЛНЫЙ лог прямого старта TLS ---"
-systemctl stop coturn
-sleep 1
-timeout 4 turnserver -c /etc/turnserver.conf --no-cli \
-  --tls-listening-port=5349 \
-  --cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem \
-  --pkey=/etc/letsencrypt/live/$DOMAIN/privkey.pem 2>&1 | grep -iE '5349|tls listener|https|DTLS listener|error|denied|bind' | head -20
+echo "--- 2. Даю сертификату доступ на чтение всем (только .pem, безопасно для fullchain; privkey оставляем через группу) ---"
+CERTUSER=$(systemctl show coturn -p User --value)
+[ -z "$CERTUSER" ] && CERTUSER=root
+echo "Юзер службы: '$CERTUSER'"
+
+# гарантируем чтение цепочки и ключа для процесса
+chmod 755 /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null
+chmod 644 /etc/letsencrypt/archive/$DOMAIN/fullchain*.pem 2>/dev/null
+chmod 640 /etc/letsencrypt/archive/$DOMAIN/privkey*.pem 2>/dev/null
+if id "$CERTUSER" >/dev/null 2>&1; then
+  # положим ключ в группу юзера службы
+  chgrp -R "$CERTUSER" /etc/letsencrypt/archive/$DOMAIN 2>/dev/null || true
+fi
 
 echo ""
-echo "--- 4. Проверка: слушался ли 5349 во время прямого старта (в фоне) ---"
-timeout 4 turnserver -c /etc/turnserver.conf --no-cli \
-  --tls-listening-port=5349 \
-  --cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem \
-  --pkey=/etc/letsencrypt/live/$DOMAIN/privkey.pem >/dev/null 2>&1 &
-BGPID=$!
+echo "--- 3. Заставляю службу стартовать под root (гарантированный доступ) ---"
+mkdir -p /etc/systemd/system/coturn.service.d
+cat > /etc/systemd/system/coturn.service.d/override.conf <<OVR
+[Service]
+User=
+Group=
+User=root
+Group=root
+AmbientCapabilities=
+ExecStart=
+ExecStart=/usr/bin/turnserver -c /etc/turnserver.conf --no-cli --tls-listening-port=5349 --cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem --pkey=/etc/letsencrypt/live/$DOMAIN/privkey.pem
+OVR
+
+echo "--- 4. Перезапуск ---"
+systemctl daemon-reload
+systemctl restart coturn
 sleep 2
-ss -tuln | grep ':5349' && echo " >>> при ПРЯМОМ старте 5349 РАБОТАЕТ" || echo " >>> даже при прямом старте 5349 НЕТ"
-kill $BGPID 2>/dev/null
 
-echo ""
-echo "--- 5. Возвращаю службу ---"
-systemctl start coturn
-sleep 1
+echo "============================================"
 ss -tuln | grep -E ':3478|:5349'
-echo "===================================="
+echo "--------------------------------------------"
+ss -tuln | grep -q ':5349' && echo " >>> УСПЕХ: 5349 слушается под службой!" || echo " >>> всё ещё нет — смотрим лог ниже"
+ss -tuln | grep -q ':5349' || journalctl -u coturn --no-pager --since "15 seconds ago" | tail -15
+echo "============================================"
 '''
 
 
 def handler(event: dict, context) -> dict:
-    """Показывает реальную команду запуска и тестирует прямой старт TLS 5349."""
+    """Фикс прав юнита: запуск coturn под root, доступ к сертификату, TLS 5349."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
