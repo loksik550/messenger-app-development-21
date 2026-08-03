@@ -6,34 +6,29 @@ CORS = {
 
 SCRIPT = r'''#!/bin/bash
 DOMAIN="turn.novaa.pro"
-echo "==> Проверка прав на сертификат"
-usermod -aG ssl-cert turn 2>/dev/null || true
-chmod 750 /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
-chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+echo "==== ДИАГНОСТИКА TLS 5349 ===="
 
-echo "==> Открытие TLS-порта 5349 в фаерволе"
-if command -v ufw >/dev/null 2>&1; then
-  ufw allow 5349/tcp
-  ufw allow 5349/udp
-fi
-
-echo "==> Перезапуск coturn"
-systemctl restart coturn
-sleep 2
+echo "--- 1. Права на файлы сертификата ---"
+ls -lL /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/letsencrypt/live/$DOMAIN/privkey.pem 2>&1
+echo "Группы пользователя turn:"; id turn
 
 echo ""
-echo "============================================"
-echo " Слушающиеся порты TURN:"
-ss -tulnp | grep -E '3478|5349' || echo "  ничего не слушается"
-echo "============================================"
-echo " Если 5349 не появился — последние ошибки лога:"
-journalctl -u coturn -n 15 --no-pager | grep -iE 'tls|cert|5349|error|fail' || echo "  ошибок по TLS не найдено"
-echo "============================================"
+echo "--- 2. Может ли turn прочитать ключ ---"
+sudo -u turn cat /etc/letsencrypt/live/$DOMAIN/privkey.pem >/dev/null 2>&1 && echo "OK: turn читает privkey" || echo "НЕТ доступа к privkey"
+
+echo ""
+echo "--- 3. Строки TLS в конфиге ---"
+grep -E 'tls-listening-port|cert=|pkey=|listening-ip' /etc/turnserver.conf
+
+echo ""
+echo "--- 4. Ошибки TLS/cert в логе запуска ---"
+journalctl -u coturn --no-pager | grep -iE 'tls|cert|pkey|5349|SSL|listener' | tail -20
+echo "===================================="
 '''
 
 
 def handler(event: dict, context) -> dict:
-    """Отдаёт bash-скрипт: открывает TLS-порт 5349 и перезапускает coturn."""
+    """Диагностика TLS-порта 5349 на TURN-сервере."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
