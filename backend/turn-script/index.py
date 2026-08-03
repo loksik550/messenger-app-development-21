@@ -6,36 +6,46 @@ CORS = {
 
 SCRIPT = r'''#!/bin/bash
 DOMAIN="turn.novaa.pro"
-echo "==== ФИКС: cert/pkey аргументами в systemd ===="
+echo "==== ПРАВДА О ЗАПУСКЕ + ПРЯМОЙ СТАРТ ===="
 
-echo "--- Убираю cert/pkey/tls-port из конфига (передадим их аргументами) ---"
-sed -i '/^cert=/d;/^pkey=/d;/^tls-listening-port=/d' /etc/turnserver.conf
+echo "--- 1. Реальная команда запущенного процесса ---"
+ps -eo pid,cmd | grep turnserver | grep -v grep
 
-echo "--- Прописываю рабочую команду запуска в override ---"
-mkdir -p /etc/systemd/system/coturn.service.d
-cat > /etc/systemd/system/coturn.service.d/override.conf <<OVR
-[Service]
-ExecStart=
-ExecStart=/usr/bin/turnserver -c /etc/turnserver.conf --no-cli --tls-listening-port=5349 --cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem --pkey=/etc/letsencrypt/live/$DOMAIN/privkey.pem
-OVR
+echo ""
+echo "--- 2. Полный ExecStart, который применяет systemd ---"
+systemctl show coturn -p ExecStart | tr ';' '\n' | grep -iE 'path|argv'
 
-echo "--- Перезапуск ---"
-systemctl daemon-reload
-systemctl restart coturn
+echo ""
+echo "--- 3. Останавливаю службу и слушаю ПОЛНЫЙ лог прямого старта TLS ---"
+systemctl stop coturn
+sleep 1
+timeout 4 turnserver -c /etc/turnserver.conf --no-cli \
+  --tls-listening-port=5349 \
+  --cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem \
+  --pkey=/etc/letsencrypt/live/$DOMAIN/privkey.pem 2>&1 | grep -iE '5349|tls listener|https|DTLS listener|error|denied|bind' | head -20
+
+echo ""
+echo "--- 4. Проверка: слушался ли 5349 во время прямого старта (в фоне) ---"
+timeout 4 turnserver -c /etc/turnserver.conf --no-cli \
+  --tls-listening-port=5349 \
+  --cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem \
+  --pkey=/etc/letsencrypt/live/$DOMAIN/privkey.pem >/dev/null 2>&1 &
+BGPID=$!
 sleep 2
+ss -tuln | grep ':5349' && echo " >>> при ПРЯМОМ старте 5349 РАБОТАЕТ" || echo " >>> даже при прямом старте 5349 НЕТ"
+kill $BGPID 2>/dev/null
 
-echo "============================================"
-echo " Порты:"
-ss -tulnp | grep -E '3478|5349' || echo "  ничего"
-echo "============================================"
-echo " Итог по 5349:"
-ss -tuln | grep -q ':5349' && echo " >>> УСПЕХ: TLS-порт 5349 слушается!" || echo " >>> 5349 всё ещё не поднялся"
-echo "============================================"
+echo ""
+echo "--- 5. Возвращаю службу ---"
+systemctl start coturn
+sleep 1
+ss -tuln | grep -E ':3478|:5349'
+echo "===================================="
 '''
 
 
 def handler(event: dict, context) -> dict:
-    """Фикс: передаём cert/pkey/tls-порт аргументами командной строки systemd."""
+    """Показывает реальную команду запуска и тестирует прямой старт TLS 5349."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
