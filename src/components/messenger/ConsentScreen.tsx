@@ -77,6 +77,24 @@ export default function ConsentScreen({ onAccept }: Props) {
             </div>
             <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
           </button>
+
+          <a
+            href="/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full text-left p-4 rounded-xl border border-border hover:bg-accent transition flex items-center gap-3"
+          >
+            <Icon name="ScrollText" size={20} className="text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm">
+                Пользовательское соглашение
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Правила использования и запрещённый контент
+              </div>
+            </div>
+            <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
+          </a>
         </div>
 
         <div className="space-y-4 mb-6">
@@ -87,7 +105,7 @@ export default function ConsentScreen({ onAccept }: Props) {
               className="mt-0.5"
             />
             <span className="text-sm leading-snug">
-              Я ознакомился с{" "}
+              Я принимаю{" "}
               <button
                 type="button"
                 onClick={(e) => {
@@ -96,9 +114,18 @@ export default function ConsentScreen({ onAccept }: Props) {
                 }}
                 className="text-primary underline underline-offset-2"
               >
-                Политикой конфиденциальности
+                Политику конфиденциальности
               </button>{" "}
-              и принимаю её условия
+              и{" "}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-primary underline underline-offset-2"
+              >
+                Пользовательское соглашение
+              </a>
             </span>
           </label>
 

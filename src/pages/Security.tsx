@@ -122,6 +122,13 @@ export default function Security() {
           <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline break-all mt-1 inline-block">
             https://novaa.pro/privacy
           </a>
+          <p className="mt-2">
+            Правила использования и перечень запрещённого контента изложены в
+            Пользовательском соглашении:
+          </p>
+          <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline break-all mt-1 inline-block">
+            https://novaa.pro/terms
+          </a>
         </section>
 
         <section>

@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Download from "./pages/Download";
 import Privacy from "./pages/Privacy";
 import Security from "./pages/Security";
+import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -62,6 +63,9 @@ const App = () => (
           <Route path="/privacy-policy" element={<Privacy />} />
           <Route path="/politika-konfidencialnosti" element={<Privacy />} />
           <Route path="/security" element={<Security />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/terms-of-service" element={<Terms />} />
+          <Route path="/polzovatelskoe-soglashenie" element={<Terms />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
