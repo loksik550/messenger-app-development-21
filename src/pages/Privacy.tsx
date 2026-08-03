@@ -211,9 +211,12 @@ export default function Privacy() {
           <h3 className="font-semibold text-base mb-1">10. Контакты</h3>
           <p>
             По вопросам обработки персональных данных и для отзыва согласия вы
-            можете обратиться в службу поддержки прямо из Приложения: «Настройки
-            → Поддержка».
+            можете обратиться в службу поддержки прямо из Приложения («Настройки
+            → Поддержка») или по электронной почте:
           </p>
+          <a href="mailto:Feeldex@mail.ru" className="text-primary underline break-all mt-1 inline-block">
+            Feeldex@mail.ru
+          </a>
         </section>
 
         <section className="rounded-lg bg-muted/40 p-4 text-xs text-muted-foreground">

@@ -4,7 +4,7 @@ import Icon from "@/components/ui/icon";
 
 const UPDATED = "3 августа 2026 г.";
 const VERSION = "1.0";
-const SUPPORT_EMAIL = "support@novaa.pro";
+const SUPPORT_EMAIL = "Feeldex@mail.ru";
 
 export default function Terms() {
   const navigate = useNavigate();

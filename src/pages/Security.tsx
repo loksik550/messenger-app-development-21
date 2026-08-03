@@ -10,7 +10,7 @@ const GITHUB_URL = "https://github.com/loksik550/messenger-app-development-21";
 // ──────────────────────────────────────────────────────────────────────
 
 const UPDATED = "3 августа 2026 г.";
-const SUPPORT_EMAIL = "support@novaa.pro";
+const SUPPORT_EMAIL = "Feeldex@mail.ru";
 
 export default function Security() {
   const navigate = useNavigate();
