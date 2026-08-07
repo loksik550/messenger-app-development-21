@@ -28,7 +28,16 @@ export default function AccountDeletePanel({ user, onBack, onDeleted }: Props) {
   const [openConfirm, setOpenConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const phoneMatches = phoneInput.trim() === (user.phone || "").trim();
+  // Сравниваем только цифры: "+7 900 111-22-33" и "79001112233" — один номер.
+  // Ведущую 8 приводим к 7, чтобы формат ввода не мешал подтверждению.
+  const onlyDigits = (v: string) => {
+    const d = (v || "").replace(/\D/g, "");
+    return d.length === 11 && d.startsWith("8") ? "7" + d.slice(1) : d;
+  };
+
+  const phoneMatches =
+    onlyDigits(phoneInput) !== "" &&
+    onlyDigits(phoneInput) === onlyDigits(user.phone || "");
   const wordMatches = confirmText.trim().toUpperCase() === "УДАЛИТЬ";
   const canSubmit = phoneMatches && wordMatches && !loading;
 
@@ -44,7 +53,7 @@ export default function AccountDeletePanel({ user, onBack, onDeleted }: Props) {
         },
         body: JSON.stringify({
           confirm: "DELETE",
-          phone: phoneInput.trim(),
+          phone: onlyDigits(phoneInput),
         }),
       });
       const data = await res.json().catch(() => ({}));

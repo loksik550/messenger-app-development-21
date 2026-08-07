@@ -119,7 +119,14 @@ def handler(event: dict, context) -> dict:
     if body.get("confirm") != "DELETE":
         return err("Требуется явное подтверждение (confirm=DELETE)")
 
-    confirm_phone = (body.get("phone") or "").strip()
+    def digits_only(v: str) -> str:
+        """Оставляет только цифры и приводит ведущую 8 к 7 (форматы +7 900... и 8900...)."""
+        d = "".join(c for c in (v or "") if c.isdigit())
+        if len(d) == 11 and d.startswith("8"):
+            d = "7" + d[1:]
+        return d
+
+    confirm_phone = digits_only(body.get("phone") or "")
     if not confirm_phone:
         return err("Введите свой номер телефона для подтверждения")
 
@@ -135,7 +142,7 @@ def handler(event: dict, context) -> dict:
                 conn.rollback()
                 return err("Пользователь не найден", 404)
 
-            db_phone = (row[1] or "").strip()
+            db_phone = digits_only(row[1] or "")
             if db_phone != confirm_phone:
                 conn.rollback()
                 return err("Номер телефона не совпадает с привязанным к аккаунту")
