@@ -125,10 +125,24 @@ export default function PrivacyPolicyPanel({ onBack }: Props) {
         </section>
 
         <section>
-          <h3 className="font-semibold mb-1">10. Контакты</h3>
-          <p>
-            По вопросам обработки ПД и для отзыва согласия пишите в Поддержку
-            прямо из приложения: Настройки → Поддержка.
+          <h3 className="font-semibold mb-1">10. Контактные данные</h3>
+          <p className="mt-2">
+            По вопросам обработки персональных данных, для отзыва согласия,
+            удаления аккаунта и любых обращений:
+          </p>
+          <p className="mt-1">
+            Электронная почта:{" "}
+            <a href="mailto:Feeldex@mail.ru" className="text-primary underline break-all">
+              Feeldex@mail.ru
+            </a>
+          </p>
+          <p className="mt-1">
+            Также можно написать в Поддержку прямо из приложения: Настройки →
+            Поддержка.
+          </p>
+          <p className="mt-2">
+            Срок ответа на обращения — не более 30 календарных дней с момента
+            получения.
           </p>
         </section>
 

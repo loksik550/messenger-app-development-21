@@ -278,9 +278,14 @@ const statusBar = {
 };
 
 // ── Push-уведомления (FCM на Android) ───────────────────────────────────────
+// FCM требует google-services.json в сборке. Пока его нет, обращение к
+// PushNotifications падает на нативном уровне (JS try/catch такое не ловит и
+// приложение аварийно закрывается). Включаем только когда Firebase подключён.
+const FCM_ENABLED = false;
+
 const push = {
   async register(onToken: (token: string) => void, onMessage?: (data: unknown) => void) {
-    if (!isNative) return;
+    if (!isNative || !FCM_ENABLED) return;
     try {
       const perm = await PushNotifications.requestPermissions();
       if (perm.receive !== "granted") return;
