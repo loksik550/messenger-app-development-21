@@ -253,22 +253,67 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return err("Нужен user_id")
         uid = int(user_id)
-        # Каскадное удаление всех связанных данных, чтобы FK не ломали удаление
+        # Каскадное удаление всех связанных данных, чтобы FK не ломали удаление.
+        # Порядок важен: сначала реакции на сообщения (в т.ч. в чатах пользователя),
+        # затем сами сообщения, только потом чаты и сам пользователь.
         safe_queries = [
             f"DELETE FROM {SCHEMA}.message_reactions WHERE user_id = %s",
             f"DELETE FROM {SCHEMA}.message_reactions WHERE message_id IN (SELECT id FROM {SCHEMA}.messages WHERE sender_id = %s)",
+            f"DELETE FROM {SCHEMA}.message_reactions WHERE message_id IN (SELECT m.id FROM {SCHEMA}.messages m JOIN {SCHEMA}.chats c ON m.chat_id = c.id WHERE c.user1_id = %s OR c.user2_id = %s)",
             f"DELETE FROM {SCHEMA}.favorite_messages WHERE user_id = %s",
             f"DELETE FROM {SCHEMA}.typing_status WHERE user_id = %s",
             f"DELETE FROM {SCHEMA}.call_signals WHERE from_user_id = %s OR to_user_id = %s",
             f"DELETE FROM {SCHEMA}.user_blocks WHERE user_id = %s OR blocked_id = %s",
             f"DELETE FROM {SCHEMA}.chat_settings WHERE user_id = %s",
-            f"DELETE FROM {SCHEMA}.messages WHERE sender_id = %s",
             f"DELETE FROM {SCHEMA}.messages WHERE chat_id IN (SELECT id FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s)",
+            f"DELETE FROM {SCHEMA}.messages WHERE sender_id = %s",
             f"DELETE FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s",
             f"DELETE FROM {SCHEMA}.push_subscriptions WHERE user_id = %s",
             f"DELETE FROM {SCHEMA}.contacts WHERE user_id = %s OR contact_id = %s",
+            f"DELETE FROM {SCHEMA}.pending_contacts WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.close_friends WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.message_drafts WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.saved_notes WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.scheduled_messages WHERE sender_id = %s",
+            # Группы: реакции/просмотры/сообщения/участники, затем свои группы
+            f"DELETE FROM {SCHEMA}.group_message_reactions WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.group_message_views WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.group_message_reactions WHERE message_id IN (SELECT id FROM {SCHEMA}.group_messages WHERE sender_id = %s)",
+            f"DELETE FROM {SCHEMA}.group_message_views WHERE message_id IN (SELECT id FROM {SCHEMA}.group_messages WHERE sender_id = %s)",
+            f"DELETE FROM {SCHEMA}.group_messages WHERE sender_id = %s",
+            f"DELETE FROM {SCHEMA}.group_mute WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.group_members WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.group_message_reactions WHERE message_id IN (SELECT id FROM {SCHEMA}.group_messages WHERE group_id IN (SELECT id FROM {SCHEMA}.groups WHERE owner_id = %s))",
+            f"DELETE FROM {SCHEMA}.group_message_views WHERE message_id IN (SELECT id FROM {SCHEMA}.group_messages WHERE group_id IN (SELECT id FROM {SCHEMA}.groups WHERE owner_id = %s))",
+            f"DELETE FROM {SCHEMA}.group_messages WHERE group_id IN (SELECT id FROM {SCHEMA}.groups WHERE owner_id = %s)",
+            f"DELETE FROM {SCHEMA}.group_members WHERE group_id IN (SELECT id FROM {SCHEMA}.groups WHERE owner_id = %s)",
+            f"DELETE FROM {SCHEMA}.group_mute WHERE group_id IN (SELECT id FROM {SCHEMA}.groups WHERE owner_id = %s)",
+            f"DELETE FROM {SCHEMA}.groups WHERE owner_id = %s",
+            # Истории
+            f"DELETE FROM {SCHEMA}.story_reactions WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.story_views WHERE viewer_id = %s",
+            f"DELETE FROM {SCHEMA}.story_reactions WHERE story_id IN (SELECT id FROM {SCHEMA}.stories WHERE user_id = %s)",
+            f"DELETE FROM {SCHEMA}.story_views WHERE story_id IN (SELECT id FROM {SCHEMA}.stories WHERE user_id = %s)",
+            f"DELETE FROM {SCHEMA}.stories WHERE user_id = %s",
+            # Финансы и подписки
+            f"DELETE FROM {SCHEMA}.payment_requests WHERE from_user_id = %s OR to_user_id = %s",
+            f"DELETE FROM {SCHEMA}.payments WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.wallet_transactions WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.lightning_transactions WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.pro_subscriptions WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.user_sticker_packs WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.fundraisers WHERE owner_id = %s",
+            # Поддержка, жалобы, геймификация, сессии
+            f"DELETE FROM {SCHEMA}.support_messages WHERE sender_id = %s",
+            f"DELETE FROM {SCHEMA}.support_messages WHERE ticket_id IN (SELECT id FROM {SCHEMA}.support_tickets WHERE user_id = %s)",
+            f"DELETE FROM {SCHEMA}.support_tickets WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.reports WHERE reporter_id = %s",
+            f"DELETE FROM {SCHEMA}.user_badges WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.xp_daily_counters WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.xp_events WHERE user_id = %s",
+            f"DELETE FROM {SCHEMA}.user_sessions WHERE user_id = %s",
+            f"UPDATE {SCHEMA}.users SET bot_owner_id = NULL WHERE bot_owner_id = %s",
             f"DELETE FROM {SCHEMA}.sms_codes WHERE phone IN (SELECT phone FROM {SCHEMA}.users WHERE id = %s)",
-            f"DELETE FROM {SCHEMA}.users WHERE id = %s",
         ]
         for q in safe_queries:
             try:
@@ -278,8 +323,21 @@ def handler(event: dict, context) -> dict:
                 # Если таблицы/колонки нет — пропускаем
                 conn.rollback()
                 cur = conn.cursor()
+
+        # Финальное удаление пользователя — БЕЗ проглатывания ошибки,
+        # иначе панель показывала «успех», а аккаунт оставался в базе.
+        try:
+            cur.execute(f"DELETE FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            deleted = cur.rowcount
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            return err(f"Не удалось удалить пользователя: {str(e)[:200]}")
+
         conn.close()
-        return ok({"ok": True})
+        if not deleted:
+            return err("Пользователь не найден")
+        return ok({"ok": True, "deleted": deleted})
 
     # ── user_detail — детальная информация ───────────────────────────────────
     if action == "user_detail":

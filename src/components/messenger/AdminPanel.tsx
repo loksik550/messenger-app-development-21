@@ -219,14 +219,17 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
 
   const confirmDeleteUser = async () => {
     if (!confirmDelete) return;
-    const data = await adminApi("delete_user", { user_id: confirmDelete }, token);
+    const id = confirmDelete;
+    setConfirmDelete(null);
+    const data = await adminApi("delete_user", { user_id: id }, token);
     if (data.ok) {
-      setUsers(prev => prev.filter(u => u.id !== confirmDelete));
       setSelectedUser(null);
+      // Перечитываем список с сервера, чтобы видеть реальное состояние базы,
+      // а не оптимистично скрытую строку.
+      await loadUsers(search);
     } else {
       alert("Не удалось удалить: " + (data.error || "ошибка"));
     }
-    setConfirmDelete(null);
   };
 
   const runClearTestData = async () => {
