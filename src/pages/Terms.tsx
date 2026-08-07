@@ -147,6 +147,11 @@ export default function Terms() {
         <section>
           <h3 className="font-semibold text-base mb-1">8. Контакты</h3>
           <p>
+            Администрация Сервиса: Шашаев Максим Алексеевич, самозанятый
+            (плательщик налога на профессиональный доход), ИНН 524925378506,
+            Нижегородская область, Российская Федерация.
+          </p>
+          <p className="mt-2">
             По всем вопросам, связанным с работой Сервиса, жалобами и нарушениями:
           </p>
           <a href={`mailto:${SUPPORT_EMAIL}`} className="text-violet-400 underline break-all mt-1 inline-block">
