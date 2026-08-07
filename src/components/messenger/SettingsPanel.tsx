@@ -20,12 +20,14 @@ export function SettingsPanel({
   currentUser,
   onDeleteAccount,
   onOpenPrivacyPolicy,
+  onOpenTerms,
 }: {
   onLogout: () => void;
   onBack?: () => void;
   currentUser?: User;
   onDeleteAccount?: () => void;
   onOpenPrivacyPolicy?: () => void;
+  onOpenTerms?: () => void;
 }) {
   useEdgeSwipeBack(onBack);
   const readBool = (k: string, def: boolean) => {
@@ -457,6 +459,19 @@ export function SettingsPanel({
             <div className="flex-1 text-left">
               <div className="text-sm font-medium">Политика конфиденциальности</div>
               <div className="text-xs text-muted-foreground">Как мы храним и защищаем ваши данные</div>
+            </div>
+            <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
+          </button>
+        )}
+
+        {onOpenTerms && (
+          <button onClick={onOpenTerms} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/8 transition-all mt-2">
+            <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center">
+              <Icon name="ScrollText" size={18} className="text-violet-400" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-sm font-medium">Пользовательское соглашение</div>
+              <div className="text-xs text-muted-foreground">Правила использования и запрещённый контент</div>
             </div>
             <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
           </button>

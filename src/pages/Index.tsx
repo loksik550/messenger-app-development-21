@@ -45,6 +45,7 @@ const SavedNotesPanel = lazy(() => import("@/components/messenger/SavedNotesPane
 const PaymentRequestsPanel = lazy(() => import("@/components/messenger/PaymentRequestsPanel"));
 const AccountDeletePanel = lazy(() => import("@/components/messenger/AccountDeletePanel"));
 const PrivacyPolicyPanel = lazy(() => import("@/components/messenger/PrivacyPolicyPanel"));
+const TermsPanel = lazy(() => import("@/components/messenger/TermsPanel"));
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
@@ -94,6 +95,7 @@ export default function Index() {
   // Внутренние экраны (открываются из настроек)
   const [showAccountDelete, setShowAccountDelete] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   // Восстановление сессии из localStorage
   useEffect(() => {
@@ -501,6 +503,21 @@ export default function Index() {
   // Экран политики конфиденциальности (доступен из настроек)
   if (showPrivacyPolicy) {
     return <Suspense fallback={LAZY_FALLBACK}><PrivacyPolicyPanel onBack={() => setShowPrivacyPolicy(false)} /></Suspense>;
+  }
+
+  // Экран пользовательского соглашения (доступен из настроек)
+  if (showTerms) {
+    return (
+      <Suspense fallback={LAZY_FALLBACK}>
+        <TermsPanel
+          onBack={() => setShowTerms(false)}
+          onOpenPrivacy={() => {
+            setShowTerms(false);
+            setShowPrivacyPolicy(true);
+          }}
+        />
+      </Suspense>
+    );
   }
 
   // Экран удаления аккаунта (доступен из настроек)
@@ -1080,6 +1097,7 @@ export default function Index() {
             onBack={() => setView("profile")}
             onDeleteAccount={() => setShowAccountDelete(true)}
             onOpenPrivacyPolicy={() => setShowPrivacyPolicy(true)}
+            onOpenTerms={() => setShowTerms(true)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8 animate-fade-in">

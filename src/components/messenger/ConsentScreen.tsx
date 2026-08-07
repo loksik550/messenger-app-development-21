@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
+import TermsPanel from "./TermsPanel";
 
 const CONSENT_KEY = "nova_consent_v1";
 
@@ -32,6 +33,7 @@ export default function ConsentScreen({ onAccept }: Props) {
   const [agreeProcessing, setAgreeProcessing] = useState(false);
   const [agreeAge, setAgreeAge] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   const canContinue = agreePolicy && agreeProcessing && agreeAge;
 
@@ -43,6 +45,18 @@ export default function ConsentScreen({ onAccept }: Props) {
 
   if (showPolicy) {
     return <PrivacyPolicyPanel onBack={() => setShowPolicy(false)} />;
+  }
+
+  if (showTerms) {
+    return (
+      <TermsPanel
+        onBack={() => setShowTerms(false)}
+        onOpenPrivacy={() => {
+          setShowTerms(false);
+          setShowPolicy(true);
+        }}
+      />
+    );
   }
 
   return (
@@ -83,10 +97,8 @@ export default function ConsentScreen({ onAccept }: Props) {
             <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
           </button>
 
-          <a
-            href="/terms"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => setShowTerms(true)}
             className="w-full text-left p-4 rounded-xl border border-border hover:bg-accent transition flex items-center gap-3"
           >
             <Icon name="ScrollText" size={20} className="text-primary shrink-0" />
@@ -99,7 +111,7 @@ export default function ConsentScreen({ onAccept }: Props) {
               </div>
             </div>
             <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
-          </a>
+          </button>
         </div>
 
         <div className="space-y-4 mb-6">
@@ -122,15 +134,16 @@ export default function ConsentScreen({ onAccept }: Props) {
                 Политику конфиденциальности
               </button>{" "}
               и{" "}
-              <a
-                href="/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setShowTerms(true);
+                }}
                 className="text-primary underline underline-offset-2"
               >
                 Пользовательское соглашение
-              </a>
+              </button>
             </span>
           </label>
 

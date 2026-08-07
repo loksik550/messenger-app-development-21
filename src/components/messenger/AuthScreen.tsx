@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User, type BeforeInstallPromptEvent } from "@/lib/api";
+import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
 
 export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
   const [step, setStep] = useState<"phone" | "password" | "name" | "reset">("phone");
+  const [showPolicy, setShowPolicy] = useState(false);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -118,6 +120,12 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
     }
   };
 
+  // Политику открываем панелью внутри приложения: в APK нет вкладок браузера,
+  // и обычная ссылка привела бы к пустому экрану.
+  if (showPolicy) {
+    return <PrivacyPolicyPanel onBack={() => setShowPolicy(false)} />;
+  }
+
   return (
     <div className="h-screen flex items-center justify-center relative overflow-hidden">
       <div className="mesh-bg" />
@@ -211,9 +219,9 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
             </button>
             <p className="text-center text-xs text-muted-foreground">
               Нажимая «Продолжить», вы соглашаетесь с{" "}
-              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 underline">
+              <button type="button" onClick={() => setShowPolicy(true)} className="text-violet-400 hover:text-violet-300 underline">
                 Политикой конфиденциальности
-              </a>
+              </button>
             </p>
           </div>
         )}
@@ -353,9 +361,9 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
             </button>
             <p className="text-center text-xs text-muted-foreground">
               Нажимая «Начать общение», вы соглашаетесь с{" "}
-              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 underline">
+              <button type="button" onClick={() => setShowPolicy(true)} className="text-violet-400 hover:text-violet-300 underline">
                 Политикой конфиденциальности
-              </a>
+              </button>
             </p>
           </div>
         )}
