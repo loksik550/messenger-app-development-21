@@ -46,8 +46,13 @@ export default function ConsentScreen({ onAccept }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <div className="flex-1 overflow-y-auto px-5 pt-12 pb-6 max-w-md mx-auto w-full">
+    <div className="h-full max-h-[100dvh] bg-background flex flex-col overflow-hidden">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto px-5 pt-12 max-w-md mx-auto w-full"
+        style={{
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 2rem)",
+        }}
+      >
         <div className="flex justify-center mb-6">
           <div className="w-20 h-20 rounded-3xl bg-primary/15 flex items-center justify-center">
             <Icon name="ShieldCheck" size={42} className="text-primary" />
@@ -162,6 +167,15 @@ export default function ConsentScreen({ onAccept }: Props) {
           </span>
         </div>
 
+      </div>
+
+      {/* Кнопка закреплена внизу — на невысоких экранах она не уезжает за край */}
+      <div
+        className="shrink-0 px-5 pt-3 border-t border-border bg-background max-w-md mx-auto w-full"
+        style={{
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.75rem)",
+        }}
+      >
         <Button
           size="lg"
           className="w-full"
@@ -170,6 +184,11 @@ export default function ConsentScreen({ onAccept }: Props) {
         >
           Продолжить
         </Button>
+        {!canContinue && (
+          <p className="text-center text-xs text-muted-foreground mt-2">
+            Отметьте все три пункта, чтобы продолжить
+          </p>
+        )}
       </div>
     </div>
   );
