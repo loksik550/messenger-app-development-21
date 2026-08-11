@@ -1,0 +1,162 @@
+import { useEffect, useState } from "react";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import Icon from "@/components/ui/icon";
+import { devApi, formatNum } from "@/lib/devApi";
+
+interface DashboardData {
+  users: { total: number; online: number; active_24h: number; new_24h: number };
+  messages: { total: number; last_24h: number; last_hour: number };
+  content: { chats: number; groups: number; stories: number; calls_24h: number };
+  moderation: { reports: number; open_tickets: number };
+  chart: { hour: string; value: number }[];
+}
+
+export default function DevDashboard() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    try {
+      const res = await devApi<DashboardData>("dashboard");
+      setData(res);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка загрузки");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox text={error} onRetry={load} />;
+  if (!data) return null;
+
+  const cards = [
+    { label: "Всего пользователей", value: data.users.total, icon: "Users", color: "violet", sub: `+${data.users.new_24h} за сутки` },
+    { label: "Сейчас в сети", value: data.users.online, icon: "Wifi", color: "emerald", sub: `${data.users.active_24h} активных за сутки` },
+    { label: "Сообщений за сутки", value: data.messages.last_24h, icon: "MessageSquare", color: "cyan", sub: `${data.messages.last_hour} за последний час` },
+    { label: "Открытых обращений", value: data.moderation.open_tickets, icon: "LifeBuoy", color: "amber", sub: `${data.moderation.reports} жалоб всего` },
+  ];
+
+  const secondary = [
+    { label: "Всего сообщений", value: data.messages.total, icon: "Mail" },
+    { label: "Личных чатов", value: data.content.chats, icon: "MessagesSquare" },
+    { label: "Групп и каналов", value: data.content.groups, icon: "Users" },
+    { label: "Историй активно", value: data.content.stories, icon: "Sparkles" },
+    { label: "Звонков за сутки", value: data.content.calls_24h, icon: "Phone" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {cards.map((c) => (
+          <StatCard key={c.label} {...c} />
+        ))}
+      </div>
+
+      <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold">Активность за сутки</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Сообщений в час</p>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            Живые данные
+          </div>
+        </div>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data.chart}>
+              <defs>
+                <linearGradient id="devGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.6} />
+                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="hour" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} interval={3} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{
+                  background: "#12131f",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 12,
+                  fontSize: 12,
+                  color: "#e2e8f0",
+                }}
+                labelFormatter={(l) => `${l} назад`}
+                formatter={(v: number) => [`${v}`, "Сообщений"]}
+              />
+              <Area type="monotone" dataKey="value" stroke="#a78bfa" strokeWidth={2} fill="url(#devGrad)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+        {secondary.map((s) => (
+          <div key={s.label} className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
+            <Icon name={s.icon} size={16} className="text-slate-500 mb-2" />
+            <div className="text-xl font-bold">{formatNum(s.value)}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{s.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const COLORS: Record<string, string> = {
+  violet: "from-violet-500/20 to-violet-500/5 text-violet-400 border-violet-500/20",
+  emerald: "from-emerald-500/20 to-emerald-500/5 text-emerald-400 border-emerald-500/20",
+  cyan: "from-cyan-500/20 to-cyan-500/5 text-cyan-400 border-cyan-500/20",
+  amber: "from-amber-500/20 to-amber-500/5 text-amber-400 border-amber-500/20",
+};
+
+function StatCard({ label, value, icon, color, sub }: { label: string; value: number; icon: string; color: string; sub: string }) {
+  const cls = COLORS[color] || COLORS.violet;
+  return (
+    <div className={`bg-gradient-to-br ${cls.split(" ").slice(0, 2).join(" ")} border ${cls.split(" ")[3]} rounded-2xl p-5`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className={`w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center ${cls.split(" ")[2]}`}>
+          <Icon name={icon} size={18} />
+        </div>
+      </div>
+      <div className="text-3xl font-bold tracking-tight">{formatNum(value)}</div>
+      <div className="text-sm text-slate-300 mt-1">{label}</div>
+      <div className="text-xs text-slate-500 mt-1">{sub}</div>
+    </div>
+  );
+}
+
+export function Loading() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <Icon name="Loader2" size={28} className="animate-spin text-violet-400" />
+    </div>
+  );
+}
+
+export function ErrorBox({ text, onRetry }: { text: string; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3">
+        <Icon name="CircleAlert" size={24} className="text-red-400" />
+      </div>
+      <p className="text-sm text-slate-300 mb-3">{text}</p>
+      {onRetry && (
+        <button onClick={onRetry} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm hover:bg-white/10 transition">
+          Повторить
+        </button>
+      )}
+    </div>
+  );
+}

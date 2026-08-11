@@ -5,7 +5,6 @@ import { useState } from "react";
  * Используется в Index.tsx для всех полноэкранных модалок.
  */
 export function useOverlays() {
-  const [showAdmin, setShowAdmin] = useState(false);
   const [showPro, setShowPro] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -56,7 +55,6 @@ export function useOverlays() {
 
   return {
     // флаги
-    showAdmin, setShowAdmin,
     showPro, setShowPro,
     showComingSoon, setShowComingSoon,
     showCreateGroup, setShowCreateGroup,

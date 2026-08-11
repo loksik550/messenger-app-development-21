@@ -1,0 +1,38 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Проверка первичной настройки",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "check_setup"},
+      "expectedStatus": 200
+    },
+    {
+      "name": "Вход с неверными данными отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "login", "email": "nobody@example.com", "password": "wrongpass123"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "Закрытый раздел требует входа",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "dashboard"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "Регистрация без кода отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "register", "email": "test@example.com", "password": "testpass123", "invite_code": ""},
+      "expectedStatus": 400
+    }
+  ]
+}
