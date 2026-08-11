@@ -95,6 +95,7 @@ export default function Index() {
   // Внутренние экраны (открываются из настроек)
   const [showAccountDelete, setShowAccountDelete] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const logoTapsRef = useRef(0);
   const [showTerms, setShowTerms] = useState(false);
 
   // Восстановление сессии из localStorage
@@ -754,7 +755,19 @@ export default function Index() {
       >
         {/* Sidebar Header */}
         <div className="flex items-center justify-between px-4 pb-3" style={{ paddingTop: "calc(1.25rem + env(safe-area-inset-top))" }}>
-          <div className="flex items-center gap-2">
+          {/* Служебная панель открывается пятикратным нажатием на логотип —
+              она не предназначена для обычных пользователей */}
+          <div
+            className="flex items-center gap-2 select-none"
+            onClick={() => {
+              logoTapsRef.current += 1;
+              if (logoTapsRef.current >= 5) {
+                logoTapsRef.current = 0;
+                openOverlay(setShowAdmin);
+              }
+              setTimeout(() => { logoTapsRef.current = 0; }, 2000);
+            }}
+          >
             <div className="w-8 h-8 grad-primary rounded-xl flex items-center justify-center glow-primary">
               <Icon name="Zap" size={16} className="text-white" />
             </div>
@@ -772,21 +785,13 @@ export default function Index() {
             </button>
             {/* Язык */}
             <LanguageSwitcher variant="compact" />
-            {/* Скоро */}
+            {/* Все возможности */}
             <button
               onClick={() => openOverlay(setShowComingSoon)}
               className="p-2 rounded-xl hover:bg-white/8 transition-colors text-muted-foreground hover:text-violet-400"
-              title="Скоро в Nova"
+              title="Все возможности Nova"
             >
               <Icon name="Sparkles" size={18} />
-            </button>
-            {/* Dev Panel */}
-            <button
-              onClick={() => openOverlay(setShowAdmin)}
-              className="p-2 rounded-xl hover:bg-white/8 transition-colors text-muted-foreground hover:text-violet-400"
-              title="Dev Panel"
-            >
-              <Icon name="Terminal" size={18} />
             </button>
           </div>
         </div>
