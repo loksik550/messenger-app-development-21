@@ -122,6 +122,9 @@ export function ProfileHeader({
         ) : (
           <div className="flex items-center justify-center gap-2 mt-1">
             <h2 className="text-2xl font-bold" style={{ color: currentUser.name_color || undefined }}>{currentUser.name}</h2>
+            {currentUser.verified && (
+              <Icon name="BadgeCheck" size={20} className="text-sky-400 flex-shrink-0" />
+            )}
             <button onClick={() => { setEditName(currentUser.name); setEditing(true); }} className="p-1 text-muted-foreground hover:text-violet-400 transition-colors">
               <Icon name="Pencil" size={14} />
             </button>

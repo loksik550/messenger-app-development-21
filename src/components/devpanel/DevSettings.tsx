@@ -4,11 +4,18 @@ import { devApi, type DevAdmin } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
 
 interface Props {
-  onSaved: (name: string, subtitle: string, logo: string) => void;
+  onSaved: (name: string, subtitle: string, logo: string, bgStyle: string, bgImage: string) => void;
   can: (p: string) => boolean;
   admin: DevAdmin;
   onEmailChanged: (email: string) => void;
 }
+
+const BG_STYLES = [
+  { key: "aurora", label: "Свечение", hint: "Фиолетово-бирюзовые пятна и сетка" },
+  { key: "gradient", label: "Градиент", hint: "Плавный переход цветов" },
+  { key: "grid", label: "Сетка", hint: "Строгая техническая сетка" },
+  { key: "plain", label: "Без фона", hint: "Чистый тёмный" },
+];
 
 const PRESETS = [
   { url: "/app-icon-512.png", label: "Логотип Nova" },
@@ -20,6 +27,8 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged }: Pro
   const [name, setName] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [logo, setLogo] = useState("");
+  const [bgStyle, setBgStyle] = useState("aurora");
+  const [bgImage, setBgImage] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -31,6 +40,8 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged }: Pro
       setName(res.settings.panel_name || "Nova Dev Panel");
       setSubtitle(res.settings.panel_subtitle || "Панель управления мессенджером");
       setLogo(res.settings.panel_logo_url ?? "");
+      setBgStyle(res.settings.panel_bg_style || "aurora");
+      setBgImage(res.settings.panel_bg_image ?? "");
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
@@ -55,9 +66,11 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged }: Pro
           panel_name: name.trim(),
           panel_subtitle: subtitle.trim(),
           panel_logo_url: logo.trim(),
+          panel_bg_style: bgStyle,
+          panel_bg_image: bgImage.trim(),
         },
       });
-      onSaved(name.trim(), subtitle.trim(), logo.trim());
+      onSaved(name.trim(), subtitle.trim(), logo.trim(), bgStyle, bgImage.trim());
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -126,6 +139,43 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged }: Pro
               placeholder="Или вставьте ссылку на картинку"
               className="w-full bg-black/30 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-violet-500/50 disabled:opacity-50 placeholder-slate-600"
             />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 mb-1.5 block">Фон панели</label>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              {BG_STYLES.map((b) => (
+                <button
+                  key={b.key}
+                  onClick={() => editable && setBgStyle(b.key)}
+                  disabled={!editable}
+                  className={`text-left px-3 py-2.5 rounded-xl border text-xs transition disabled:opacity-50 ${
+                    bgStyle === b.key && !bgImage
+                      ? "bg-violet-600/20 border-violet-500/40 text-violet-200"
+                      : "bg-white/[0.03] border-white/8 text-slate-400 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <div className="font-medium">{b.label}</div>
+                  <div className="text-[10px] text-slate-600 mt-0.5">{b.hint}</div>
+                </button>
+              ))}
+            </div>
+            <input
+              value={bgImage}
+              onChange={(e) => setBgImage(e.target.value)}
+              disabled={!editable}
+              placeholder="Или ссылка на картинку для фона"
+              className="w-full bg-black/30 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-violet-500/50 disabled:opacity-50 placeholder-slate-600"
+            />
+            {bgImage && (
+              <button
+                onClick={() => setBgImage("")}
+                disabled={!editable}
+                className="mt-2 text-xs text-slate-500 hover:text-slate-300 disabled:opacity-50"
+              >
+                Убрать картинку и вернуть стиль
+              </button>
+            )}
           </div>
         </div>
 

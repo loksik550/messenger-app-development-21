@@ -50,6 +50,9 @@ ACTION_PERMS = {
     "team": "team", "team_update": "team", "team_remove": "team",
     "settings_get": "dashboard", "settings_save": "settings",
     "change_password": "dashboard", "change_email": "dashboard",
+    "verifications": "reports", "verify_decide": "reports", "set_verified": "reports",
+    "notifications": "dashboard", "notifications_read": "dashboard",
+    "moderation_summary": "dashboard",
 }
 
 
@@ -226,7 +229,8 @@ def handler(event: dict, context) -> dict:
         if action == "panel_info":
             cur.execute(
                 f"SELECT key, value FROM {SCHEMA}.dev_settings "
-                f"WHERE key IN ('panel_name','panel_subtitle','panel_logo_url','panel_logo_icon')"
+                f"WHERE key IN ('panel_name','panel_subtitle','panel_logo_url','panel_logo_icon',"
+                f"'panel_bg_style','panel_bg_image')"
             )
             st = {r[0]: r[1] for r in cur.fetchall()}
             return ok({
@@ -234,6 +238,8 @@ def handler(event: dict, context) -> dict:
                 "subtitle": st.get("panel_subtitle") or "Панель управления мессенджером",
                 "logo_url": st.get("panel_logo_url") or "",
                 "logo_icon": st.get("panel_logo_icon") or "Terminal",
+                "bg_style": st.get("panel_bg_style") or "aurora",
+                "bg_image": st.get("panel_bg_image") or "",
             })
 
         if action == "check_setup":
@@ -701,6 +707,148 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"UPDATE {SCHEMA}.dev_admins SET email = %s WHERE id = %s", (new_email, admin["id"]))
             audit(cur, admin, "change_email", f"Почта изменена на {new_email}", ip)
             return ok({"success": True, "email": new_email})
+
+        # ── Верификация ───────────────────────────────────────────────────
+        if action == "verifications":
+            status = (body.get("status") or "pending").strip()
+            if status == "all":
+                cur.execute(
+                    f"SELECT v.id, v.user_id, u.name, u.phone, u.avatar_url, u.verified, "
+                    f"v.target_type, v.target_id, v.full_name, v.category, v.links, v.comment, "
+                    f"v.status, v.reviewer_note, v.created_at, v.reviewed_at "
+                    f"FROM {SCHEMA}.verification_requests v "
+                    f"LEFT JOIN {SCHEMA}.users u ON u.id = v.user_id "
+                    f"ORDER BY v.created_at DESC LIMIT 100"
+                )
+            else:
+                cur.execute(
+                    f"SELECT v.id, v.user_id, u.name, u.phone, u.avatar_url, u.verified, "
+                    f"v.target_type, v.target_id, v.full_name, v.category, v.links, v.comment, "
+                    f"v.status, v.reviewer_note, v.created_at, v.reviewed_at "
+                    f"FROM {SCHEMA}.verification_requests v "
+                    f"LEFT JOIN {SCHEMA}.users u ON u.id = v.user_id "
+                    f"WHERE v.status = %s ORDER BY v.created_at DESC LIMIT 100",
+                    (status,),
+                )
+            items = [{
+                "id": r[0], "user_id": r[1], "user_name": r[2] or f"ID {r[1]}",
+                "phone": r[3], "avatar_url": r[4], "already_verified": bool(r[5]),
+                "target_type": r[6], "target_id": r[7], "full_name": r[8],
+                "category": r[9], "links": r[10], "comment": r[11],
+                "status": r[12], "reviewer_note": r[13],
+                "created_at": r[14], "reviewed_at": r[15],
+            } for r in cur.fetchall()]
+
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.verification_requests WHERE status = 'pending'")
+            pending = cur.fetchone()[0]
+            return ok({"items": items, "pending": pending})
+
+        if action == "verify_decide":
+            vid = int(body.get("request_id") or 0)
+            approve = bool(body.get("approve"))
+            note = (body.get("note") or "").strip()
+            now = int(time.time())
+
+            cur.execute(
+                f"SELECT user_id, target_type, target_id, full_name, category "
+                f"FROM {SCHEMA}.verification_requests WHERE id = %s",
+                (vid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Заявка не найдена", 404)
+            uid, target_type, target_id, full_name, category = row
+
+            cur.execute(
+                f"UPDATE {SCHEMA}.verification_requests SET status = %s, reviewer_id = %s, "
+                f"reviewer_note = %s, reviewed_at = %s WHERE id = %s",
+                ("approved" if approve else "rejected", admin["id"], note, now, vid),
+            )
+
+            if approve:
+                if target_type == "channel" and target_id:
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.groups SET verified = true, verified_at = %s WHERE id = %s",
+                        (now, target_id),
+                    )
+                else:
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.users SET verified = true, verified_at = %s, verified_kind = %s "
+                        f"WHERE id = %s",
+                        (now, category or "personal", uid),
+                    )
+
+            audit(cur, admin, "verify_decide",
+                  f"Заявка #{vid} ({full_name or uid}): {'одобрена' if approve else 'отклонена'}", ip)
+            return ok({"success": True})
+
+        if action == "set_verified":
+            uid = int(body.get("user_id") or 0)
+            value = bool(body.get("verified"))
+            now = int(time.time())
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET verified = %s, verified_at = %s WHERE id = %s",
+                (value, now if value else None, uid),
+            )
+            audit(cur, admin, "set_verified",
+                  f"ID {uid}: галочка {'выдана' if value else 'снята'}", ip)
+            return ok({"success": True})
+
+        # ── Уведомления панели ────────────────────────────────────────────
+        if action == "notifications":
+            cur.execute(
+                f"SELECT id, kind, title, body, link_section, read_by, created_at "
+                f"FROM {SCHEMA}.dev_notifications ORDER BY created_at DESC LIMIT 50"
+            )
+            me = str(admin["id"])
+            items = []
+            unread = 0
+            for r in cur.fetchall():
+                read = me in (r[5] or "").split(",")
+                if not read:
+                    unread += 1
+                items.append({
+                    "id": r[0], "kind": r[1], "title": r[2], "body": r[3],
+                    "section": r[4], "read": read, "created_at": r[6],
+                })
+            return ok({"items": items, "unread": unread})
+
+        if action == "notifications_read":
+            me = str(admin["id"])
+            cur.execute(
+                f"UPDATE {SCHEMA}.dev_notifications "
+                f"SET read_by = CASE WHEN read_by = '' THEN %s ELSE read_by || ',' || %s END "
+                f"WHERE POSITION(%s IN read_by) = 0",
+                (me, me, me),
+            )
+            return ok({"success": True})
+
+        # ── Сводка модерации для дашборда ─────────────────────────────────
+        if action == "moderation_summary":
+            now = int(time.time())
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.reports WHERE status != 'resolved'")
+            open_reports = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.verification_requests WHERE status = 'pending'")
+            pending_verif = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.support_tickets WHERE status != 'closed'")
+            open_tickets = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE banned_until > %s", (now,))
+            banned = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE verified = true")
+            verified = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.messages WHERE removed_at IS NOT NULL AND removed_at > %s",
+                (now - 86400,),
+            )
+            deleted_msgs = cur.fetchone()[0]
+            return ok({"moderation": {
+                "open_reports": open_reports,
+                "pending_verifications": pending_verif,
+                "open_tickets": open_tickets,
+                "banned_users": banned,
+                "verified_users": verified,
+                "removed_messages_24h": deleted_msgs,
+            }})
 
         # ── Настройки панели ──────────────────────────────────────────────
         if action == "settings_get":

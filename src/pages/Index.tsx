@@ -47,6 +47,7 @@ const AccountDeletePanel = lazy(() => import("@/components/messenger/AccountDele
 const PrivacyPolicyPanel = lazy(() => import("@/components/messenger/PrivacyPolicyPanel"));
 const TermsPanel = lazy(() => import("@/components/messenger/TermsPanel"));
 const HelpPanel = lazy(() => import("@/components/messenger/HelpPanel"));
+const VerificationPanel = lazy(() => import("@/components/messenger/VerificationPanel"));
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
@@ -55,7 +56,7 @@ interface ChatRaw {
   id: number;
   last_message: string;
   last_message_at: number;
-  partner: { id: number; name: string; last_seen: number; avatar_url?: string | null };
+  partner: { id: number; name: string; last_seen: number; avatar_url?: string | null; verified?: boolean };
   unread: number;
   muted?: boolean;
   pinned?: boolean;
@@ -77,6 +78,7 @@ function mapChat(c: ChatRaw): Chat {
     muted: c.muted || false,
     pinned: c.pinned || false,
     favorite: c.favorite || false,
+    verified: c.partner.verified || false,
   };
 }
 
@@ -97,9 +99,9 @@ export default function Index() {
   // Внутренние экраны (открываются из настроек)
   const [showAccountDelete, setShowAccountDelete] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
-  const logoTapsRef = useRef(0);
   const [showTerms, setShowTerms] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
 
   // Восстановление сессии из localStorage
   useEffect(() => {
@@ -529,6 +531,18 @@ export default function Index() {
     );
   }
 
+  // Экран верификации (доступен из профиля)
+  if (showVerification && currentUser) {
+    return (
+      <Suspense fallback={LAZY_FALLBACK}>
+        <VerificationPanel
+          currentUser={currentUser}
+          onBack={() => setShowVerification(false)}
+        />
+      </Suspense>
+    );
+  }
+
   // Экран помощи (доступен из настроек)
   if (showHelp) {
     return (
@@ -771,17 +785,7 @@ export default function Index() {
         <div className="flex items-center justify-between px-4 pb-3" style={{ paddingTop: "calc(1.25rem + env(safe-area-inset-top))" }}>
           {/* Служебная панель открывается пятикратным нажатием на логотип —
               она не предназначена для обычных пользователей */}
-          <div
-            className="flex items-center gap-2 select-none"
-            onClick={() => {
-              logoTapsRef.current += 1;
-              if (logoTapsRef.current >= 5) {
-                logoTapsRef.current = 0;
-                openOverlay(setShowAdmin);
-              }
-              setTimeout(() => { logoTapsRef.current = 0; }, 2000);
-            }}
-          >
+          <div className="flex items-center gap-2 select-none">
             <div className="w-8 h-8 grad-primary rounded-xl flex items-center justify-center glow-primary">
               <Icon name="Zap" size={16} className="text-white" />
             </div>
@@ -1108,6 +1112,7 @@ export default function Index() {
             onOpenPrivacy={() => openOverlay(setShowPrivacy)}
             onOpenNotifications={() => openOverlay(setShowNotifications)}
             onOpenAppearance={() => openOverlay(setShowAppearance)}
+            onOpenVerification={() => setShowVerification(true)}
             onOpenSavedNotes={() => openOverlay(setShowSavedNotes)}
             onOpenPayments={() => openOverlay(setShowPayments)}
           />

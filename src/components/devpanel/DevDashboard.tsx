@@ -11,8 +11,18 @@ interface DashboardData {
   chart: { hour: string; value: number }[];
 }
 
-export default function DevDashboard() {
+interface ModerationData {
+  open_reports: number;
+  pending_verifications: number;
+  open_tickets: number;
+  banned_users: number;
+  verified_users: number;
+  removed_messages_24h: number;
+}
+
+export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) => void } = {}) {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [mod, setMod] = useState<ModerationData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -20,6 +30,12 @@ export default function DevDashboard() {
     try {
       const res = await devApi<DashboardData>("dashboard");
       setData(res);
+      try {
+        const m = await devApi<{ moderation: ModerationData }>("moderation_summary");
+        setMod(m.moderation);
+      } catch {
+        /* раздел модерации может быть недоступен по правам */
+      }
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
@@ -101,6 +117,52 @@ export default function DevDashboard() {
         </div>
       </div>
 
+      {mod && (
+        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h3 className="font-semibold">Модерация</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Что требует вашего внимания</p>
+            </div>
+            {(mod.open_reports > 0 || mod.pending_verifications > 0 || mod.open_tickets > 0) && (
+              <span className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-1">
+                Есть задачи
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+            <ModCard
+              label="Жалобы без решения"
+              value={mod.open_reports}
+              icon="Flag"
+              tone={mod.open_reports > 0 ? "warn" : "ok"}
+              onClick={() => onNavigate?.("reports")}
+            />
+            <ModCard
+              label="Заявки на галочку"
+              value={mod.pending_verifications}
+              icon="BadgeCheck"
+              tone={mod.pending_verifications > 0 ? "warn" : "ok"}
+              onClick={() => onNavigate?.("verification")}
+            />
+            <ModCard
+              label="Открытые обращения"
+              value={mod.open_tickets}
+              icon="LifeBuoy"
+              tone={mod.open_tickets > 0 ? "warn" : "ok"}
+              onClick={() => onNavigate?.("support")}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <MiniStat label="Заблокировано" value={mod.banned_users} icon="Ban" />
+            <MiniStat label="С галочкой" value={mod.verified_users} icon="BadgeCheck" />
+            <MiniStat label="Удалено за сутки" value={mod.removed_messages_24h} icon="Trash2" />
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         {secondary.map((s) => (
           <div key={s.label} className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
@@ -133,6 +195,39 @@ function StatCard({ label, value, icon, color, sub }: { label: string; value: nu
       <div className="text-3xl font-bold tracking-tight">{formatNum(value)}</div>
       <div className="text-sm text-slate-300 mt-1">{label}</div>
       <div className="text-xs text-slate-500 mt-1">{sub}</div>
+    </div>
+  );
+}
+
+function ModCard({ label, value, icon, tone, onClick }: {
+  label: string; value: number; icon: string; tone: "warn" | "ok"; onClick?: () => void;
+}) {
+  const warn = tone === "warn";
+  return (
+    <button
+      onClick={onClick}
+      className={`text-left rounded-xl p-4 border transition hover:brightness-125 ${
+        warn
+          ? "bg-amber-500/10 border-amber-500/25"
+          : "bg-white/[0.03] border-white/8"
+      }`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <Icon name={icon} size={16} className={warn ? "text-amber-400" : "text-slate-500"} />
+        <Icon name="ChevronRight" size={14} className="text-slate-600" />
+      </div>
+      <div className={`text-2xl font-bold ${warn ? "text-amber-300" : ""}`}>{formatNum(value)}</div>
+      <div className="text-xs text-slate-500 mt-0.5">{label}</div>
+    </button>
+  );
+}
+
+function MiniStat({ label, value, icon }: { label: string; value: number; icon: string }) {
+  return (
+    <div className="bg-white/[0.03] border border-white/8 rounded-xl px-3 py-2.5">
+      <Icon name={icon} size={13} className="text-slate-500 mb-1" />
+      <div className="text-base font-bold">{formatNum(value)}</div>
+      <div className="text-[10px] text-slate-500">{label}</div>
     </div>
   );
 }

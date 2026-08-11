@@ -64,7 +64,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16)"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind"
 
 
 def _is_chat_member(cur, chat_id: int, user_id: int) -> bool:
@@ -101,6 +101,8 @@ def serialize_user(row):
         "chat_wallpaper": row[23] if len(row) > 23 else None,
         "bubble_style": row[24] if len(row) > 24 and row[24] else "default",
         "font_size": int(row[25]) if len(row) > 25 and row[25] is not None else 16,
+        "verified": bool(row[26]) if len(row) > 26 else False,
+        "verified_kind": row[27] if len(row) > 27 and row[27] else "",
     }
 
 
@@ -546,7 +548,8 @@ def handler(event: dict, context) -> dict:
                        COALESCE(cs.favorite, FALSE),
                        COALESCE(cs.cleared_at, 0),
                        COALESCE(cs.archived, FALSE),
-                       COALESCE(un.cnt, 0)
+                       COALESCE(un.cnt, 0),
+                       COALESCE(u.verified, FALSE)
                 FROM my_chats mc
                 JOIN {SCHEMA}.users u ON u.id = mc.partner_id
                 LEFT JOIN {SCHEMA}.chat_settings cs
@@ -573,7 +576,8 @@ def handler(event: dict, context) -> dict:
 
         chats = [{
             "id": r[0], "last_message": r[1], "last_message_at": r[2],
-            "partner": {"id": r[3], "name": r[4], "phone": r[5], "avatar_url": r[6], "last_seen": r[7]},
+            "partner": {"id": r[3], "name": r[4], "phone": r[5], "avatar_url": r[6],
+                        "last_seen": r[7], "verified": bool(r[14]) if len(r) > 14 else False},
             "unread": int(r[13] or 0),
             "muted": r[8], "pinned": r[9], "favorite": r[10], "cleared_at": r[11], "archived": r[12],
         } for r in rows]
@@ -1800,6 +1804,72 @@ def handler(event: dict, context) -> dict:
         return ok({"ok": True})
 
     # ── update_profile ────────────────────────────────────────────────────────
+    if action == "verification_status":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(
+            f"SELECT COALESCE(verified, FALSE) FROM {SCHEMA}.users WHERE id = %s",
+            (int(user_id),),
+        )
+        vrow = cur.fetchone()
+        cur.execute(
+            f"SELECT id, status, reviewer_note, created_at, reviewed_at "
+            f"FROM {SCHEMA}.verification_requests WHERE user_id = %s "
+            f"ORDER BY created_at DESC LIMIT 1",
+            (int(user_id),),
+        )
+        r = cur.fetchone()
+        conn.close()
+        return ok({
+            "verified": bool(vrow[0]) if vrow else False,
+            "request": {
+                "id": r[0], "status": r[1], "note": r[2],
+                "created_at": r[3], "reviewed_at": r[4],
+            } if r else None,
+        })
+
+    if action == "verification_apply":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        full_name = (body.get("full_name") or "").strip()
+        category = (body.get("category") or "personal").strip()
+        links = (body.get("links") or "").strip()
+        comment = (body.get("comment") or "").strip()
+        if len(full_name) < 2:
+            conn.close()
+            return err("Укажите имя или название")
+
+        cur.execute(
+            f"SELECT id FROM {SCHEMA}.verification_requests "
+            f"WHERE user_id = %s AND status = 'pending'",
+            (int(user_id),),
+        )
+        if cur.fetchone():
+            conn.close()
+            return err("Заявка уже на рассмотрении")
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.verification_requests "
+            f"(user_id, target_type, full_name, category, links, comment) "
+            f"VALUES (%s, 'user', %s, %s, %s, %s) RETURNING id",
+            (int(user_id), full_name[:100], category[:40], links[:500], comment[:500]),
+        )
+        req_id = cur.fetchone()[0]
+
+        cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        urow = cur.fetchone()
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.dev_notifications (kind, title, body, link_section) "
+            f"VALUES (%s, %s, %s, %s)",
+            ("verification", "Новая заявка на верификацию",
+             f"{urow[0] if urow else user_id} — {full_name}", "verification"),
+        )
+        conn.commit()
+        conn.close()
+        return ok({"success": True, "request_id": req_id})
+
     if action == "update_profile":
         if not user_id:
             conn.close()

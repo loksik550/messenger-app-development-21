@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { api, uploadMedia, type User, type IconName } from "@/lib/api";
-import { Avatar } from "@/components/messenger/ChatComponents";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { applyTheme, applyFontSize, getStoredTheme, getStoredFontSize, THEMES_META, type ThemeId } from "@/lib/theme";
 import { BirthdayPickerModal } from "@/components/messenger/BirthdayPickerModal";
@@ -16,7 +15,7 @@ export { SearchPanel } from "@/components/messenger/SearchPanel";
 
 // ─── ProfilePanel ─────────────────────────────────────────────────────────────
 
-export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, chatsCount = 0, onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenBots, onOpenSupport, onOpenPrivacy, onOpenNotifications, onOpenAppearance, onOpenSavedNotes, onOpenPayments }: { onSettings: () => void; currentUser: User; onUserUpdate?: (u: User) => void; onBack?: () => void; chatsCount?: number; onOpenWallet?: () => void; onOpenPro?: () => void; onOpenProSettings?: () => void; onOpenProgress?: () => void; onOpenBots?: () => void; onOpenSupport?: () => void; onOpenPrivacy?: () => void; onOpenNotifications?: () => void; onOpenAppearance?: () => void; onOpenSavedNotes?: () => void; onOpenPayments?: () => void; }) {
+export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, chatsCount = 0, onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenBots, onOpenSupport, onOpenPrivacy, onOpenNotifications, onOpenAppearance, onOpenSavedNotes, onOpenPayments, onOpenVerification }: { onSettings: () => void; currentUser: User; onUserUpdate?: (u: User) => void; onBack?: () => void; chatsCount?: number; onOpenWallet?: () => void; onOpenPro?: () => void; onOpenProSettings?: () => void; onOpenProgress?: () => void; onOpenBots?: () => void; onOpenSupport?: () => void; onOpenPrivacy?: () => void; onOpenNotifications?: () => void; onOpenAppearance?: () => void; onOpenSavedNotes?: () => void; onOpenPayments?: () => void; onOpenVerification?: () => void; }) {
   useEdgeSwipeBack(onBack);
   const { t: tr } = useT();
   const [editing, setEditing] = useState(false);
@@ -418,6 +417,7 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
           ...(onOpenSavedNotes ? [{ icon: "Bookmark", label: tr("nav.saved"), sub: "Заметки, сохранёнки, идеи", action: onOpenSavedNotes }] : []),
           ...(onOpenPayments ? [{ icon: "ReceiptText", label: "Счета и платежи", sub: "Выставляй и оплачивай", action: onOpenPayments }] : []),
           ...(onOpenNotifications ? [{ icon: "Bell", label: tr("nav.notifications"), sub: "Звуки, вибрация, тихие часы", action: onOpenNotifications }] : []),
+          ...(onOpenVerification ? [{ icon: "BadgeCheck", label: "Верификация", sub: currentUser.verified ? "Аккаунт подтверждён" : "Получить синюю галочку", action: onOpenVerification }] : []),
           ...(onOpenPrivacy ? [{ icon: "Shield", label: "Безопасность и приватность", sub: "PIN, кто видит, сессии", action: onOpenPrivacy }] : []),
           { icon: "Lock", label: "Шифрование", sub: "Исчезающие сообщения, E2E", action: onSettings },
           ...(onOpenAppearance ? [{ icon: "Palette", label: tr("nav.appearance"), sub: "Темы, обои, шрифт", action: onOpenAppearance }] : []),

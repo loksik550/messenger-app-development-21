@@ -90,6 +90,7 @@ export function ChatHeader({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-foreground truncate">{chat.name}</span>
+            {chat.verified && <Icon name="BadgeCheck" size={14} className="text-sky-400 flex-shrink-0" />}
             {chat.muted && <Icon name="BellOff" size={12} className="text-muted-foreground flex-shrink-0" />}
             {chat.pinned && <Icon name="Pin" size={12} className="text-violet-400 flex-shrink-0" />}
             {chat.group && <span className="text-[10px] bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full font-medium">{t("chat.groupBadge")}</span>}

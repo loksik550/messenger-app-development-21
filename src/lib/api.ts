@@ -378,6 +378,8 @@ export interface User {
   chat_wallpaper?: string | null;
   bubble_style?: string;
   font_size?: number;
+  verified?: boolean;
+  verified_kind?: string;
   // Уведомления
   notify_messages?: boolean;
   notify_groups?: boolean;
