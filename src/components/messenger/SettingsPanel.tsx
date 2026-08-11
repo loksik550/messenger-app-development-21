@@ -21,6 +21,7 @@ export function SettingsPanel({
   onDeleteAccount,
   onOpenPrivacyPolicy,
   onOpenTerms,
+  onOpenHelp,
 }: {
   onLogout: () => void;
   onBack?: () => void;
@@ -28,6 +29,7 @@ export function SettingsPanel({
   onDeleteAccount?: () => void;
   onOpenPrivacyPolicy?: () => void;
   onOpenTerms?: () => void;
+  onOpenHelp?: () => void;
 }) {
   useEdgeSwipeBack(onBack);
   const readBool = (k: string, def: boolean) => {
@@ -450,6 +452,19 @@ export function SettingsPanel({
           </div>
           <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
         </button>
+
+        {onOpenHelp && (
+          <button onClick={onOpenHelp} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/8 transition-all mt-3">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/15 flex items-center justify-center">
+              <Icon name="CircleHelp" size={18} className="text-cyan-400" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-sm font-medium">Помощь</div>
+              <div className="text-xs text-muted-foreground">Ответы на частые вопросы</div>
+            </div>
+            <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
+          </button>
+        )}
 
         {onOpenPrivacyPolicy && (
           <button onClick={onOpenPrivacyPolicy} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/8 transition-all mt-3">

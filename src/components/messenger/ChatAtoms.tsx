@@ -50,7 +50,7 @@ type ChatFilter = "all" | "unread" | "groups" | "personal";
 
 export function ChatList({
   chats, onSelect, selectedId,
-  onToggleMute, onToggleArchive, onRefresh,
+  onToggleMute, onToggleArchive, onRefresh, onStartChat,
 }: {
   chats: Chat[];
   onSelect: (c: Chat) => void;
@@ -58,6 +58,7 @@ export function ChatList({
   onToggleMute?: (c: Chat) => void;
   onToggleArchive?: (c: Chat) => void;
   onRefresh?: () => Promise<void> | void;
+  onStartChat?: () => void;
 }) {
   const [filter, setFilter] = useState<ChatFilter>("all");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -256,6 +257,15 @@ export function ChatList({
             <p className="text-sm text-muted-foreground">
               {filter === "all" ? "Найди людей через поиск или добавь контакты" : "Попробуй другой фильтр"}
             </p>
+            {filter === "all" && onStartChat && (
+              <button
+                onClick={onStartChat}
+                className="mt-4 grad-primary text-white rounded-xl px-4 py-2.5 text-sm font-semibold glow-primary hover:opacity-90 transition-opacity flex items-center gap-2"
+              >
+                <Icon name="UserPlus" size={16} />
+                Начать общение
+              </button>
+            )}
           </div>
         )}
         {pinned.length > 0 && (

@@ -19,6 +19,7 @@ import { useOverlays } from "@/hooks/useOverlays";
 import { LanguageSwitcher } from "@/components/messenger/LanguageSwitcher";
 import { useT } from "@/hooks/useT";
 import ConsentScreen, { hasConsent } from "@/components/messenger/ConsentScreen";
+import OnboardingScreen, { hasSeenOnboarding } from "@/components/messenger/OnboardingScreen";
 import PinLockScreen from "@/components/messenger/PinLockScreen";
 
 // Редкие панели грузятся лениво — это ускоряет первый запуск приложения
@@ -46,6 +47,7 @@ const PaymentRequestsPanel = lazy(() => import("@/components/messenger/PaymentRe
 const AccountDeletePanel = lazy(() => import("@/components/messenger/AccountDeletePanel"));
 const PrivacyPolicyPanel = lazy(() => import("@/components/messenger/PrivacyPolicyPanel"));
 const TermsPanel = lazy(() => import("@/components/messenger/TermsPanel"));
+const HelpPanel = lazy(() => import("@/components/messenger/HelpPanel"));
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
@@ -92,11 +94,13 @@ export default function Index() {
   const [pinUnlocked, setPinUnlocked] = useState(false);
   // Требование RuStore / 152-ФЗ: явное согласие на обработку ПД при первом запуске
   const [consentGiven, setConsentGiven] = useState<boolean>(() => hasConsent());
+  const [onboardingDone, setOnboardingDone] = useState<boolean>(() => hasSeenOnboarding());
   // Внутренние экраны (открываются из настроек)
   const [showAccountDelete, setShowAccountDelete] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const logoTapsRef = useRef(0);
   const [showTerms, setShowTerms] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Восстановление сессии из localStorage
   useEffect(() => {
@@ -489,6 +493,12 @@ export default function Index() {
     return <ConsentScreen onAccept={() => setConsentGiven(true)} />;
   }
 
+  // Знакомство с возможностями — показывается один раз до входа,
+  // чтобы новый пользователь сразу понимал, что умеет приложение.
+  if (!onboardingDone && !currentUser) {
+    return <OnboardingScreen onDone={() => setOnboardingDone(true)} />;
+  }
+
   if (!currentUser) return (
     <>
       <AuthScreen onDone={login} />
@@ -517,6 +527,15 @@ export default function Index() {
             setShowPrivacyPolicy(true);
           }}
         />
+      </Suspense>
+    );
+  }
+
+  // Экран помощи (доступен из настроек)
+  if (showHelp) {
+    return (
+      <Suspense fallback={LAZY_FALLBACK}>
+        <HelpPanel onBack={() => setShowHelp(false)} />
       </Suspense>
     );
   }
@@ -874,6 +893,7 @@ export default function Index() {
                 )}
                 onSelect={handleSelectChat}
                 selectedId={selectedChat?.id}
+                onStartChat={() => setActiveTab("contacts")}
                 onToggleMute={async (c) => {
                   const next = !c.muted;
                   setRealChats(prev => prev.map(x => x.id === c.id ? { ...x, muted: next } : x));
@@ -1103,6 +1123,7 @@ export default function Index() {
             onDeleteAccount={() => setShowAccountDelete(true)}
             onOpenPrivacyPolicy={() => setShowPrivacyPolicy(true)}
             onOpenTerms={() => setShowTerms(true)}
+            onOpenHelp={() => setShowHelp(true)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8 animate-fade-in">
