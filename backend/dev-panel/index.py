@@ -49,6 +49,7 @@ ACTION_PERMS = {
     "channels": "channels", "channel_update": "channels", "channel_delete": "channels",
     "team": "team", "team_update": "team", "team_remove": "team",
     "settings_get": "dashboard", "settings_save": "settings",
+    "change_password": "dashboard", "change_email": "dashboard",
 }
 
 
@@ -223,11 +224,16 @@ def handler(event: dict, context) -> dict:
             return ok({"token": token, "admin": cur_admin})
 
         if action == "panel_info":
-            cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key IN ('panel_name','panel_subtitle')")
+            cur.execute(
+                f"SELECT key, value FROM {SCHEMA}.dev_settings "
+                f"WHERE key IN ('panel_name','panel_subtitle','panel_logo_url','panel_logo_icon')"
+            )
             st = {r[0]: r[1] for r in cur.fetchall()}
             return ok({
                 "name": st.get("panel_name") or "Nova Dev Panel",
                 "subtitle": st.get("panel_subtitle") or "Панель управления мессенджером",
+                "logo_url": st.get("panel_logo_url") or "",
+                "logo_icon": st.get("panel_logo_icon") or "Terminal",
             })
 
         if action == "check_setup":
@@ -544,9 +550,11 @@ def handler(event: dict, context) -> dict:
                 return err("Недостаточно средств для списания")
             cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance = %s WHERE id = %s", (new_balance, uid))
             cur.execute(
-                f"INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after) "
-                f"VALUES (%s, %s, %s, %s, %s)",
-                (uid, amount, "admin", f"Начисление из панели ({admin['email']})", new_balance),
+                f"INSERT INTO {SCHEMA}.wallet_transactions "
+                f"(user_id, amount, kind, description, balance_after, created_at) "
+                f"VALUES (%s, %s, %s, %s, %s, %s)",
+                (uid, amount, "admin", f"Начисление из панели ({admin['email']})",
+                 new_balance, int(time.time())),
             )
             audit(cur, admin, "topup_wallet", f"ID {uid}: {amount:+d} ₽, стало {new_balance} ₽", ip)
             return ok({"success": True, "balance": new_balance})
@@ -579,6 +587,7 @@ def handler(event: dict, context) -> dict:
                 f"(SELECT COUNT(*) FROM {SCHEMA}.group_members m WHERE m.group_id = g.id), "
                 f"(SELECT COUNT(*) FROM {SCHEMA}.group_messages gm WHERE gm.group_id = g.id) "
                 f"FROM {SCHEMA}.groups g LEFT JOIN {SCHEMA}.users u ON u.id = g.owner_id "
+                f"WHERE g.removed_at IS NULL "
                 f"ORDER BY g.last_message_at DESC NULLS LAST LIMIT 100"
             )
             channels = [{
@@ -606,9 +615,10 @@ def handler(event: dict, context) -> dict:
             gid = int(body.get("channel_id") or 0)
             now = int(time.time())
             cur.execute(f"UPDATE {SCHEMA}.group_messages SET removed_at = %s WHERE group_id = %s", (now, gid))
+            cur.execute(f"DELETE FROM {SCHEMA}.group_members WHERE group_id = %s", (gid,))
             cur.execute(
-                f"UPDATE {SCHEMA}.groups SET name = %s, description = %s, invite_link = NULL WHERE id = %s",
-                ("Удалён администратором", "", gid),
+                f"UPDATE {SCHEMA}.groups SET removed_at = %s, invite_link = NULL WHERE id = %s",
+                (now, gid),
             )
             audit(cur, admin, "channel_delete", f"Удалён канал #{gid}", ip)
             return ok({"success": True})
@@ -650,6 +660,47 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"UPDATE {SCHEMA}.dev_sessions SET expires_at = 0 WHERE admin_id = %s", (tid,))
             audit(cur, admin, "team_remove", f"Отключён доступ #{tid}", ip)
             return ok({"success": True})
+
+        # ── Смена пароля и почты (свой аккаунт) ───────────────────────────
+        if action == "change_password":
+            old_pass = body.get("old_password") or ""
+            new_pass = body.get("new_password") or ""
+            if len(new_pass) < 8:
+                return err("Новый пароль должен быть не короче 8 символов")
+            cur.execute(f"SELECT password_hash FROM {SCHEMA}.dev_admins WHERE id = %s", (admin["id"],))
+            row = cur.fetchone()
+            if not row or not verify_password(old_pass, row[0]):
+                return err("Текущий пароль указан неверно", 403)
+            cur.execute(
+                f"UPDATE {SCHEMA}.dev_admins SET password_hash = %s WHERE id = %s",
+                (hash_password(new_pass), admin["id"]),
+            )
+            token = (event.get("headers") or {}).get("X-Dev-Token") or ""
+            cur.execute(
+                f"UPDATE {SCHEMA}.dev_sessions SET expires_at = 0 WHERE admin_id = %s AND token != %s",
+                (admin["id"], token),
+            )
+            audit(cur, admin, "change_password", "Пароль изменён", ip)
+            return ok({"success": True})
+
+        if action == "change_email":
+            password = body.get("password") or ""
+            new_email = (body.get("new_email") or "").strip().lower()
+            if "@" not in new_email or "." not in new_email.split("@")[-1]:
+                return err("Укажите корректный адрес почты")
+            cur.execute(f"SELECT password_hash FROM {SCHEMA}.dev_admins WHERE id = %s", (admin["id"],))
+            row = cur.fetchone()
+            if not row or not verify_password(password, row[0]):
+                return err("Пароль указан неверно", 403)
+            cur.execute(
+                f"SELECT id FROM {SCHEMA}.dev_admins WHERE email = %s AND id != %s",
+                (new_email, admin["id"]),
+            )
+            if cur.fetchone():
+                return err("Эта почта уже занята")
+            cur.execute(f"UPDATE {SCHEMA}.dev_admins SET email = %s WHERE id = %s", (new_email, admin["id"]))
+            audit(cur, admin, "change_email", f"Почта изменена на {new_email}", ip)
+            return ok({"success": True, "email": new_email})
 
         # ── Настройки панели ──────────────────────────────────────────────
         if action == "settings_get":

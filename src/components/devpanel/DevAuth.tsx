@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, setDevToken, type DevAdmin } from "@/lib/devApi";
 
@@ -8,6 +8,11 @@ interface Props {
 
 export default function DevAuth({ onSuccess }: Props) {
   const [mode, setMode] = useState<"login" | "register">("login");
+  const [brand, setBrand] = useState({
+    name: "Nova Dev Panel",
+    subtitle: "Панель управления мессенджером",
+    logo_url: "/app-icon-512.png",
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -15,6 +20,12 @@ export default function DevAuth({ onSuccess }: Props) {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    devApi<{ name: string; subtitle: string; logo_url: string }>("panel_info")
+      .then((r) => setBrand({ name: r.name, subtitle: r.subtitle, logo_url: r.logo_url }))
+      .catch(() => undefined);
+  }, []);
 
   const submit = async () => {
     setError("");
@@ -49,11 +60,19 @@ export default function DevAuth({ onSuccess }: Props) {
 
       <div className="w-full max-w-md relative">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center mb-4 shadow-lg shadow-violet-900/40">
-            <Icon name="Terminal" size={30} className="text-white" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">Nova Dev Panel</h1>
-          <p className="text-sm text-slate-400 mt-1">Панель управления мессенджером</p>
+          {brand.logo_url ? (
+            <img
+              src={brand.logo_url}
+              alt=""
+              className="w-16 h-16 rounded-2xl object-cover mb-4 shadow-lg shadow-violet-900/40"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center mb-4 shadow-lg shadow-violet-900/40">
+              <Icon name="Terminal" size={30} className="text-white" />
+            </div>
+          )}
+          <h1 className="text-2xl font-bold tracking-tight text-center">{brand.name}</h1>
+          <p className="text-sm text-slate-400 mt-1 text-center">{brand.subtitle}</p>
         </div>
 
         <div className="bg-white/[0.04] border border-white/10 rounded-2xl p-6 backdrop-blur-xl">

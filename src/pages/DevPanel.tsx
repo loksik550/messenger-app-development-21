@@ -41,6 +41,7 @@ export default function DevPanel() {
   const [perms, setPerms] = useState<string[]>([]);
   const [panelName, setPanelName] = useState("Nova Dev Panel");
   const [panelSubtitle, setPanelSubtitle] = useState("Панель управления мессенджером");
+  const [panelLogo, setPanelLogo] = useState("/app-icon-512.png");
   const [checking, setChecking] = useState(true);
   const [section, setSection] = useState<Section>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,6 +60,7 @@ export default function DevPanel() {
         setPerms(res.perms || []);
         if (res.settings?.panel_name) setPanelName(res.settings.panel_name);
         if (res.settings?.panel_subtitle) setPanelSubtitle(res.settings.panel_subtitle);
+        if (res.settings?.panel_logo_url !== undefined) setPanelLogo(res.settings.panel_logo_url);
       })
       .catch(() => clearDevToken())
       .finally(() => setChecking(false));
@@ -75,6 +77,7 @@ export default function DevPanel() {
       setPerms(res.perms || []);
       if (res.settings?.panel_name) setPanelName(res.settings.panel_name);
       if (res.settings?.panel_subtitle) setPanelSubtitle(res.settings.panel_subtitle);
+      if (res.settings?.panel_logo_url !== undefined) setPanelLogo(res.settings.panel_logo_url);
     } catch {
       /* ignore */
     }
@@ -130,9 +133,13 @@ export default function DevPanel() {
       >
         <div className="px-5 py-5 border-b border-white/8">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center shrink-0">
-              <Icon name="Terminal" size={18} className="text-white" />
-            </div>
+            {panelLogo ? (
+              <img src={panelLogo} alt="" className="w-9 h-9 rounded-xl object-cover shrink-0" />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center shrink-0">
+                <Icon name="Terminal" size={18} className="text-white" />
+              </div>
+            )}
             <div className="min-w-0">
               <div className="font-bold text-sm truncate">{panelName}</div>
               <div className="text-[10px] text-slate-500 truncate">{panelSubtitle}</div>
@@ -213,9 +220,12 @@ export default function DevPanel() {
           {activeSection === "settings" && (
             <DevSettings
               can={can}
-              onSaved={(n, s) => {
+              admin={admin}
+              onEmailChanged={(email) => setAdmin({ ...admin, email })}
+              onSaved={(n, sub, logo) => {
                 setPanelName(n);
-                setPanelSubtitle(s);
+                setPanelSubtitle(sub);
+                setPanelLogo(logo);
               }}
             />
           )}
