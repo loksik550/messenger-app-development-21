@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs, timeAgo, formatNum } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
+import DevUserCard from "./DevUserCard";
 
 interface DevUser {
   id: number;
@@ -13,22 +14,13 @@ interface DevUser {
   online: boolean;
 }
 
-interface UserDetail extends DevUser {
-  about: string | null;
-  banned_until: number | null;
-  banned_reason: string | null;
-  messages: number;
-  contacts: number;
-}
-
-export default function DevUsers() {
+export default function DevUsers({ can }: { can: (p: string) => boolean }) {
   const [users, setUsers] = useState<DevUser[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [detail, setDetail] = useState<UserDetail | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [cardId, setCardId] = useState<number | null>(null);
 
   const load = useCallback(async (q: string) => {
     setLoading(true);
@@ -48,28 +40,6 @@ export default function DevUsers() {
     const t = setTimeout(() => load(query), 300);
     return () => clearTimeout(t);
   }, [query, load]);
-
-  const openUser = async (id: number) => {
-    try {
-      const res = await devApi<{ user: UserDetail }>("user_detail", { user_id: id });
-      setDetail(res.user);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Не удалось открыть");
-    }
-  };
-
-  const ban = async (id: number, days: number) => {
-    setBusy(true);
-    try {
-      await devApi("ban_user", { user_id: id, days, reason: days > 0 ? "Нарушение правил" : "" });
-      await openUser(id);
-      await load(query);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Не удалось");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -151,7 +121,7 @@ export default function DevUsers() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => openUser(u.id)}
+                        onClick={() => setCardId(u.id)}
                         className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition"
                       >
                         Подробнее
@@ -165,94 +135,15 @@ export default function DevUsers() {
         </div>
       )}
 
-      {detail && (
-        <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setDetail(null)}
-        >
-          <div
-            className="bg-[#12131f] border border-white/10 rounded-2xl p-6 w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4 mb-5">
-              {detail.avatar_url ? (
-                <img src={detail.avatar_url} alt="" className="w-14 h-14 rounded-2xl object-cover" />
-              ) : (
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-lg font-bold">
-                  {(detail.name || "?").slice(0, 1).toUpperCase()}
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-lg truncate">{detail.name || "Без имени"}</h3>
-                <p className="text-sm text-slate-400">{detail.phone}</p>
-                <p className="text-xs text-slate-600 mt-0.5">ID {detail.id}</p>
-              </div>
-              <button onClick={() => setDetail(null)} className="text-slate-500 hover:text-slate-300">
-                <Icon name="X" size={18} />
-              </button>
-            </div>
-
-            {detail.banned_until && detail.banned_until > Date.now() / 1000 && (
-              <div className="mb-4 flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5">
-                <Icon name="Ban" size={16} className="mt-0.5 shrink-0" />
-                <div>
-                  <div>Заблокирован до {formatTs(detail.banned_until)}</div>
-                  {detail.banned_reason && <div className="text-xs opacity-70 mt-0.5">{detail.banned_reason}</div>}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 mb-5">
-              <InfoBox label="Сообщений" value={formatNum(detail.messages)} />
-              <InfoBox label="Контактов" value={formatNum(detail.contacts)} />
-              <InfoBox label="Регистрация" value={formatTs(detail.created_at)} />
-              <InfoBox label="Был в сети" value={timeAgo(detail.last_seen)} />
-            </div>
-
-            {detail.about && (
-              <div className="mb-5 text-sm text-slate-400 bg-white/[0.03] rounded-xl px-3 py-2.5">{detail.about}</div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {detail.banned_until && detail.banned_until > Date.now() / 1000 ? (
-                <button
-                  onClick={() => ban(detail.id, 0)}
-                  disabled={busy}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-sm font-medium hover:bg-emerald-500/25 transition disabled:opacity-50"
-                >
-                  Разблокировать
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => ban(detail.id, 7)}
-                    disabled={busy}
-                    className="flex-1 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/25 text-amber-400 text-sm font-medium hover:bg-amber-500/25 transition disabled:opacity-50"
-                  >
-                    Бан 7 дней
-                  </button>
-                  <button
-                    onClick={() => ban(detail.id, 3650)}
-                    disabled={busy}
-                    className="flex-1 py-2.5 rounded-xl bg-red-500/15 border border-red-500/25 text-red-400 text-sm font-medium hover:bg-red-500/25 transition disabled:opacity-50"
-                  >
-                    Бан навсегда
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+      {cardId !== null && (
+        <DevUserCard
+          userId={cardId}
+          can={can}
+          onClose={() => setCardId(null)}
+          onChanged={() => load(query)}
+        />
       )}
     </div>
   );
 }
 
-function InfoBox({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-white/[0.03] border border-white/8 rounded-xl px-3 py-2.5">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-sm font-medium mt-0.5">{value}</div>
-    </div>
-  );
-}

@@ -7,6 +7,8 @@ export interface DevAdmin {
   email: string;
   name: string;
   role: string;
+  title?: string;
+  role_label?: string;
 }
 
 export function getDevToken(): string {
