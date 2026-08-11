@@ -24,6 +24,7 @@ import PinLockScreen from "@/components/messenger/PinLockScreen";
 
 // Редкие панели грузятся лениво — это ускоряет первый запуск приложения
 const AdminPanel = lazy(() => import("@/components/messenger/AdminPanel").then(m => ({ default: m.AdminPanel })));
+const DevPinLock = lazy(() => import("@/components/messenger/DevPinLock").then(m => ({ default: m.DevPinLock })));
 const GroupChatWindow = lazy(() => import("@/components/messenger/GroupChatWindow"));
 const RealStoryViewer = lazy(() => import("@/components/messenger/RealStories").then(m => ({ default: m.RealStoryViewer })));
 const GroupCreateModal = lazy(() => import("@/components/messenger/GroupCreateModal"));
@@ -101,6 +102,7 @@ export default function Index() {
   const logoTapsRef = useRef(0);
   const [showTerms, setShowTerms] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [devPinUnlocked, setDevPinUnlocked] = useState(false);
 
   // Восстановление сессии из localStorage
   useEffect(() => {
@@ -727,8 +729,16 @@ export default function Index() {
       )}
 
       {/* Admin Panel */}
-      {showAdmin && (
-        <AdminPanel onClose={() => setShowAdmin(false)} />
+      {showAdmin && !devPinUnlocked && (
+        <Suspense fallback={LAZY_FALLBACK}>
+          <DevPinLock
+            onUnlock={() => setDevPinUnlocked(true)}
+            onClose={() => { setShowAdmin(false); setDevPinUnlocked(false); }}
+          />
+        </Suspense>
+      )}
+      {showAdmin && devPinUnlocked && (
+        <AdminPanel onClose={() => { setShowAdmin(false); setDevPinUnlocked(false); }} />
       )}
 
       {/* Call screen */}
@@ -1124,6 +1134,7 @@ export default function Index() {
             onOpenPrivacyPolicy={() => setShowPrivacyPolicy(true)}
             onOpenTerms={() => setShowTerms(true)}
             onOpenHelp={() => setShowHelp(true)}
+            onOpenAdmin={() => setShowAdmin(true)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8 animate-fade-in">

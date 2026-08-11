@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User, type IconName } from "@/lib/api";
+import { APP_VERSION } from "@/lib/version";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import {
   RINGTONES, NOTIFY_SOUNDS,
@@ -22,6 +23,7 @@ export function SettingsPanel({
   onOpenPrivacyPolicy,
   onOpenTerms,
   onOpenHelp,
+  onOpenAdmin,
 }: {
   onLogout: () => void;
   onBack?: () => void;
@@ -30,6 +32,7 @@ export function SettingsPanel({
   onOpenPrivacyPolicy?: () => void;
   onOpenTerms?: () => void;
   onOpenHelp?: () => void;
+  onOpenAdmin?: () => void;
 }) {
   useEdgeSwipeBack(onBack);
   const readBool = (k: string, def: boolean) => {
@@ -107,6 +110,27 @@ export function SettingsPanel({
   };
 
   const [pinFlow, setPinFlow] = useState<null | { step: "set" | "confirm" | "verify"; first?: string; value: string; error?: string }>(null);
+
+  // Счётчик нажатий по версии — скрытый вход в панель разработчика.
+  const [versionTaps, setVersionTaps] = useState(0);
+  const versionTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleVersionTap = () => {
+    if (!onOpenAdmin) return;
+    const next = versionTaps + 1;
+    if (versionTapTimer.current) clearTimeout(versionTapTimer.current);
+    if (next >= 5) {
+      setVersionTaps(0);
+      onOpenAdmin();
+      return;
+    }
+    setVersionTaps(next);
+    versionTapTimer.current = setTimeout(() => setVersionTaps(0), 2000);
+  };
+
+  useEffect(() => () => {
+    if (versionTapTimer.current) clearTimeout(versionTapTimer.current);
+  }, []);
 
   useEffect(() => { writeBool("nova_sec_e2e", e2e); }, [e2e]);
   useEffect(() => { writeBool("nova_sec_biometric", biometric && Boolean(localStorage.getItem("nova_sec_bio_cred"))); }, [biometric]);
@@ -512,6 +536,18 @@ export function SettingsPanel({
             <Icon name="ChevronRight" size={16} className="text-red-400/50 ml-auto" />
           </button>
         )}
+
+        {/* Скрытый вход в панель разработчика: 5 быстрых нажатий по версии.
+            Для обычного пользователя это просто строка с номером версии. */}
+        <button
+          onClick={handleVersionTap}
+          className="w-full text-center text-[11px] text-muted-foreground/60 py-6 select-none active:opacity-60 transition-opacity"
+        >
+          Nova {APP_VERSION}
+          {versionTaps >= 3 && versionTaps < 5 && (
+            <span className="ml-1 text-violet-400/70">· ещё {5 - versionTaps}</span>
+          )}
+        </button>
       </div>
 
       {pinFlow && (
