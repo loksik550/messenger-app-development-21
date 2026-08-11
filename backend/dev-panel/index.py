@@ -50,6 +50,7 @@ ACTION_PERMS = {
     "team": "team", "team_update": "team", "team_remove": "team",
     "settings_get": "dashboard", "settings_save": "settings",
     "change_password": "dashboard", "change_email": "dashboard",
+    "update_me": "dashboard",
     "verifications": "reports", "verify_decide": "reports", "set_verified": "reports",
     "notifications": "dashboard", "notifications_read": "dashboard",
     "moderation_summary": "dashboard",
@@ -109,7 +110,7 @@ def auth_admin(cur, event):
         return None
     now = int(time.time())
     cur.execute(
-        f"SELECT a.id, a.email, a.name, a.role, a.title FROM {SCHEMA}.dev_sessions s "
+        f"SELECT a.id, a.email, a.name, a.role, a.title, a.avatar_url FROM {SCHEMA}.dev_sessions s "
         f"JOIN {SCHEMA}.dev_admins a ON a.id = s.admin_id "
         f"WHERE s.token = %s AND s.expires_at > %s AND a.disabled = false",
         (token, now),
@@ -118,7 +119,8 @@ def auth_admin(cur, event):
     if not row:
         return None
     cur.execute(f"UPDATE {SCHEMA}.dev_sessions SET expires_at = %s WHERE token = %s", (now + SESSION_TTL, token))
-    return {"id": row[0], "email": row[1], "name": row[2], "role": row[3], "title": row[4]}
+    return {"id": row[0], "email": row[1], "name": row[2], "role": row[3],
+            "title": row[4], "avatar_url": row[5] or ""}
 
 
 def handler(event: dict, context) -> dict:
@@ -632,13 +634,14 @@ def handler(event: dict, context) -> dict:
         # ── Команда панели ────────────────────────────────────────────────
         if action == "team":
             cur.execute(
-                f"SELECT id, email, name, role, title, created_at, last_login, disabled "
+                f"SELECT id, email, name, role, title, created_at, last_login, disabled, avatar_url "
                 f"FROM {SCHEMA}.dev_admins ORDER BY created_at ASC"
             )
             team = [{
                 "id": r[0], "email": r[1], "name": r[2], "role": r[3], "title": r[4],
                 "role_label": ROLES.get(r[3], {}).get("label", r[3]),
                 "created_at": r[5], "last_login": r[6], "disabled": r[7],
+                "avatar_url": r[8] or "",
             } for r in cur.fetchall()]
             return ok({"team": team, "roles": [
                 {"key": k, "label": v["label"]} for k, v in ROLES.items()
@@ -666,6 +669,26 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"UPDATE {SCHEMA}.dev_sessions SET expires_at = 0 WHERE admin_id = %s", (tid,))
             audit(cur, admin, "team_remove", f"Отключён доступ #{tid}", ip)
             return ok({"success": True})
+
+        if action == "update_me":
+            new_name = (body.get("name") or "").strip()
+            avatar = (body.get("avatar_url") or "").strip()
+            if new_name:
+                cur.execute(f"UPDATE {SCHEMA}.dev_admins SET name = %s WHERE id = %s",
+                            (new_name[:60], admin["id"]))
+            cur.execute(f"UPDATE {SCHEMA}.dev_admins SET avatar_url = %s WHERE id = %s",
+                        (avatar[:500], admin["id"]))
+            audit(cur, admin, "update_me", "Изменён профиль администратора", ip)
+            cur.execute(
+                f"SELECT id, email, name, role, title, avatar_url FROM {SCHEMA}.dev_admins WHERE id = %s",
+                (admin["id"],),
+            )
+            r = cur.fetchone()
+            return ok({"admin": {
+                "id": r[0], "email": r[1], "name": r[2], "role": r[3],
+                "title": r[4], "avatar_url": r[5] or "",
+                "role_label": ROLES.get(r[3], {}).get("label", r[3]),
+            }})
 
         # ── Смена пароля и почты (свой аккаунт) ───────────────────────────
         if action == "change_password":

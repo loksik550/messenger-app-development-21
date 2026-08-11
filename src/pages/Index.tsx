@@ -61,6 +61,7 @@ interface ChatRaw {
   muted?: boolean;
   pinned?: boolean;
   favorite?: boolean;
+  archived?: boolean;
 }
 
 function mapChat(c: ChatRaw): Chat {
@@ -79,6 +80,7 @@ function mapChat(c: ChatRaw): Chat {
     pinned: c.pinned || false,
     favorite: c.favorite || false,
     verified: c.partner.verified || false,
+    archived: c.archived || false,
   };
 }
 

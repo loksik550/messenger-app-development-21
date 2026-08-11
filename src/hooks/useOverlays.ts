@@ -26,7 +26,6 @@ export function useOverlays() {
   const [fundraiserView, setFundraiserView] = useState<{ mode: "create" } | { mode: "view"; id: number } | null>(null);
 
   const closeAll = () => {
-    setShowAdmin(false);
     setShowPro(false);
     setShowComingSoon(false);
     setShowCreateGroup(false);

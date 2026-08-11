@@ -9,6 +9,7 @@ export interface DevAdmin {
   role: string;
   title?: string;
   role_label?: string;
+  avatar_url?: string;
 }
 
 export function getDevToken(): string {

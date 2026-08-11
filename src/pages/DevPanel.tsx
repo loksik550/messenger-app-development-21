@@ -236,6 +236,7 @@ export default function DevPanel() {
               can={can}
               admin={admin}
               onEmailChanged={(email) => setAdmin({ ...admin, email })}
+              onProfileChanged={(a) => setAdmin(a)}
               onSaved={(n, sub, logo, bg, bgImg) => {
                 setPanelName(n);
                 setPanelSubtitle(sub);

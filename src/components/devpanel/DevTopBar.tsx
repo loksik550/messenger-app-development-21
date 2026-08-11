@@ -163,9 +163,13 @@ export default function DevTopBar({
             onClick={() => { setNotifOpen(false); setProfileOpen(!profileOpen); }}
             className="flex items-center gap-2.5 pl-1.5 pr-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 hover:bg-white/10 transition"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-xs font-bold shrink-0">
-              {(admin.name || admin.email).slice(0, 1).toUpperCase()}
-            </div>
+            {admin.avatar_url ? (
+              <img src={admin.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-xs font-bold shrink-0">
+                {(admin.name || admin.email).slice(0, 1).toUpperCase()}
+              </div>
+            )}
             <div className="hidden sm:block text-left min-w-0 max-w-[140px]">
               <div className="text-xs font-medium truncate">{admin.name || "Администратор"}</div>
               <div className="text-[10px] text-slate-500 truncate">
@@ -179,9 +183,13 @@ export default function DevTopBar({
             <div className="absolute right-0 mt-2 w-64 bg-[#12131f] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
               <div className="px-4 py-3.5 border-b border-white/8">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-sm font-bold shrink-0">
-                    {(admin.name || admin.email).slice(0, 1).toUpperCase()}
-                  </div>
+                  {admin.avatar_url ? (
+                    <img src={admin.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-sm font-bold shrink-0">
+                      {(admin.name || admin.email).slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <div className="text-sm font-semibold truncate">{admin.name || "Администратор"}</div>
                     <div className="text-[10px] text-slate-500 truncate">{admin.email}</div>

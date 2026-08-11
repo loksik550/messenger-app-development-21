@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, type DevAdmin } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
@@ -8,6 +8,7 @@ interface Props {
   can: (p: string) => boolean;
   admin: DevAdmin;
   onEmailChanged: (email: string) => void;
+  onProfileChanged?: (admin: DevAdmin) => void;
 }
 
 const BG_STYLES = [
@@ -23,7 +24,7 @@ const PRESETS = [
   { url: "/favicon.png", label: "Favicon" },
 ];
 
-export default function DevSettings({ onSaved, can, admin, onEmailChanged }: Props) {
+export default function DevSettings({ onSaved, can, admin, onEmailChanged, onProfileChanged }: Props) {
   const [name, setName] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [logo, setLogo] = useState("");
@@ -223,8 +224,116 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged }: Pro
         )}
       </div>
 
+      <MyProfile admin={admin} onChanged={onProfileChanged} />
       <ChangePassword />
       <ChangeEmail currentEmail={admin.email} onChanged={onEmailChanged} />
+    </div>
+  );
+}
+
+function MyProfile({ admin, onChanged }: { admin: DevAdmin; onChanged?: (a: DevAdmin) => void }) {
+  const [name, setName] = useState(admin.name || "");
+  const [avatar, setAvatar] = useState(admin.avatar_url || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const pickFile = (file: File) => {
+    if (file.size > 1.5 * 1024 * 1024) {
+      setErr("Файл больше 1.5 МБ. Выберите изображение поменьше.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAvatar(String(reader.result || ""));
+      setErr("");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const save = async () => {
+    setErr("");
+    setMsg("");
+    setBusy(true);
+    try {
+      const res = await devApi<{ admin: DevAdmin }>("update_me", {
+        name: name.trim(),
+        avatar_url: avatar,
+      });
+      onChanged?.(res.admin);
+      setMsg("Профиль сохранён");
+      setTimeout(() => setMsg(""), 2000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Не удалось сохранить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
+      <h3 className="font-semibold mb-1">Мой профиль</h3>
+      <p className="text-xs text-slate-500 mb-4">Фото и имя, которые видны в панели</p>
+
+      <div className="flex items-center gap-4 mb-4">
+        {avatar ? (
+          <img src={avatar} alt="" className="w-16 h-16 rounded-2xl object-cover shrink-0" />
+        ) : (
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-xl font-bold shrink-0">
+            {(name || admin.email).slice(0, 1).toUpperCase()}
+          </div>
+        )}
+        <div className="flex-1 min-w-0 space-y-2">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full py-2 rounded-xl bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition"
+          >
+            Загрузить фото
+          </button>
+          {avatar && (
+            <button
+              onClick={() => setAvatar("")}
+              className="w-full py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-400 hover:bg-white/10 transition"
+            >
+              Убрать фото
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) pickFile(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs text-slate-500 mb-1.5 block">Имя</label>
+          <Input value={name} onChange={setName} placeholder="Ваше имя" />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 mb-1.5 block">Или ссылка на фото</label>
+          <Input value={avatar.startsWith("data:") ? "" : avatar} onChange={setAvatar} placeholder="https://..." />
+        </div>
+      </div>
+
+      {err && <Note text={err} error />}
+      {msg && <Note text={msg} />}
+
+      <button
+        onClick={save}
+        disabled={busy}
+        className="w-full mt-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-sm font-semibold disabled:opacity-50"
+      >
+        {busy ? "Сохраняем..." : "Сохранить профиль"}
+      </button>
     </div>
   );
 }
