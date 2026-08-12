@@ -40,14 +40,32 @@ export async function devApi<T = Record<string, unknown>>(
   action: string,
   payload: Record<string, unknown> = {},
 ): Promise<T> {
-  const res = await fetch(DEV_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Dev-Token": getDevToken(),
-    },
-    body: JSON.stringify({ action, ...payload }),
-  });
+  // Связь может моргнуть (мобильный интернет, спящая вкладка) —
+  // делаем до трёх попыток с небольшой паузой, вместо падения с ошибкой
+  let res: Response | null = null;
+  let lastErr: unknown = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      res = await fetch(DEV_API, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Dev-Token": getDevToken(),
+        },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+
+  if (!res) {
+    console.error("devApi network error", action, lastErr);
+    throw new Error("Нет связи с сервером. Проверьте интернет и попробуйте ещё раз");
+  }
 
   const data = await res.json().catch(() => ({}));
 

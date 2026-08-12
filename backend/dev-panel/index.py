@@ -60,7 +60,8 @@ ACTION_PERMS = {
     "moderation_summary": "dashboard",
     "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
     "payments": "dashboard", "payments_summary": "dashboard",
-    "user_billing": "users",
+    "payments_export": "dashboard",
+    "user_billing": "users", "wallet_set": "settings",
     "payment_refund": "settings", "subscription_extend": "settings",
     "subscription_cancel": "settings",
     "subscriptions_summary": "dashboard",
@@ -1096,6 +1097,71 @@ def handler(event: dict, context) -> dict:
                 "by_plan": by_plan, "promo_activations_30d": promo_used, "referrals": refs,
             }})
 
+        if action == "wallet_set":
+            uid = int(body.get("user_id") or 0)
+            mode = (body.get("mode") or "set").strip()
+            raw = body.get("amount")
+            reason = (body.get("reason") or "Изменение баланса администратором").strip()
+
+            cur.execute(
+                f"SELECT COALESCE(wallet_balance, 0), name FROM {SCHEMA}.users WHERE id = %s",
+                (uid,),
+            )
+            u = cur.fetchone()
+            if not u:
+                return err("Пользователь не найден", 404)
+            old_balance = float(u[0] or 0)
+
+            try:
+                amount = float(raw or 0)
+            except (TypeError, ValueError):
+                return err("Некорректная сумма")
+
+            if mode == "reset":
+                new_balance = 0.0
+            elif mode == "add":
+                new_balance = old_balance + amount
+            elif mode == "subtract":
+                new_balance = old_balance - amount
+            else:
+                new_balance = amount
+
+            if new_balance < 0:
+                new_balance = 0.0
+            if new_balance > 1000000:
+                return err("Слишком большая сумма")
+
+            diff = round(new_balance - old_balance, 2)
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET wallet_balance = %s WHERE id = %s",
+                (new_balance, uid),
+            )
+
+            if abs(diff) > 0.001:
+                try:
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.wallet_transactions "
+                        f"(user_id, amount, kind, description, balance_after, created_at) "
+                        f"VALUES (%s, %s, %s, %s, %s, %s)",
+                        (uid, abs(diff), "topup" if diff > 0 else "writeoff",
+                         reason[:200], new_balance, int(time.time())),
+                    )
+                except Exception:
+                    pass
+
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                    f"VALUES (%s, 'system', %s, %s)",
+                    (uid,
+                     "Баланс кошелька изменён",
+                     f"{'Начислено' if diff > 0 else 'Списано'} {abs(diff):.2f} руб. "
+                     f"Текущий баланс: {new_balance:.2f} руб. {reason}"),
+                )
+
+            audit(cur, admin, "wallet_set",
+                  f"Баланс ID {uid}: {old_balance:.2f} -> {new_balance:.2f} ({reason})", ip)
+            return ok({"success": True, "balance": new_balance, "diff": diff})
+
         if action == "user_billing":
             uid = int(body.get("user_id") or 0)
             now = int(time.time())
@@ -1214,6 +1280,81 @@ def handler(event: dict, context) -> dict:
                 "refund_reason": r[14], "cancel_reason": r[15],
             } for r in cur.fetchall()]
             return ok({"payments": items})
+
+        if action == "payments_export":
+            date_from = (body.get("from") or "").strip()
+            date_to = (body.get("to") or "").strip()
+            only_paid = bool(body.get("only_paid", True))
+
+            where = []
+            params = []
+            if only_paid:
+                where.append("o.status IN ('paid', 'succeeded')")
+            if date_from:
+                where.append("o.created_at >= %s")
+                params.append(date_from)
+            if date_to:
+                where.append("o.created_at <= %s")
+                params.append(date_to + " 23:59:59")
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+            cur.execute(
+                f"SELECT o.created_at, o.paid_at, o.order_number, o.amount, o.status, "
+                f"COALESCE(o.payment_method, ''), o.purpose, o.user_email, "
+                f"COALESCE(u.name, ''), COALESCE(u.phone, ''), o.nova_user_id, "
+                f"COALESCE(o.refunded_amount, 0), COALESCE(o.yookassa_payment_id, '') "
+                f"FROM {SCHEMA}.orders o LEFT JOIN {SCHEMA}.users u ON u.id = o.nova_user_id "
+                f"{where_sql} ORDER BY o.created_at DESC LIMIT 5000",
+                tuple(params),
+            )
+
+            method_names = {
+                "bank_card": "Карта", "card": "Карта", "sbp": "СБП",
+                "sberbank": "SberPay", "tinkoff_bank": "T-Pay", "yoo_money": "ЮMoney",
+            }
+            status_names = {
+                "paid": "Оплачен", "succeeded": "Оплачен", "pending": "Ожидает",
+                "canceled": "Отменён", "failed": "Не прошёл", "refunded": "Возвращён",
+            }
+            purpose_names = {
+                "wallet_topup": "Пополнение кошелька",
+                "pro_month": "Premium месяц", "pro_year": "Premium год",
+                "lightning": "Молнии",
+            }
+
+            rows = []
+            total = 0.0
+            total_refund = 0.0
+            for r in cur.fetchall():
+                amount = float(r[3] or 0)
+                refunded = float(r[11] or 0)
+                if r[4] in ("paid", "succeeded"):
+                    total += amount
+                total_refund += refunded
+                rows.append({
+                    "created": r[0].strftime("%d.%m.%Y %H:%M") if r[0] else "",
+                    "paid": r[1].strftime("%d.%m.%Y %H:%M") if r[1] else "",
+                    "order": r[2] or "",
+                    "amount": amount,
+                    "status": status_names.get(r[4], r[4] or ""),
+                    "method": method_names.get(r[5], r[5] or ""),
+                    "purpose": purpose_names.get(r[6], r[6] or ""),
+                    "email": r[7] or "",
+                    "name": r[8] or "",
+                    "phone": r[9] or "",
+                    "user_id": r[10],
+                    "refunded": refunded,
+                    "payment_id": r[12] or "",
+                })
+
+            audit(cur, admin, "payments_export",
+                  f"Выгрузка платежей: {len(rows)} строк", ip)
+            return ok({
+                "rows": rows,
+                "total": round(total, 2),
+                "total_refunded": round(total_refund, 2),
+                "count": len(rows),
+            })
 
         if action == "payments_summary":
             cur.execute(

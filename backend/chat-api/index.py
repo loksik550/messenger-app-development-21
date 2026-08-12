@@ -1903,7 +1903,7 @@ def handler(event: dict, context) -> dict:
             return err("Нужен X-User-Id")
         cur.execute(
             f"SELECT id, kind, title, body, read_at, created_at FROM {SCHEMA}.user_notifications "
-            f"WHERE user_id = %s ORDER BY created_at DESC LIMIT 50",
+            f"WHERE user_id = %s ORDER BY created_at DESC, id DESC LIMIT 50",
             (int(user_id),),
         )
         items = [{
