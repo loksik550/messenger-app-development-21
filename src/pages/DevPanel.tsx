@@ -13,11 +13,13 @@ import DevChannels from "@/components/devpanel/DevChannels";
 import DevTeam from "@/components/devpanel/DevTeam";
 import DevSettings from "@/components/devpanel/DevSettings";
 import DevVerification from "@/components/devpanel/DevVerification";
+import DevPlans from "@/components/devpanel/DevPlans";
+import DevPromo from "@/components/devpanel/DevPromo";
 import DevTopBar from "@/components/devpanel/DevTopBar";
 
 type Section =
   | "dashboard" | "users" | "channels" | "verification" | "reports"
-  | "support" | "logs" | "services" | "team" | "settings";
+  | "support" | "plans" | "promo" | "logs" | "services" | "team" | "settings";
 
 const NAV: { key: Section; label: string; icon: string; perm: string }[] = [
   { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard" },
@@ -26,6 +28,8 @@ const NAV: { key: Section; label: string; icon: string; perm: string }[] = [
   { key: "verification", label: "Верификация", icon: "BadgeCheck", perm: "reports" },
   { key: "reports", label: "Жалобы", icon: "Flag", perm: "reports" },
   { key: "support", label: "Поддержка", icon: "LifeBuoy", perm: "support" },
+  { key: "plans", label: "Тарифы Premium", icon: "Crown", perm: "dashboard" },
+  { key: "promo", label: "Промокоды и бонусы", icon: "Ticket", perm: "dashboard" },
   { key: "logs", label: "Логи и события", icon: "ScrollText", perm: "logs" },
   { key: "services", label: "Серверы и доступ", icon: "Server", perm: "services" },
   { key: "team", label: "Команда", icon: "UserCog", perm: "team" },
@@ -228,6 +232,8 @@ export default function DevPanel() {
           {activeSection === "verification" && <DevVerification can={can} />}
           {activeSection === "reports" && <DevReports />}
           {activeSection === "support" && <DevSupport />}
+          {activeSection === "plans" && <DevPlans can={can} />}
+          {activeSection === "promo" && <DevPromo can={can} />}
           {activeSection === "logs" && <DevLogs />}
           {activeSection === "services" && <DevServices />}
           {activeSection === "team" && <DevTeam myId={admin.id} can={can} />}

@@ -654,3 +654,7 @@
     radial-gradient(circle at 20% 30%, #1a1a3a 0%, #0d0d1a 60%);
   animation: wp-stars-twinkle 6s ease-in-out infinite;
 }
+@keyframes novaToastBar {
+  from { width: 100%; }
+  to { width: 0%; }
+}

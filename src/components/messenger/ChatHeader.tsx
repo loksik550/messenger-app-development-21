@@ -1,13 +1,13 @@
 import Icon from "@/components/ui/icon";
-import { type Chat, type IconName, getCallAvatar, formatLastSeen } from "@/lib/api";
+import { type Chat, getCallAvatar, formatLastSeen } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import { useT } from "@/hooks/useT";
 
+// Пункты меню чата перенесены в профиль собеседника,
+// но пропсы сохранены для совместимости с вызывающим кодом.
 export function ChatHeader({
   chat,
   onBack,
-  showMenu,
-  setShowMenu,
   onOpenProfile,
   onCall,
   onVideoCall,
@@ -15,15 +15,6 @@ export function ChatHeader({
   setSearchQuery,
   showSearch,
   setShowSearch,
-  onToggleMute,
-  onTogglePin,
-  onToggleFavorite,
-  onClearHistory,
-  onBlock,
-  onToggleArchive,
-  onSetDisappearing,
-  disappearingSeconds,
-  onChooseWallpaper,
 }: {
   chat: Chat;
   onBack: () => void;

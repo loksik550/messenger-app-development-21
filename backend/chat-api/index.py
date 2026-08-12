@@ -3759,17 +3759,260 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return ok({"balance": new_balance})
 
+    if action == "promo_activate":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        code = (body.get("code") or "").strip().upper()
+        if not code:
+            conn.close()
+            return err("Введите промокод")
+
+        now = int(time.time())
+        cur.execute(
+            f"SELECT id, kind, discount_percent, discount_amount, free_days, plan_code, "
+            f"max_activations, used_count, per_user_limit, starts_at, expires_at, active, title "
+            f"FROM {SCHEMA}.promo_codes WHERE code = %s",
+            (code,),
+        )
+        p = cur.fetchone()
+        if not p:
+            conn.close()
+            return err("Промокод не найден")
+        if not p[11]:
+            conn.close()
+            return err("Промокод больше не действует")
+        if p[9] and now < int(p[9]):
+            conn.close()
+            return err("Промокод ещё не активен")
+        if p[10] and now > int(p[10]):
+            conn.close()
+            return err("Срок действия промокода истёк")
+        if p[6] and int(p[7] or 0) >= int(p[6]):
+            conn.close()
+            return err("Промокод исчерпан")
+
+        cur.execute(
+            f"SELECT COUNT(*) FROM {SCHEMA}.promo_activations WHERE promo_id = %s AND user_id = %s",
+            (p[0], int(user_id)),
+        )
+        used_by_me = cur.fetchone()[0]
+        if int(p[8] or 1) and used_by_me >= int(p[8] or 1):
+            conn.close()
+            return err("Вы уже использовали этот промокод")
+
+        ip_addr = ((event.get("requestContext") or {}).get("identity") or {}).get("sourceIp") or ""
+        suspicious = False
+        reason = ""
+        if ip_addr:
+            cur.execute(
+                f"SELECT COUNT(DISTINCT user_id) FROM {SCHEMA}.promo_activations "
+                f"WHERE ip_addr = %s AND created_at > %s",
+                (ip_addr, now - 86400),
+            )
+            same_ip = cur.fetchone()[0]
+            if same_ip >= 3:
+                suspicious = True
+                reason = f"{same_ip} аккаунтов с одного адреса за сутки"
+
+        free_days = int(p[4] or 0)
+        granted = 0
+        if free_days > 0:
+            cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+            cur_until = int((cur.fetchone() or [0])[0] or 0)
+            new_until = max(cur_until, now) + free_days * 86400
+            cur.execute(f"UPDATE {SCHEMA}.users SET pro_until = %s WHERE id = %s", (new_until, int(user_id)))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.pro_subscriptions "
+                f"(user_id, plan, amount, source, starts_at, ends_at, is_trial, created_at) "
+                f"VALUES (%s, %s, 0, 'promo', %s, %s, FALSE, %s)",
+                (int(user_id), (p[5] or "promo")[:40], now, new_until, now),
+            )
+            granted = free_days
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.promo_activations "
+            f"(promo_id, code, user_id, granted_days, discount_applied, ip_addr, suspicious, suspicious_reason) "
+            f"VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (p[0], code, int(user_id), granted, float(p[3] or 0), ip_addr, suspicious, reason),
+        )
+        cur.execute(
+            f"UPDATE {SCHEMA}.promo_codes SET used_count = used_count + 1 WHERE id = %s",
+            (p[0],),
+        )
+
+        title = p[12] or "Промокод активирован"
+        if granted > 0:
+            msg = f"Premium на {granted} дн. уже на вашем аккаунте"
+        elif int(p[2] or 0) > 0:
+            msg = f"Скидка {p[2]}% будет применена при оплате"
+        elif float(p[3] or 0) > 0:
+            msg = f"Скидка {int(float(p[3]))} руб. будет применена при оплате"
+        else:
+            msg = "Промокод принят"
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+            f"VALUES (%s, 'promo', %s, %s)",
+            (int(user_id), title, msg),
+        )
+        conn.commit()
+        conn.close()
+        return ok({
+            "success": True, "message": msg, "granted_days": granted,
+            "discount_percent": int(p[2] or 0), "discount_amount": float(p[3] or 0),
+        })
+
+    if action == "my_referral":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(f"SELECT referral_code FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return err("Пользователь не найден", 404)
+        ref_code = row[0]
+        if not ref_code:
+            ref_code = f"NOVA{int(user_id):04d}"
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET referral_code = %s WHERE id = %s",
+                (ref_code, int(user_id)),
+            )
+            conn.commit()
+
+        cur.execute(
+            f"SELECT COUNT(*), COALESCE(SUM(CASE WHEN rewarded THEN reward_days ELSE 0 END), 0) "
+            f"FROM {SCHEMA}.referrals WHERE inviter_id = %s",
+            (int(user_id),),
+        )
+        st = cur.fetchone()
+        cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key LIKE 'referral_%%'")
+        cfg = {r[0]: r[1] for r in cur.fetchall()}
+        cur.execute(f"SELECT referred_by FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        rb = cur.fetchone()
+        conn.close()
+        return ok({
+            "code": ref_code,
+            "invited": st[0] or 0,
+            "days_earned": int(st[1] or 0),
+            "already_used": bool(rb and rb[0]),
+            "enabled": cfg.get("referral_enabled", "true") == "true",
+            "inviter_days": int(cfg.get("referral_inviter_days", "7") or 7),
+            "invited_days": int(cfg.get("referral_invited_days", "7") or 7),
+        })
+
+    if action == "referral_apply":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        code = (body.get("code") or "").strip().upper()
+        if not code:
+            conn.close()
+            return err("Введите код приглашения")
+
+        cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key LIKE 'referral_%%'")
+        cfg = {r[0]: r[1] for r in cur.fetchall()}
+        if cfg.get("referral_enabled", "true") != "true":
+            conn.close()
+            return err("Реферальная программа временно отключена")
+
+        cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE UPPER(referral_code) = %s", (code,))
+        inv = cur.fetchone()
+        if not inv:
+            conn.close()
+            return err("Код приглашения не найден")
+        inviter_id = int(inv[0])
+        if inviter_id == int(user_id):
+            conn.close()
+            return err("Нельзя пригласить самого себя")
+
+        cur.execute(f"SELECT id FROM {SCHEMA}.referrals WHERE invited_id = %s", (int(user_id),))
+        if cur.fetchone():
+            conn.close()
+            return err("Вы уже участвовали в программе")
+
+        now = int(time.time())
+        inviter_days = int(cfg.get("referral_inviter_days", "7") or 7)
+        invited_days = int(cfg.get("referral_invited_days", "7") or 7)
+
+        for uid, days, who in ((inviter_id, inviter_days, "inviter"), (int(user_id), invited_days, "invited")):
+            if days <= 0:
+                continue
+            cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            cu = int((cur.fetchone() or [0])[0] or 0)
+            nu = max(cu, now) + days * 86400
+            cur.execute(f"UPDATE {SCHEMA}.users SET pro_until = %s WHERE id = %s", (nu, uid))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.pro_subscriptions "
+                f"(user_id, plan, amount, source, starts_at, ends_at, is_trial, created_at) "
+                f"VALUES (%s, 'referral', 0, 'referral', %s, %s, FALSE, %s)",
+                (uid, now, nu, now),
+            )
+            text = ("Ваш друг присоединился к Nova"
+                    if who == "inviter" else "Спасибо за переход по приглашению")
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                f"VALUES (%s, 'referral', %s, %s)",
+                (uid, f"Premium на {days} дн.", text),
+            )
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.referrals (inviter_id, invited_id, reward_days, rewarded) "
+            f"VALUES (%s, %s, %s, TRUE)",
+            (inviter_id, int(user_id), inviter_days),
+        )
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET referred_by = %s WHERE id = %s",
+            (inviter_id, int(user_id)),
+        )
+        conn.commit()
+        conn.close()
+        return ok({"success": True, "granted_days": invited_days})
+
+    if action == "premium_plans":
+        cur.execute(
+            f"SELECT code, title, subtitle, badge, price, old_price, currency, duration_days, "
+            f"is_trial, features, limit_file_mb, limit_storage_gb, limit_pinned_chats, "
+            f"limit_group_members, limit_voice_minutes, limit_devices "
+            f"FROM {SCHEMA}.premium_plans WHERE active = TRUE ORDER BY sort_order, id"
+        )
+        plans = [{
+            "code": r[0], "title": r[1], "subtitle": r[2], "badge": r[3],
+            "price": float(r[4] or 0),
+            "old_price": float(r[5]) if r[5] is not None else None,
+            "currency": r[6], "duration_days": r[7], "is_trial": bool(r[8]),
+            "features": [f for f in (r[9] or "").split("|") if f],
+            "limits": {
+                "file_mb": r[10], "storage_gb": r[11], "pinned_chats": r[12],
+                "group_members": r[13], "voice_minutes": r[14], "devices": r[15],
+            },
+        } for r in cur.fetchall()]
+        conn.close()
+        return ok({"plans": plans})
+
     # ── buy_pro (через кошелёк Nova) ──────────────────────────────────────────
     if action == "buy_pro":
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")
         plan = body.get("plan") or "month"
-        prices = {"month": 199.0, "year": 1490.0, "trial": 0.0}
-        durations = {"month": 30 * 86400, "year": 365 * 86400, "trial": 3 * 86400}
-        if plan not in prices:
-            conn.close(); return err("plan: month | year | trial")
-        price = prices[plan]
-        duration = durations[plan]
+        # Цена и срок берутся из тарифов, настроенных в Dev-панели
+        cur.execute(
+            f"SELECT price, duration_days FROM {SCHEMA}.premium_plans "
+            f"WHERE code = %s AND active = TRUE",
+            (plan,),
+        )
+        prow = cur.fetchone()
+        if prow:
+            price = float(prow[0] or 0)
+            duration = int(prow[1] or 30) * 86400
+        else:
+            prices = {"month": 199.0, "year": 1490.0, "trial": 0.0}
+            durations = {"month": 30 * 86400, "year": 365 * 86400, "trial": 3 * 86400}
+            if plan not in prices:
+                conn.close(); return err("Тариф не найден")
+            price = prices[plan]
+            duration = durations[plan]
         cur.execute(f"SELECT COALESCE(wallet_balance,0), COALESCE(pro_until,0), COALESCE(pro_trial_used,FALSE) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
         r = cur.fetchone()
         if not r:

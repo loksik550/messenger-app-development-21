@@ -57,7 +57,7 @@ export function ChatWindow({
   // Подсказка о незнакомце: показываем если собеседник не в контактах
   const [isUnknown, setIsUnknown] = useState(false);
   const [unknownDismissed, setUnknownDismissed] = useState(false);
-  const [showReactionPicker, setShowReactionPicker] = useState<number | null>(null);
+  const [, setShowReactionPicker] = useState<number | null>(null);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);

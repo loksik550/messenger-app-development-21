@@ -25,7 +25,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [input, setInput] = useState("");
   const [lastSince, setLastSince] = useState(0);
-  const [uploading, setUploading] = useState(false);
+  const [, setUploading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordSec, setRecordSec] = useState(0);
   const [showAttach, setShowAttach] = useState(false);
@@ -238,7 +238,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     setUploading(true); setShowAttach(false);
     try {
       const result = await uploadMedia(file, currentUser.id);
-      const mediaType = opts?.mediaTypeOverride || result.media_type;
+      const mediaType = (opts?.mediaTypeOverride || result.media_type) as "audio" | "video" | "image" | "file";
       const d = await api("send_group_message", {
         group_id: group.id, media_type: mediaType, media_url: result.url,
         file_name: result.file_name, file_size: result.file_size,

@@ -13,7 +13,7 @@ interface Props {
 
 const PRESET_AMOUNTS = [100, 300, 500, 1000];
 
-export default function WalletPanel({ currentUser, onClose, onUserUpdate, onOpenLightning, onOpenStickers, onCreateFundraiser }: Props) {
+export default function WalletPanel({ currentUser, onClose, onOpenLightning, onOpenStickers, onCreateFundraiser }: Props) {
   const [balance, setBalance] = useState<number>(currentUser.wallet_balance || 0);
   const [proUntil, setProUntil] = useState<number | null>(currentUser.pro_until || null);
   const [tx, setTx] = useState<WalletTransaction[]>([]);

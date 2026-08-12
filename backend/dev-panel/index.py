@@ -55,6 +55,8 @@ ACTION_PERMS = {
     "set_channel_verified": "channels",
     "notifications": "dashboard", "notifications_read": "dashboard",
     "moderation_summary": "dashboard",
+    "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
+    "subscriptions_summary": "dashboard",
 }
 
 
@@ -946,6 +948,315 @@ def handler(event: dict, context) -> dict:
                 "verified_users": verified,
                 "removed_messages_24h": deleted_msgs,
             }})
+
+        # ── Тарифы Premium ────────────────────────────────────────────────
+        if action == "plans":
+            cur.execute(
+                f"SELECT id, code, title, subtitle, badge, price, old_price, currency, "
+                f"duration_days, is_trial, active, sort_order, features, "
+                f"limit_file_mb, limit_storage_gb, limit_pinned_chats, "
+                f"limit_group_members, limit_voice_minutes, limit_devices, updated_at "
+                f"FROM {SCHEMA}.premium_plans ORDER BY sort_order, id"
+            )
+            plans = [{
+                "id": r[0], "code": r[1], "title": r[2], "subtitle": r[3], "badge": r[4],
+                "price": float(r[5] or 0), "old_price": float(r[6]) if r[6] is not None else None,
+                "currency": r[7], "duration_days": r[8], "is_trial": bool(r[9]),
+                "active": bool(r[10]), "sort_order": r[11],
+                "features": [f for f in (r[12] or "").split("|") if f],
+                "limits": {
+                    "file_mb": r[13], "storage_gb": r[14], "pinned_chats": r[15],
+                    "group_members": r[16], "voice_minutes": r[17], "devices": r[18],
+                },
+                "updated_at": r[19],
+            } for r in cur.fetchall()]
+            now = int(time.time())
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE pro_until IS NOT NULL AND pro_until > %s",
+                (now,),
+            )
+            return ok({"plans": plans, "active_subscriptions": cur.fetchone()[0]})
+
+        if action == "plan_save":
+            pid = int(body.get("id") or 0)
+            code = (body.get("code") or "").strip().lower()
+            title = (body.get("title") or "").strip()
+            if not code or not title:
+                return err("Укажите код и название тарифа")
+
+            feats = body.get("features") or []
+            if isinstance(feats, str):
+                feats = [f.strip() for f in feats.split("|")]
+            features = "|".join([f.strip() for f in feats if f and f.strip()])[:2000]
+
+            lim = body.get("limits") or {}
+            vals = (
+                code[:40], title[:80], (body.get("subtitle") or "")[:120],
+                (body.get("badge") or "")[:20],
+                float(body.get("price") or 0),
+                float(body["old_price"]) if body.get("old_price") else None,
+                (body.get("currency") or "RUB")[:8],
+                int(body.get("duration_days") or 30),
+                bool(body.get("is_trial")),
+                bool(body.get("active", True)),
+                int(body.get("sort_order") or 0),
+                features,
+                int(lim.get("file_mb") or 5),
+                int(lim.get("storage_gb") or 1),
+                int(lim.get("pinned_chats") or 5),
+                int(lim.get("group_members") or 200),
+                int(lim.get("voice_minutes") or 5),
+                int(lim.get("devices") or 3),
+                int(time.time()),
+            )
+            if pid:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.premium_plans SET code=%s, title=%s, subtitle=%s, badge=%s, "
+                    f"price=%s, old_price=%s, currency=%s, duration_days=%s, is_trial=%s, active=%s, "
+                    f"sort_order=%s, features=%s, limit_file_mb=%s, limit_storage_gb=%s, "
+                    f"limit_pinned_chats=%s, limit_group_members=%s, limit_voice_minutes=%s, "
+                    f"limit_devices=%s, updated_at=%s WHERE id=%s",
+                    vals + (pid,),
+                )
+                audit(cur, admin, "plan_save", f"Изменён тариф «{title}» ({code})", ip)
+            else:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.premium_plans "
+                    f"(code, title, subtitle, badge, price, old_price, currency, duration_days, "
+                    f"is_trial, active, sort_order, features, limit_file_mb, limit_storage_gb, "
+                    f"limit_pinned_chats, limit_group_members, limit_voice_minutes, limit_devices, updated_at) "
+                    f"VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    f"ON CONFLICT (code) DO UPDATE SET title=EXCLUDED.title, price=EXCLUDED.price",
+                    vals,
+                )
+                audit(cur, admin, "plan_save", f"Создан тариф «{title}» ({code})", ip)
+            return ok({"success": True})
+
+        if action == "plan_delete":
+            pid = int(body.get("id") or 0)
+            cur.execute(f"SELECT code, title FROM {SCHEMA}.premium_plans WHERE id = %s", (pid,))
+            r = cur.fetchone()
+            if not r:
+                return err("Тариф не найден", 404)
+            cur.execute(f"UPDATE {SCHEMA}.premium_plans SET active = false WHERE id = %s", (pid,))
+            audit(cur, admin, "plan_delete", f"Отключён тариф «{r[1]}» ({r[0]})", ip)
+            return ok({"success": True})
+
+        if action == "subscriptions_summary":
+            now = int(time.time())
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE pro_until IS NOT NULL AND pro_until > %s",
+                (now,),
+            )
+            active = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE pro_until IS NOT NULL "
+                f"AND pro_until > %s AND pro_until < %s",
+                (now, now + 7 * 86400),
+            )
+            expiring = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE COALESCE(pro_trial_used, FALSE) = TRUE"
+            )
+            trials = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE pro_until IS NOT NULL AND pro_until <= %s",
+                (now,),
+            )
+            expired = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.premium_plans WHERE active = TRUE")
+            plans_count = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM {SCHEMA}.pro_subscriptions "
+                f"WHERE created_at > %s",
+                (now - 30 * 86400,),
+            )
+            rev_row = cur.fetchone()
+            cur.execute(
+                f"SELECT plan, COUNT(*), COALESCE(SUM(amount), 0) FROM {SCHEMA}.pro_subscriptions "
+                f"GROUP BY plan ORDER BY COUNT(*) DESC LIMIT 8"
+            )
+            by_plan = [{"plan": r[0], "count": r[1], "sum": float(r[2] or 0)} for r in cur.fetchall()]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.promo_activations WHERE created_at > %s",
+                        (now - 30 * 86400,))
+            promo_used = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.referrals")
+            refs = cur.fetchone()[0]
+            return ok({"subscriptions": {
+                "active": active, "expiring_7d": expiring, "trials_used": trials,
+                "expired": expired, "plans": plans_count,
+                "revenue_30d": float(rev_row[0] or 0), "purchases_30d": int(rev_row[1] or 0),
+                "by_plan": by_plan, "promo_activations_30d": promo_used, "referrals": refs,
+            }})
+
+        # ── Промокоды ─────────────────────────────────────────────────────
+        if action == "promos":
+            cur.execute(
+                f"SELECT id, code, title, kind, discount_percent, discount_amount, free_days, "
+                f"plan_code, max_activations, used_count, per_user_limit, starts_at, expires_at, "
+                f"active, note, created_at FROM {SCHEMA}.promo_codes ORDER BY created_at DESC LIMIT 200"
+            )
+            promos = [{
+                "id": r[0], "code": r[1], "title": r[2], "kind": r[3],
+                "discount_percent": r[4], "discount_amount": float(r[5] or 0),
+                "free_days": r[6], "plan_code": r[7], "max_activations": r[8],
+                "used_count": r[9], "per_user_limit": r[10],
+                "starts_at": r[11], "expires_at": r[12],
+                "active": bool(r[13]), "note": r[14], "created_at": r[15],
+            } for r in cur.fetchall()]
+
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.promo_activations")
+            total_act = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.promo_activations WHERE suspicious = TRUE")
+            susp = cur.fetchone()[0]
+            return ok({"promos": promos, "total_activations": total_act, "suspicious": susp})
+
+        if action == "promo_save":
+            pid = int(body.get("id") or 0)
+            code = (body.get("code") or "").strip().upper()
+            if not code:
+                return err("Укажите код промокода")
+            vals = (
+                code[:40], (body.get("title") or "")[:120],
+                (body.get("kind") or "discount")[:20],
+                int(body.get("discount_percent") or 0),
+                float(body.get("discount_amount") or 0),
+                int(body.get("free_days") or 0),
+                (body.get("plan_code") or "")[:40],
+                int(body.get("max_activations") or 0),
+                int(body.get("per_user_limit") or 1),
+                int(body["starts_at"]) if body.get("starts_at") else None,
+                int(body["expires_at"]) if body.get("expires_at") else None,
+                bool(body.get("active", True)),
+                (body.get("note") or "")[:300],
+            )
+            if pid:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.promo_codes SET code=%s, title=%s, kind=%s, discount_percent=%s, "
+                    f"discount_amount=%s, free_days=%s, plan_code=%s, max_activations=%s, "
+                    f"per_user_limit=%s, starts_at=%s, expires_at=%s, active=%s, note=%s WHERE id=%s",
+                    vals + (pid,),
+                )
+                audit(cur, admin, "promo_save", f"Изменён промокод {code}", ip)
+            else:
+                cur.execute(
+                    f"SELECT id FROM {SCHEMA}.promo_codes WHERE code = %s", (code,)
+                )
+                if cur.fetchone():
+                    return err("Такой промокод уже есть")
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.promo_codes (code, title, kind, discount_percent, "
+                    f"discount_amount, free_days, plan_code, max_activations, per_user_limit, "
+                    f"starts_at, expires_at, active, note, created_by) "
+                    f"VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    vals + (admin["id"],),
+                )
+                audit(cur, admin, "promo_save", f"Создан промокод {code}", ip)
+            return ok({"success": True})
+
+        if action == "promo_toggle":
+            pid = int(body.get("id") or 0)
+            cur.execute(
+                f"UPDATE {SCHEMA}.promo_codes SET active = NOT active WHERE id = %s RETURNING code, active",
+                (pid,),
+            )
+            r = cur.fetchone()
+            if not r:
+                return err("Промокод не найден", 404)
+            audit(cur, admin, "promo_toggle",
+                  f"Промокод {r[0]}: {'включён' if r[1] else 'выключен'}", ip)
+            return ok({"success": True, "active": bool(r[1])})
+
+        if action == "promo_activations":
+            only_susp = bool(body.get("suspicious"))
+            where = "WHERE a.suspicious = TRUE" if only_susp else ""
+            cur.execute(
+                f"SELECT a.id, a.code, a.user_id, u.name, a.granted_days, a.discount_applied, "
+                f"a.ip_addr, a.suspicious, a.suspicious_reason, a.created_at "
+                f"FROM {SCHEMA}.promo_activations a "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = a.user_id "
+                f"{where} ORDER BY a.created_at DESC LIMIT 100"
+            )
+            items = [{
+                "id": r[0], "code": r[1], "user_id": r[2], "user_name": r[3] or f"ID {r[2]}",
+                "granted_days": r[4], "discount": float(r[5] or 0), "ip": r[6],
+                "suspicious": bool(r[7]), "reason": r[8], "created_at": r[9],
+            } for r in cur.fetchall()]
+            return ok({"items": items})
+
+        # ── Подарочный Premium ────────────────────────────────────────────
+        if action == "gift_premium":
+            uid = int(body.get("user_id") or 0)
+            days = int(body.get("days") or 0)
+            reason = (body.get("reason") or "Подарок от команды Nova").strip()
+            if uid <= 0 or days <= 0:
+                return err("Укажите пользователя и количество дней")
+
+            now = int(time.time())
+            cur.execute(f"SELECT COALESCE(pro_until, 0), name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            r = cur.fetchone()
+            if not r:
+                return err("Пользователь не найден", 404)
+            new_until = max(int(r[0] or 0), now) + days * 86400
+            cur.execute(f"UPDATE {SCHEMA}.users SET pro_until = %s WHERE id = %s", (new_until, uid))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.pro_subscriptions "
+                f"(user_id, plan, amount, source, starts_at, ends_at, is_trial, created_at) "
+                f"VALUES (%s, 'gift', 0, 'gift', %s, %s, FALSE, %s)",
+                (uid, now, new_until, now),
+            )
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                f"VALUES (%s, 'premium', %s, %s)",
+                (uid, f"Premium на {days} дн. в подарок", reason),
+            )
+            audit(cur, admin, "gift_premium", f"Подарен Premium на {days} дн. ID {uid}", ip)
+            return ok({"success": True, "pro_until": new_until})
+
+        # ── Реферальная программа ─────────────────────────────────────────
+        if action == "referral_settings":
+            cur.execute(
+                f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key LIKE 'referral_%%'"
+            )
+            cfg = {r[0]: r[1] for r in cur.fetchall()}
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.referrals")
+            total = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.referrals WHERE rewarded = TRUE")
+            rewarded = cur.fetchone()[0]
+            return ok({"settings": {
+                "enabled": cfg.get("referral_enabled", "true") == "true",
+                "inviter_days": int(cfg.get("referral_inviter_days", "7") or 7),
+                "invited_days": int(cfg.get("referral_invited_days", "7") or 7),
+            }, "stats": {"total": total, "rewarded": rewarded}})
+
+        if action == "referral_settings_save":
+            pairs = {
+                "referral_enabled": "true" if body.get("enabled") else "false",
+                "referral_inviter_days": str(int(body.get("inviter_days") or 0)),
+                "referral_invited_days": str(int(body.get("invited_days") or 0)),
+            }
+            for k, v in pairs.items():
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) "
+                    f"VALUES (%s, %s, %s, %s) ON CONFLICT (key) DO UPDATE "
+                    f"SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, "
+                    f"updated_by = EXCLUDED.updated_by",
+                    (k, v, int(time.time()), admin["id"]),
+                )
+            audit(cur, admin, "referral_settings_save", "Изменены настройки рефералов", ip)
+            return ok({"success": True})
+
+        if action == "referrals_top":
+            cur.execute(
+                f"SELECT r.inviter_id, u.name, COUNT(*), SUM(CASE WHEN r.rewarded THEN 1 ELSE 0 END) "
+                f"FROM {SCHEMA}.referrals r LEFT JOIN {SCHEMA}.users u ON u.id = r.inviter_id "
+                f"GROUP BY r.inviter_id, u.name ORDER BY COUNT(*) DESC LIMIT 20"
+            )
+            items = [{
+                "user_id": r[0], "name": r[1] or f"ID {r[0]}",
+                "invited": r[2], "rewarded": r[3] or 0,
+            } for r in cur.fetchall()]
+            return ok({"items": items})
 
         # ── Настройки панели ──────────────────────────────────────────────
         if action == "settings_get":

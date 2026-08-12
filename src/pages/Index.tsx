@@ -13,6 +13,7 @@ import InstallWelcome from "@/components/messenger/InstallWelcome";
 import EnableNotificationsBanner from "@/components/messenger/EnableNotificationsBanner";
 import { toast } from "@/hooks/use-toast";
 import NotificationsBell, { type UserNotif } from "@/components/messenger/NotificationsBell";
+import NovaToaster, { type NovaToastItem } from "@/components/messenger/NovaToast";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
 import { RealStoriesBar, type StoryGroup } from "@/components/messenger/RealStories";
@@ -49,6 +50,7 @@ const PrivacyPolicyPanel = lazy(() => import("@/components/messenger/PrivacyPoli
 const TermsPanel = lazy(() => import("@/components/messenger/TermsPanel"));
 const HelpPanel = lazy(() => import("@/components/messenger/HelpPanel"));
 const VerificationPanel = lazy(() => import("@/components/messenger/VerificationPanel"));
+const PromoPanel = lazy(() => import("@/components/messenger/PromoPanel"));
 const BannedScreen = lazy(() => import("@/components/messenger/BannedScreen"));
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
@@ -106,8 +108,10 @@ export default function Index() {
   const [showTerms, setShowTerms] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
+  const [showPromo, setShowPromo] = useState(false);
   const notifSeenRef = useRef<Set<number>>(new Set());
   const [notifs, setNotifs] = useState<UserNotif[]>([]);
+  const [toasts, setToasts] = useState<NovaToastItem[]>([]);
   const [notifUnread, setNotifUnread] = useState(0);
   const [banInfo, setBanInfo] = useState<{ banned_until: number | null; banned_reason: string; forever?: boolean } | null>(null);
 
@@ -297,7 +301,12 @@ export default function Index() {
     setNotifUnread(r.unread || 0);
     if (announce) {
       const fresh = items.filter(n => !n.read && !prevIds.has(n.id));
-      for (const n of fresh) toast({ title: n.title, description: n.body });
+      if (fresh.length > 0) {
+        setToasts(prev => [
+          ...fresh.map(n => ({ id: n.id, kind: n.kind, title: n.title, body: n.body })),
+          ...prev,
+        ].slice(0, 3));
+      }
       if (fresh.length > 0) {
         const me = await api("refresh_me", {}, currentUser.id);
         if (me?.user) setCurrentUser(prev => (prev ? { ...prev, ...me.user } : prev));
@@ -871,6 +880,21 @@ export default function Index() {
       )}
 
       {/* PWA install prompt */}
+      {showPromo && currentUser && (
+        <Suspense fallback={null}>
+          <PromoPanel
+            currentUser={currentUser}
+            onClose={() => setShowPromo(false)}
+            onUserUpdate={(u) => setCurrentUser(u)}
+          />
+        </Suspense>
+      )}
+
+      <NovaToaster
+        items={toasts}
+        onDismiss={(id) => setToasts(prev => prev.filter(t => t.id !== id))}
+      />
+
       <InstallPrompt />
 
       {/* Coming soon */}
@@ -1229,6 +1253,7 @@ export default function Index() {
             onOpenNotifications={() => openOverlay(setShowNotifications)}
             onOpenAppearance={() => openOverlay(setShowAppearance)}
             onOpenVerification={() => setShowVerification(true)}
+            onOpenPromo={() => setShowPromo(true)}
             onOpenSavedNotes={() => openOverlay(setShowSavedNotes)}
             onOpenPayments={() => openOverlay(setShowPayments)}
           />

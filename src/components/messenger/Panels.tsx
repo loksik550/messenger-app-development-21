@@ -15,7 +15,7 @@ export { SearchPanel } from "@/components/messenger/SearchPanel";
 
 // ─── ProfilePanel ─────────────────────────────────────────────────────────────
 
-export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, chatsCount = 0, onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenBots, onOpenSupport, onOpenPrivacy, onOpenNotifications, onOpenAppearance, onOpenSavedNotes, onOpenPayments, onOpenVerification }: { onSettings: () => void; currentUser: User; onUserUpdate?: (u: User) => void; onBack?: () => void; chatsCount?: number; onOpenWallet?: () => void; onOpenPro?: () => void; onOpenProSettings?: () => void; onOpenProgress?: () => void; onOpenBots?: () => void; onOpenSupport?: () => void; onOpenPrivacy?: () => void; onOpenNotifications?: () => void; onOpenAppearance?: () => void; onOpenSavedNotes?: () => void; onOpenPayments?: () => void; onOpenVerification?: () => void; }) {
+export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, chatsCount = 0, onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenBots, onOpenSupport, onOpenPrivacy, onOpenNotifications, onOpenAppearance, onOpenSavedNotes, onOpenPayments, onOpenVerification, onOpenPromo }: { onSettings: () => void; currentUser: User; onUserUpdate?: (u: User) => void; onBack?: () => void; chatsCount?: number; onOpenWallet?: () => void; onOpenPro?: () => void; onOpenProSettings?: () => void; onOpenProgress?: () => void; onOpenBots?: () => void; onOpenSupport?: () => void; onOpenPrivacy?: () => void; onOpenNotifications?: () => void; onOpenAppearance?: () => void; onOpenSavedNotes?: () => void; onOpenPayments?: () => void; onOpenVerification?: () => void; onOpenPromo?: () => void; }) {
   useEdgeSwipeBack(onBack);
   const { t: tr } = useT();
   const [editing, setEditing] = useState(false);
@@ -416,6 +416,7 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
           ...(onOpenProgress ? [{ icon: "Trophy", label: tr("nav.progress"), sub: `${currentUser.level ? `Уровень ${currentUser.level} · ${currentUser.xp || 0} XP` : "Уровни, бейджи, топ"}`, action: onOpenProgress }] : []),
           ...(onOpenSavedNotes ? [{ icon: "Bookmark", label: tr("nav.saved"), sub: "Заметки, сохранёнки, идеи", action: onOpenSavedNotes }] : []),
           ...(onOpenPayments ? [{ icon: "ReceiptText", label: "Счета и платежи", sub: "Выставляй и оплачивай", action: onOpenPayments }] : []),
+          ...(onOpenPromo ? [{ icon: "Gift", label: "Промокоды и бонусы", sub: "Premium бесплатно и приглашения", action: onOpenPromo }] : []),
           ...(onOpenNotifications ? [{ icon: "Bell", label: tr("nav.notifications"), sub: "Звуки, вибрация, тихие часы", action: onOpenNotifications }] : []),
           ...(onOpenVerification ? [{ icon: "BadgeCheck", label: "Верификация", sub: currentUser.verified ? "Аккаунт подтверждён" : "Получить синюю галочку", action: onOpenVerification }] : []),
           ...(onOpenPrivacy ? [{ icon: "Shield", label: "Безопасность и приватность", sub: "PIN, кто видит, сессии", action: onOpenPrivacy }] : []),

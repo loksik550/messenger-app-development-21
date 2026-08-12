@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { api, avatarGrad, type Contact, type User, type Chat } from "@/lib/api";
-import { Avatar } from "@/components/messenger/ChatComponents";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 
 type PickerContact = { name?: string[]; tel?: string[] };

@@ -483,6 +483,7 @@ export interface WalletTransaction {
 export interface Group {
   id: number;
   name: string;
+  created_at?: number;
   description?: string;
   avatar_url?: string | null;
   owner_id: number;

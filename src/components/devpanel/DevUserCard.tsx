@@ -71,6 +71,8 @@ interface Props {
 
 export default function DevUserCard({ userId, onClose, onChanged, can }: Props) {
   const [tab, setTab] = useState<Tab>("profile");
+  const [banDialog, setBanDialog] = useState<null | { days: number }>(null);
+  const [banReason, setBanReason] = useState("");
   const [user, setUser] = useState<UserDetail | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [chats, setChats] = useState<ChatRow[]>([]);
@@ -160,8 +162,6 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
   }
 
   const banned = !!user.banned_until && user.banned_until > Date.now() / 1000;
-  const [banDialog, setBanDialog] = useState<null | { days: number }>(null);
-  const [banReason, setBanReason] = useState("");
 
   return (
     <Overlay onClose={onClose} wide>

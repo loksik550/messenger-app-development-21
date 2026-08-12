@@ -160,7 +160,7 @@ export default function ProgressPanel({ currentUser, onClose }: Props) {
                 {myRank && (
                   <div className="flex items-center gap-3 p-3 mb-1 rounded-2xl bg-violet-500/10 border border-violet-400/30">
                     <div className="w-10 text-center font-black text-violet-300 text-lg">#{myRank}</div>
-                    <Avatar name={currentUser.name} url={currentUser.avatar_url} size={36} />
+                    <Avatar label={currentUser.name[0]?.toUpperCase() || "?"} id={currentUser.id} src={currentUser.avatar_url} size="md" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold truncate">Ты</div>
                       <div className="text-[11px] text-muted-foreground">Уровень {progress.level} · {progress.xp} XP</div>
@@ -178,7 +178,7 @@ export default function ProgressPanel({ currentUser, onClose }: Props) {
                         }`}>
                           {it.rank <= 3 ? ["🥇", "🥈", "🥉"][it.rank - 1] : `#${it.rank}`}
                         </div>
-                        <Avatar name={it.name} url={it.avatar_url} size={36} />
+                        <Avatar label={it.name[0]?.toUpperCase() || "?"} id={it.id} src={it.avatar_url} size="md" />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-bold truncate">{it.name}</div>
                           <div className="text-[11px] text-muted-foreground">Уровень {it.level}</div>

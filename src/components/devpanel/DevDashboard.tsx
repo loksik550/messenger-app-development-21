@@ -20,9 +20,23 @@ interface ModerationData {
   removed_messages_24h: number;
 }
 
+interface SubsData {
+  active: number;
+  expiring_7d: number;
+  trials_used: number;
+  expired: number;
+  plans: number;
+  revenue_30d: number;
+  purchases_30d: number;
+  promo_activations_30d: number;
+  referrals: number;
+  by_plan: { plan: string; count: number; sum: number }[];
+}
+
 export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) => void } = {}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [mod, setMod] = useState<ModerationData | null>(null);
+  const [subs, setSubs] = useState<SubsData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -35,6 +49,12 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
         setMod(m.moderation);
       } catch {
         /* раздел модерации может быть недоступен по правам */
+      }
+      try {
+        const sres = await devApi<{ subscriptions: SubsData }>("subscriptions_summary");
+        setSubs(sres.subscriptions);
+      } catch {
+        /* раздел подписок может быть недоступен по правам */
       }
       setError("");
     } catch (e) {
@@ -117,6 +137,61 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
         </div>
       </div>
 
+      {subs && (
+        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h3 className="font-semibold">Premium, промокоды и рефералы</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Доход, подписки и бонусные программы</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => onNavigate?.("plans")}
+                className="text-xs px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition"
+              >
+                Тарифы
+              </button>
+              <button
+                onClick={() => onNavigate?.("promo")}
+                className="text-xs px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition"
+              >
+                Промокоды
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <SubCard label="Активных подписок" value={formatNum(subs.active)} icon="Crown" accent />
+            <SubCard label="Доход за 30 дней" value={`${formatNum(subs.revenue_30d)} ₽`} icon="Banknote" />
+            <SubCard label="Покупок за 30 дней" value={formatNum(subs.purchases_30d)} icon="ShoppingCart" />
+            <SubCard label="Тарифов в продаже" value={formatNum(subs.plans)} icon="Tags" />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <MiniStat label="Истекают за 7 дней" value={subs.expiring_7d} icon="Clock" />
+            <MiniStat label="Пробных использовано" value={subs.trials_used} icon="Gift" />
+            <MiniStat label="Промокодов за 30 дн." value={subs.promo_activations_30d} icon="Ticket" />
+            <MiniStat label="Приглашено друзей" value={subs.referrals} icon="Users" />
+          </div>
+
+          {subs.by_plan.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-white/8">
+              <div className="text-xs text-slate-500 mb-2">Продажи по тарифам</div>
+              <div className="space-y-1.5">
+                {subs.by_plan.slice(0, 5).map((b) => (
+                  <div key={b.plan} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-mono">{b.plan}</span>
+                    <span className="text-slate-500">
+                      {formatNum(b.count)} шт · {formatNum(b.sum)} ₽
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {mod && (
         <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -195,6 +270,20 @@ function StatCard({ label, value, icon, color, sub }: { label: string; value: nu
       <div className="text-3xl font-bold tracking-tight">{formatNum(value)}</div>
       <div className="text-sm text-slate-300 mt-1">{label}</div>
       <div className="text-xs text-slate-500 mt-1">{sub}</div>
+    </div>
+  );
+}
+
+function SubCard({ label, value, icon, accent }: {
+  label: string; value: string; icon: string; accent?: boolean;
+}) {
+  return (
+    <div className={`rounded-xl p-4 border ${
+      accent ? "bg-amber-500/10 border-amber-500/25" : "bg-white/[0.03] border-white/8"
+    }`}>
+      <Icon name={icon} size={16} className={accent ? "text-amber-400 mb-2" : "text-slate-500 mb-2"} />
+      <div className={`text-xl font-bold ${accent ? "text-amber-300" : ""}`}>{value}</div>
+      <div className="text-xs text-slate-500 mt-0.5">{label}</div>
     </div>
   );
 }
