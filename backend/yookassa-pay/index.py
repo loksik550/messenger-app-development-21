@@ -32,12 +32,18 @@ def get_schema():
     return f"{s}." if s else ""
 
 
-def create_yookassa_payment(shop_id, secret_key, amount, description, return_url, customer_email, metadata):
+def create_yookassa_payment(shop_id, secret_key, amount, description, return_url,
+                            customer_email, metadata, method="card"):
+    """Создаёт платёж. method="sbp" — оплата по QR-коду СБП, иначе обычная форма."""
     auth = base64.b64encode(f"{shop_id}:{secret_key}".encode()).decode()
+    if method == "sbp":
+        confirmation = {"type": "qr"}
+    else:
+        confirmation = {"type": "redirect", "return_url": return_url}
     payload = {
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
         "capture": True,
-        "confirmation": {"type": "redirect", "return_url": return_url},
+        "confirmation": confirmation,
         "description": description,
         "receipt": {
             "customer": {"email": customer_email},
@@ -52,6 +58,8 @@ def create_yookassa_payment(shop_id, secret_key, amount, description, return_url
         },
         "metadata": metadata,
     }
+    if method == "sbp":
+        payload["payment_method_data"] = {"type": "sbp"}
     req = Request(
         YOOKASSA_API_URL,
         data=json.dumps(payload).encode('utf-8'),
@@ -87,6 +95,31 @@ def handler(event, context):
     user_id = headers.get('X-User-Id') or headers.get('x-user-id') or data.get('user_id')
     if not user_id:
         return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Нужен X-User-Id'})}
+
+    # Проверка статуса платежа — нужна при оплате по QR-коду СБП,
+    # там пользователь не возвращается на сайт автоматически
+    if (data.get('action') or '') == 'check_status':
+        shop_id = os.environ.get('YOOKASSA_SHOP_ID', '')
+        secret_key = os.environ.get('YOOKASSA_SECRET_KEY', '')
+        payment_id = (data.get('payment_id') or '').strip()
+        if not shop_id or not secret_key:
+            return {'statusCode': 503, 'headers': HEADERS,
+                    'body': json.dumps({'error': 'ЮKassa не настроена'})}
+        if not payment_id:
+            return {'statusCode': 400, 'headers': HEADERS,
+                    'body': json.dumps({'error': 'Нужен payment_id'})}
+        auth = base64.b64encode(f"{shop_id}:{secret_key}".encode()).decode()
+        req = Request(
+            f"{YOOKASSA_API_URL}/{payment_id}",
+            headers={'Authorization': f'Basic {auth}'},
+            method='GET',
+        )
+        with urlopen(req, timeout=20) as response:
+            yk = json.loads(response.read().decode())
+        return {'statusCode': 200, 'headers': HEADERS, 'body': json.dumps({
+            'status': yk.get('status'),
+            'paid': bool(yk.get('paid')),
+        })}
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
@@ -114,6 +147,7 @@ def handler(event, context):
         return {'statusCode': 503, 'headers': HEADERS, 'body': json.dumps({'error': 'ЮKassa не настроена. Добавь YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY в секреты проекта.'})}
 
     purpose = data.get('purpose') or 'wallet_topup'
+    pay_method = 'sbp' if (data.get('method') or '') == 'sbp' else 'card'
     related_id = data.get('related_id')
     extra = data.get('extra') or {}
     descriptions = {
@@ -154,10 +188,14 @@ def handler(event, context):
             shop_id=shop_id, secret_key=secret_key, amount=amount,
             description=f"{description} ({order_number})",
             return_url=return_url, customer_email=user_email, metadata=metadata,
+            method=pay_method,
         )
 
         payment_id = yk.get('id')
-        confirmation_url = (yk.get('confirmation') or {}).get('confirmation_url', '')
+        conf = yk.get('confirmation') or {}
+        # Для СБП ЮKassa отдаёт строку QR-кода вместо ссылки на форму оплаты
+        qr_data = conf.get('confirmation_data', '')
+        confirmation_url = conf.get('confirmation_url', '') or qr_data
 
         cur.execute(
             f"UPDATE {S}orders SET yookassa_payment_id=%s, payment_url=%s, updated_at=%s WHERE id=%s",
@@ -173,6 +211,8 @@ def handler(event, context):
                 'order_number': order_number,
                 'payment_id': payment_id,
                 'payment_url': confirmation_url,
+                'qr_data': qr_data,
+                'method': pay_method,
                 'amount': amount,
                 'status': 'pending',
             }),

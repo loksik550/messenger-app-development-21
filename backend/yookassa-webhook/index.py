@@ -121,9 +121,18 @@ def handler(event, context):
                         (uid, amt, f"Пополнение через ЮKassa ({payment_method or 'card'})", nb, now_ts),
                     )
 
-                elif uid and purpose in ('pro_month', 'pro_year'):
-                    duration = 30 * 86400 if purpose == 'pro_month' else 365 * 86400
-                    plan_name = 'month' if purpose == 'pro_month' else 'year'
+                elif uid and purpose.startswith('pro_'):
+                    plan_name = purpose[4:] or 'month'
+                    # Срок берём из тарифов, настроенных в Dev-панели
+                    cur.execute(
+                        f"SELECT duration_days FROM {S}premium_plans WHERE code = %s",
+                        (plan_name,),
+                    )
+                    prow = cur.fetchone()
+                    if prow and prow[0]:
+                        duration = int(prow[0]) * 86400
+                    else:
+                        duration = 365 * 86400 if plan_name == 'year' else 30 * 86400
                     cur.execute(f"SELECT COALESCE(pro_until,0) FROM {S}users WHERE id=%s", (uid,))
                     cur_until = int((cur.fetchone() or [0])[0] or 0)
                     new_until = max(cur_until, now_ts) + duration
@@ -132,6 +141,13 @@ def handler(event, context):
                         f"""INSERT INTO {S}pro_subscriptions (user_id, plan, amount, source, yookassa_payment_id, starts_at, ends_at, is_trial, created_at)
                             VALUES (%s,%s,%s,'yookassa',%s,%s,%s,FALSE,%s)""",
                         (uid, plan_name, amt, payment_id, now_ts, new_until, now_ts),
+                    )
+                    cur.execute(
+                        f"""INSERT INTO {S}user_notifications (user_id, kind, title, body)
+                            VALUES (%s, 'premium', %s, %s)""",
+                        (uid, 'Premium активирован',
+                         f'Оплата прошла успешно. Подписка действует до '
+                         f'{datetime.utcfromtimestamp(new_until).strftime("%d.%m.%Y")}.'),
                     )
 
                 elif uid and purpose == 'lightning':
