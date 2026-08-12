@@ -15,11 +15,12 @@ import DevSettings from "@/components/devpanel/DevSettings";
 import DevVerification from "@/components/devpanel/DevVerification";
 import DevPlans from "@/components/devpanel/DevPlans";
 import DevPromo from "@/components/devpanel/DevPromo";
+import DevPayments from "@/components/devpanel/DevPayments";
 import DevTopBar from "@/components/devpanel/DevTopBar";
 
 type Section =
   | "dashboard" | "users" | "channels" | "verification" | "reports"
-  | "support" | "plans" | "promo" | "logs" | "services" | "team" | "settings";
+  | "support" | "plans" | "promo" | "payments" | "logs" | "services" | "team" | "settings";
 
 const NAV: { key: Section; label: string; icon: string; perm: string }[] = [
   { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard" },
@@ -30,6 +31,7 @@ const NAV: { key: Section; label: string; icon: string; perm: string }[] = [
   { key: "support", label: "Поддержка", icon: "LifeBuoy", perm: "support" },
   { key: "plans", label: "Тарифы Premium", icon: "Crown", perm: "dashboard" },
   { key: "promo", label: "Промокоды и бонусы", icon: "Ticket", perm: "dashboard" },
+  { key: "payments", label: "Платежи", icon: "Receipt", perm: "dashboard" },
   { key: "logs", label: "Логи и события", icon: "ScrollText", perm: "logs" },
   { key: "services", label: "Серверы и доступ", icon: "Server", perm: "services" },
   { key: "team", label: "Команда", icon: "UserCog", perm: "team" },
@@ -234,6 +236,7 @@ export default function DevPanel() {
           {activeSection === "support" && <DevSupport />}
           {activeSection === "plans" && <DevPlans can={can} />}
           {activeSection === "promo" && <DevPromo can={can} />}
+          {activeSection === "payments" && <DevPayments can={can} />}
           {activeSection === "logs" && <DevLogs />}
           {activeSection === "services" && <DevServices />}
           {activeSection === "team" && <DevTeam myId={admin.id} can={can} />}

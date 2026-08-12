@@ -3,6 +3,9 @@ import json
 import time
 import hashlib
 import secrets
+import base64
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 import psycopg2
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
@@ -56,6 +59,9 @@ ACTION_PERMS = {
     "notifications": "dashboard", "notifications_read": "dashboard",
     "moderation_summary": "dashboard",
     "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
+    "payments": "dashboard", "payments_summary": "dashboard",
+    "payment_refund": "settings", "subscription_extend": "settings",
+    "subscription_cancel": "settings",
     "subscriptions_summary": "dashboard",
 }
 
@@ -1088,6 +1094,208 @@ def handler(event: dict, context) -> dict:
                 "revenue_30d": float(rev_row[0] or 0), "purchases_30d": int(rev_row[1] or 0),
                 "by_plan": by_plan, "promo_activations_30d": promo_used, "referrals": refs,
             }})
+
+        # ── Платежи ───────────────────────────────────────────────────────
+        if action == "payments":
+            status_f = (body.get("status") or "all").strip()
+            query = (body.get("query") or "").strip()
+            limit = min(int(body.get("limit") or 50), 200)
+
+            where = []
+            params = []
+            if status_f == "succeeded":
+                where.append("o.status IN ('paid', 'succeeded')")
+            elif status_f == "pending":
+                where.append("o.status = 'pending'")
+            elif status_f == "canceled":
+                where.append("o.status IN ('canceled', 'failed')")
+            elif status_f == "refunded":
+                where.append("o.refunded_amount > 0")
+            if query:
+                where.append("(o.order_number ILIKE %s OR o.user_email ILIKE %s OR u.name ILIKE %s)")
+                like = f"%{query}%"
+                params += [like, like, like]
+
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+            params.append(limit)
+
+            cur.execute(
+                f"SELECT o.id, o.order_number, o.user_email, o.amount, o.status, "
+                f"o.yookassa_payment_id, o.created_at, o.paid_at, o.nova_user_id, u.name, "
+                f"o.purpose, COALESCE(o.payment_method, ''), COALESCE(o.refunded_amount, 0), "
+                f"o.refunded_at, COALESCE(o.refund_reason, ''), COALESCE(o.cancel_reason, '') "
+                f"FROM {SCHEMA}.orders o LEFT JOIN {SCHEMA}.users u ON u.id = o.nova_user_id "
+                f"{where_sql} ORDER BY o.created_at DESC LIMIT %s",
+                tuple(params),
+            )
+            items = [{
+                "id": r[0], "order_number": r[1], "email": r[2],
+                "amount": float(r[3] or 0), "status": r[4] or "pending",
+                "payment_id": r[5] or "", 
+                "created_at": r[6].isoformat() if r[6] else None,
+                "paid_at": r[7].isoformat() if r[7] else None,
+                "user_id": r[8], "user_name": r[9] or (f"ID {r[8]}" if r[8] else "—"),
+                "purpose": r[10] or "", "method": r[11],
+                "refunded": float(r[12] or 0),
+                "refunded_at": r[13].isoformat() if r[13] else None,
+                "refund_reason": r[14], "cancel_reason": r[15],
+            } for r in cur.fetchall()]
+            return ok({"payments": items})
+
+        if action == "payments_summary":
+            cur.execute(
+                f"SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM {SCHEMA}.orders "
+                f"WHERE status IN ('paid', 'succeeded')"
+            )
+            ok_row = cur.fetchone()
+            cur.execute(
+                f"SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM {SCHEMA}.orders "
+                f"WHERE status IN ('paid', 'succeeded') AND created_at > NOW() - INTERVAL '30 days'"
+            )
+            m30 = cur.fetchone()
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.orders WHERE status = 'pending'")
+            pending = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.orders WHERE status IN ('canceled', 'failed')"
+            )
+            failed = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT COUNT(*), COALESCE(SUM(refunded_amount), 0) FROM {SCHEMA}.orders "
+                f"WHERE refunded_amount > 0"
+            )
+            ref = cur.fetchone()
+            cur.execute(
+                f"SELECT COALESCE(payment_method, 'не указан'), COUNT(*), COALESCE(SUM(amount), 0) "
+                f"FROM {SCHEMA}.orders WHERE status IN ('paid', 'succeeded') "
+                f"GROUP BY payment_method ORDER BY COUNT(*) DESC"
+            )
+            by_method = [{"method": r[0], "count": r[1], "sum": float(r[2] or 0)}
+                         for r in cur.fetchall()]
+
+            total_attempts = int(ok_row[0] or 0) + failed
+            conversion = round(int(ok_row[0] or 0) / total_attempts * 100, 1) if total_attempts else 0.0
+
+            return ok({"summary": {
+                "success_count": int(ok_row[0] or 0), "success_sum": float(ok_row[1] or 0),
+                "sum_30d": float(m30[1] or 0), "count_30d": int(m30[0] or 0),
+                "pending": pending, "failed": failed,
+                "refund_count": int(ref[0] or 0), "refund_sum": float(ref[1] or 0),
+                "conversion": conversion, "by_method": by_method,
+            }})
+
+        if action == "payment_refund":
+            oid = int(body.get("order_id") or 0)
+            reason = (body.get("reason") or "Возврат по обращению").strip()
+            amount_req = body.get("amount")
+
+            cur.execute(
+                f"SELECT amount, status, yookassa_payment_id, nova_user_id, "
+                f"COALESCE(refunded_amount, 0) FROM {SCHEMA}.orders WHERE id = %s",
+                (oid,),
+            )
+            r = cur.fetchone()
+            if not r:
+                return err("Платёж не найден", 404)
+            if r[1] not in ("paid", "succeeded"):
+                return err("Возврат возможен только по успешному платежу")
+            paid = float(r[0] or 0)
+            already = float(r[4] or 0)
+            amount = float(amount_req) if amount_req else (paid - already)
+            if amount <= 0 or already + amount > paid:
+                return err("Некорректная сумма возврата")
+
+            shop_id = os.environ.get("YOOKASSA_SHOP_ID", "")
+            secret_key = os.environ.get("YOOKASSA_SECRET_KEY", "")
+            yk_error = ""
+            if shop_id and secret_key and r[2]:
+                try:
+                    auth = base64.b64encode(f"{shop_id}:{secret_key}".encode()).decode()
+                    payload = json.dumps({
+                        "payment_id": r[2],
+                        "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+                        "description": reason[:250],
+                    }).encode()
+                    req = Request(
+                        "https://api.yookassa.ru/v3/refunds",
+                        data=payload,
+                        headers={
+                            "Authorization": f"Basic {auth}",
+                            "Idempotence-Key": secrets.token_hex(16),
+                            "Content-Type": "application/json",
+                        },
+                        method="POST",
+                    )
+                    with urlopen(req, timeout=25) as resp:
+                        json.loads(resp.read().decode())
+                except HTTPError as e:
+                    yk_error = e.read().decode()[:200]
+                except Exception as e:
+                    yk_error = str(e)[:200]
+
+            if yk_error:
+                return err(f"Платёжная система отклонила возврат: {yk_error}")
+
+            cur.execute(
+                f"UPDATE {SCHEMA}.orders SET refunded_amount = COALESCE(refunded_amount, 0) + %s, "
+                f"refunded_at = NOW(), refund_reason = %s, refunded_by = %s, "
+                f"status = CASE WHEN COALESCE(refunded_amount, 0) + %s >= amount "
+                f"THEN 'refunded' ELSE status END WHERE id = %s",
+                (amount, reason, admin["id"], amount, oid),
+            )
+            if r[3]:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                    f"VALUES (%s, 'system', %s, %s)",
+                    (r[3], "Возврат оформлен",
+                     f"{amount:.2f} руб. вернутся на счёт в течение нескольких дней. {reason}"),
+                )
+            audit(cur, admin, "payment_refund", f"Возврат {amount:.2f} руб. по заказу #{oid}: {reason}", ip)
+            return ok({"success": True, "refunded": amount})
+
+        if action == "subscription_extend":
+            uid = int(body.get("user_id") or 0)
+            days = int(body.get("days") or 0)
+            reason = (body.get("reason") or "Компенсация от команды Nova").strip()
+            if uid <= 0 or days == 0:
+                return err("Укажите пользователя и количество дней")
+
+            now = int(time.time())
+            cur.execute(f"SELECT COALESCE(pro_until, 0), name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            u = cur.fetchone()
+            if not u:
+                return err("Пользователь не найден", 404)
+            base = max(int(u[0] or 0), now)
+            new_until = base + days * 86400
+            if new_until < now:
+                new_until = now
+            cur.execute(f"UPDATE {SCHEMA}.users SET pro_until = %s WHERE id = %s", (new_until, uid))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.pro_subscriptions "
+                f"(user_id, plan, amount, source, starts_at, ends_at, is_trial, created_at) "
+                f"VALUES (%s, 'manual', 0, 'manual', %s, %s, FALSE, %s)",
+                (uid, now, new_until, now),
+            )
+            if days > 0:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                    f"VALUES (%s, 'premium', %s, %s)",
+                    (uid, f"Premium продлён на {days} дн.", reason),
+                )
+            audit(cur, admin, "subscription_extend",
+                  f"Подписка ID {uid} изменена на {days} дн.: {reason}", ip)
+            return ok({"success": True, "pro_until": new_until})
+
+        if action == "subscription_cancel":
+            uid = int(body.get("user_id") or 0)
+            reason = (body.get("reason") or "").strip()
+            cur.execute(f"UPDATE {SCHEMA}.users SET pro_until = NULL WHERE id = %s", (uid,))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                f"VALUES (%s, 'system', %s, %s)",
+                (uid, "Подписка Premium отключена", reason or "Обратитесь в поддержку за подробностями."),
+            )
+            audit(cur, admin, "subscription_cancel", f"Отключена подписка ID {uid}", ip)
+            return ok({"success": True})
 
         # ── Промокоды ─────────────────────────────────────────────────────
         if action == "promos":

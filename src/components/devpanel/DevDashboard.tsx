@@ -157,6 +157,12 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
               >
                 Промокоды
               </button>
+              <button
+                onClick={() => onNavigate?.("payments")}
+                className="text-xs px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition"
+              >
+                Платежи
+              </button>
             </div>
           </div>
 

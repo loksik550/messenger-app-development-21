@@ -103,8 +103,9 @@ def handler(event, context):
         if status == 'succeeded':
             if current_status != 'paid':
                 cur.execute(
-                    f"UPDATE {S}orders SET status='paid', paid_at=%s, updated_at=%s WHERE id=%s",
-                    (now_iso, now_iso, order_id),
+                    f"UPDATE {S}orders SET status='paid', paid_at=%s, updated_at=%s, "
+                    f"payment_method=%s WHERE id=%s",
+                    (now_iso, now_iso, payment_method or 'card', order_id),
                 )
                 amt = float(order_amount)
                 uid = int(nova_user_id) if nova_user_id else None
@@ -227,7 +228,11 @@ def handler(event, context):
 
         elif status == 'canceled':
             if current_status not in ('paid', 'canceled'):
-                cur.execute(f"UPDATE {S}orders SET status='canceled', updated_at=%s WHERE id=%s", (now_iso, order_id))
+                cancel_reason = ((payment_object.get('cancellation_details') or {}).get('reason') or '')
+                cur.execute(
+                    f"UPDATE {S}orders SET status='canceled', updated_at=%s, cancel_reason=%s WHERE id=%s",
+                    (now_iso, cancel_reason, order_id),
+                )
                 conn.commit()
 
         return {'statusCode': 200, 'headers': HEADERS, 'body': json.dumps({'status': 'ok'})}
