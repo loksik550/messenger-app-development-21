@@ -280,6 +280,64 @@ export default function Index() {
     document.title = total > 0 ? `(${total > 99 ? "99+" : total}) ${base}` : base;
   }, [realChats]);
 
+  // Уведомления от команды (например, выдали галочку)
+  useEffect(() => {
+    if (!currentUser) return;
+    const uid = currentUser.id;
+    let alive = true;
+    const check = async () => {
+      const r = await api("my_notifications", {}, uid);
+      if (!alive || !r || r.error || !r.items) return;
+      const fresh = (r.items as Array<{ id: number; title: string; body: string; read: boolean }>)
+        .filter(n => !n.read);
+      if (fresh.length === 0) return;
+      await api("my_notifications_read", {}, uid);
+      for (const n of fresh) {
+        toast({ title: n.title, description: n.body });
+      }
+      // Галочку могли только что выдать — подтянем профиль
+      const me = await api("refresh_me", {}, uid);
+      if (alive && me?.user) setCurrentUser(prev => (prev ? { ...prev, ...me.user } : prev));
+    };
+    check();
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") check();
+    }, 45000);
+    return () => { alive = false; clearInterval(t); };
+  }, [currentUser?.id]);
+
+  // Свежие данные профиля (баланс, галочка) при открытии профиля
+  useEffect(() => {
+    if (!currentUser || view !== "profile") return;
+    let alive = true;
+    api("refresh_me", {}, currentUser.id).then(r => {
+      if (!alive || !r || r.error || !r.user) return;
+      setCurrentUser(prev => (prev ? { ...prev, ...r.user } : prev));
+    });
+    return () => { alive = false; };
+  }, [view, currentUser?.id]);
+
+  // Отметка присутствия: сразу «в сети», при уходе — «не в сети»
+  useEffect(() => {
+    if (!currentUser) return;
+    const uid = currentUser.id;
+    const beat = (online: boolean) => { api("heartbeat", { online }, uid); };
+    beat(true);
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") beat(true);
+    }, 30000);
+    const onVis = () => beat(document.visibilityState === "visible");
+    const onLeave = () => beat(false);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onLeave);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", onLeave);
+      beat(false);
+    };
+  }, [currentUser?.id]);
+
   // Загрузка чатов
   useEffect(() => {
     if (!currentUser) return;

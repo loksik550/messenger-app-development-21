@@ -96,6 +96,21 @@ def client_ip(event) -> str:
     return (ctx.get("identity") or {}).get("sourceIp") or ""
 
 
+def _notify_user_verified(cur, user_id: int, approved: bool, note: str = ""):
+    """Записывает пользователю уведомление о решении по верификации."""
+    if approved:
+        title = "Аккаунт подтверждён"
+        text = "Рядом с вашим именем теперь синяя галочка."
+    else:
+        title = "Заявка на верификацию отклонена"
+        text = note or "Вы можете подать новую заявку с уточнёнными данными."
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+        f"VALUES (%s, %s, %s, %s)",
+        (int(user_id), "verification", title, text),
+    )
+
+
 def audit(cur, admin, action, details="", ip=""):
     cur.execute(
         f"INSERT INTO {SCHEMA}.dev_audit (admin_id, admin_email, action, details, ip_addr) "
@@ -328,13 +343,15 @@ def handler(event: dict, context) -> dict:
             if q:
                 like = f"%{q}%"
                 cur.execute(
-                    f"SELECT id, name, phone, created_at, last_seen, avatar_url FROM {SCHEMA}.users "
+                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE) "
+                    f"FROM {SCHEMA}.users "
                     f"WHERE name ILIKE %s OR phone ILIKE %s ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
                     (like, like, limit, offset),
                 )
             else:
                 cur.execute(
-                    f"SELECT id, name, phone, created_at, last_seen, avatar_url FROM {SCHEMA}.users "
+                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE) "
+                    f"FROM {SCHEMA}.users "
                     f"ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
                     (limit, offset),
                 )
@@ -346,7 +363,8 @@ def handler(event: dict, context) -> dict:
             users = [{
                 "id": r[0], "name": r[1], "phone": r[2],
                 "created_at": r[3], "last_seen": r[4], "avatar_url": r[5],
-                "online": bool(r[4] and r[4] > now - 300),
+                "verified": bool(r[6]) if len(r) > 6 else False,
+                "online": bool(r[4] and r[4] > now - 60),
             } for r in rows]
             return ok({"users": users, "total": total})
 
@@ -354,7 +372,7 @@ def handler(event: dict, context) -> dict:
             uid = int(body.get("user_id") or 0)
             cur.execute(
                 f"SELECT id, name, phone, created_at, last_seen, avatar_url, about, banned_until, banned_reason, "
-                f"COALESCE(wallet_balance, 0) FROM {SCHEMA}.users WHERE id = %s",
+                f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE) FROM {SCHEMA}.users WHERE id = %s",
                 (uid,),
             )
             r = cur.fetchone()
@@ -368,6 +386,7 @@ def handler(event: dict, context) -> dict:
                 "id": r[0], "name": r[1], "phone": r[2], "created_at": r[3],
                 "last_seen": r[4], "avatar_url": r[5], "about": r[6],
                 "banned_until": r[7], "banned_reason": r[8], "wallet_balance": int(r[9] or 0),
+                "verified": bool(r[10]) if len(r) > 10 else False,
                 "messages": msg_count, "contacts": contacts,
             }})
 
@@ -800,6 +819,9 @@ def handler(event: dict, context) -> dict:
                         f"WHERE id = %s",
                         (now, category or "personal", uid),
                     )
+                _notify_user_verified(cur, uid, True)
+            else:
+                _notify_user_verified(cur, uid, False, note)
 
             audit(cur, admin, "verify_decide",
                   f"Заявка #{vid} ({full_name or uid}): {'одобрена' if approve else 'отклонена'}", ip)
@@ -813,6 +835,13 @@ def handler(event: dict, context) -> dict:
                 f"UPDATE {SCHEMA}.users SET verified = %s, verified_at = %s WHERE id = %s",
                 (value, now if value else None, uid),
             )
+            if value:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.verification_requests SET status = 'approved', reviewer_id = %s, "
+                    f"reviewed_at = %s WHERE user_id = %s AND status = 'pending'",
+                    (admin["id"], now, uid),
+                )
+            _notify_user_verified(cur, uid, value)
             audit(cur, admin, "set_verified",
                   f"ID {uid}: галочка {'выдана' if value else 'снята'}", ip)
             return ok({"success": True})

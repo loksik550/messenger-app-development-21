@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, type DevAdmin } from "@/lib/devApi";
+import { UPLOAD_API } from "@/lib/api";
 import { Loading, ErrorBox } from "./DevDashboard";
 
 interface Props {
@@ -239,17 +240,62 @@ function MyProfile({ admin, onChanged }: { admin: DevAdmin; onChanged?: (a: DevA
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const pickFile = (file: File) => {
-    if (file.size > 1.5 * 1024 * 1024) {
-      setErr("Файл больше 1.5 МБ. Выберите изображение поменьше.");
+  const pickFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setErr("Нужен файл изображения");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAvatar(String(reader.result || ""));
-      setErr("");
-    };
-    reader.readAsDataURL(file);
+    setErr("");
+    setBusy(true);
+    try {
+      // Уменьшаем снимок до 512px — грузится быстро и не упирается в лимит
+      const url = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const size = 512;
+            const scale = Math.min(size / img.width, size / img.height, 1);
+            const w = Math.round(img.width * scale);
+            const h = Math.round(img.height * scale);
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              reject(new Error("Не удалось обработать изображение"));
+              return;
+            }
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", 0.85));
+          };
+          img.onerror = () => reject(new Error("Не удалось прочитать изображение"));
+          img.src = String(reader.result || "");
+        };
+        reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch(UPLOAD_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Id": "0" },
+        body: JSON.stringify({
+          data: url.split(",")[1],
+          mime: "image/jpeg",
+          file_name: `admin_${Date.now()}.jpg`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.url) {
+        setAvatar(data.url);
+      } else {
+        setErr(data.error || "Не удалось загрузить фото");
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Не удалось загрузить фото");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const save = async () => {
@@ -287,9 +333,10 @@ function MyProfile({ admin, onChanged }: { admin: DevAdmin; onChanged?: (a: DevA
         <div className="flex-1 min-w-0 space-y-2">
           <button
             onClick={() => fileRef.current?.click()}
-            className="w-full py-2 rounded-xl bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition"
+            disabled={busy}
+            className="w-full py-2 rounded-xl bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition disabled:opacity-50"
           >
-            Загрузить фото
+            {busy ? "Загружаем..." : "Загрузить фото"}
           </button>
           {avatar && (
             <button

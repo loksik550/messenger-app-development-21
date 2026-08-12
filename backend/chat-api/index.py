@@ -514,6 +514,9 @@ def handler(event: dict, context) -> dict:
 
     # ── get_chats ─────────────────────────────────────────────────────────────
     if action == "get_chats":
+        if user_id:
+            cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s",
+                        (int(time.time()), int(user_id)))
         if not user_id:
             conn.close()
             return err("Нужен X-User-Id")
@@ -1804,6 +1807,60 @@ def handler(event: dict, context) -> dict:
         return ok({"ok": True})
 
     # ── update_profile ────────────────────────────────────────────────────────
+    if action == "refresh_me":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return err("Пользователь не найден", 404)
+        conn.close()
+        return ok({"user": serialize_user(row)})
+
+    if action == "heartbeat":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        now = int(time.time())
+        online_flag = body.get("online")
+        # при выходе со страницы отматываем время назад — собеседник сразу видит офлайн
+        ts = now if online_flag is not False else now - 120
+        cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (ts, int(user_id)))
+        conn.commit()
+        conn.close()
+        return ok({"ok": True, "ts": ts})
+
+    if action == "my_notifications":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(
+            f"SELECT id, kind, title, body, read_at, created_at FROM {SCHEMA}.user_notifications "
+            f"WHERE user_id = %s ORDER BY created_at DESC LIMIT 50",
+            (int(user_id),),
+        )
+        items = [{
+            "id": r[0], "kind": r[1], "title": r[2], "body": r[3],
+            "read": bool(r[4]), "created_at": r[5],
+        } for r in cur.fetchall()]
+        conn.close()
+        return ok({"items": items, "unread": sum(1 for i in items if not i["read"])})
+
+    if action == "my_notifications_read":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(
+            f"UPDATE {SCHEMA}.user_notifications SET read_at = %s "
+            f"WHERE user_id = %s AND read_at IS NULL",
+            (int(time.time()), int(user_id)),
+        )
+        conn.commit()
+        conn.close()
+        return ok({"success": True})
+
     if action == "verification_status":
         if not user_id:
             conn.close()

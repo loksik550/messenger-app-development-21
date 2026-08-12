@@ -15,6 +15,7 @@ interface UserDetail {
   messages: number;
   contacts: number;
   wallet_balance?: number;
+  verified?: boolean;
 }
 
 interface Device {
@@ -191,6 +192,9 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-bold text-lg truncate">{user.name || "Без имени"}</h3>
+              {user.verified && (
+                <Icon name="BadgeCheck" size={17} className="text-sky-400 shrink-0" />
+              )}
               {can("user_write") && (
                 <button
                   onClick={() => setRenaming(true)}
@@ -322,6 +326,23 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition disabled:opacity-50"
                   >
                     Выйти со всех устройств
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      run(async () => {
+                        await devApi("set_verified", { user_id: user.id, verified: !user.verified });
+                        await loadUser();
+                      })
+                    }
+                    disabled={busy}
+                    className={`px-3 py-2 rounded-xl border text-xs transition disabled:opacity-50 ${
+                      user.verified
+                        ? "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                        : "bg-sky-500/15 border-sky-500/25 text-sky-400 hover:bg-sky-500/25"
+                    }`}
+                  >
+                    {user.verified ? "Снять галочку" : "Выдать галочку"}
                   </button>
 
                   {banned ? (

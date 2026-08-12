@@ -12,6 +12,7 @@ interface DevUser {
   last_seen: number | null;
   avatar_url: string | null;
   online: boolean;
+  verified?: boolean;
 }
 
 export default function DevUsers({ can }: { can: (p: string) => boolean }) {
@@ -105,7 +106,12 @@ export default function DevUsers({ can }: { can: (p: string) => boolean }) {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-medium truncate">{u.name || "Без имени"}</div>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <div className="font-medium truncate">{u.name || "Без имени"}</div>
+                            {u.verified && (
+                              <Icon name="BadgeCheck" size={14} className="text-sky-400 shrink-0" />
+                            )}
+                          </div>
                           <div className="text-xs text-slate-500">ID {u.id}</div>
                         </div>
                       </div>
