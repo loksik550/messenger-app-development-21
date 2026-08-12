@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs, timeAgo, formatNum } from "@/lib/devApi";
+import DevUserBilling from "@/components/devpanel/DevUserBilling";
 
 const BAN_REASONS = [
   "Спам и массовые рассылки",
@@ -60,7 +61,7 @@ interface MediaFile {
   created_at: number;
 }
 
-type Tab = "profile" | "chats" | "media";
+type Tab = "profile" | "billing" | "chats" | "media";
 
 interface Props {
   userId: number;
@@ -233,6 +234,7 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
         {(
           [
             ["profile", "Профиль", "User"],
+            ["billing", "Оплаты", "Receipt"],
             ["chats", "Переписка", "MessagesSquare"],
             ["media", "Файлы", "Image"],
           ] as const
@@ -251,6 +253,14 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
       </div>
 
       <div className="max-h-[52vh] overflow-y-auto pr-1">
+        {tab === "billing" && (
+          <DevUserBilling
+            userId={user.id}
+            canEdit={can("settings")}
+            onChanged={loadUser}
+          />
+        )}
+
         {tab === "profile" && (
           <div className="space-y-4">
             {banned && (

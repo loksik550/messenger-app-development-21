@@ -60,6 +60,7 @@ ACTION_PERMS = {
     "moderation_summary": "dashboard",
     "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
     "payments": "dashboard", "payments_summary": "dashboard",
+    "user_billing": "users",
     "payment_refund": "settings", "subscription_extend": "settings",
     "subscription_cancel": "settings",
     "subscriptions_summary": "dashboard",
@@ -1094,6 +1095,78 @@ def handler(event: dict, context) -> dict:
                 "revenue_30d": float(rev_row[0] or 0), "purchases_30d": int(rev_row[1] or 0),
                 "by_plan": by_plan, "promo_activations_30d": promo_used, "referrals": refs,
             }})
+
+        if action == "user_billing":
+            uid = int(body.get("user_id") or 0)
+            now = int(time.time())
+
+            cur.execute(
+                f"SELECT COALESCE(pro_until, 0), COALESCE(pro_trial_used, FALSE), "
+                f"COALESCE(wallet_balance, 0) FROM {SCHEMA}.users WHERE id = %s",
+                (uid,),
+            )
+            u = cur.fetchone()
+            if not u:
+                return err("Пользователь не найден", 404)
+            pro_until = int(u[0] or 0)
+
+            cur.execute(
+                f"SELECT id, order_number, amount, status, created_at, paid_at, purpose, "
+                f"COALESCE(payment_method, ''), COALESCE(refunded_amount, 0) "
+                f"FROM {SCHEMA}.orders WHERE nova_user_id = %s ORDER BY created_at DESC LIMIT 30",
+                (uid,),
+            )
+            payments = [{
+                "id": r[0], "order_number": r[1], "amount": float(r[2] or 0),
+                "status": r[3] or "pending",
+                "created_at": r[4].isoformat() if r[4] else None,
+                "paid_at": r[5].isoformat() if r[5] else None,
+                "purpose": r[6] or "", "method": r[7],
+                "refunded": float(r[8] or 0),
+            } for r in cur.fetchall()]
+
+            cur.execute(
+                f"SELECT plan, amount, source, starts_at, ends_at, is_trial, created_at "
+                f"FROM {SCHEMA}.pro_subscriptions WHERE user_id = %s "
+                f"ORDER BY created_at DESC LIMIT 30",
+                (uid,),
+            )
+            subs = [{
+                "plan": r[0], "amount": float(r[1] or 0), "source": r[2],
+                "starts_at": r[3], "ends_at": r[4], "is_trial": bool(r[5]),
+                "created_at": r[6],
+            } for r in cur.fetchall()]
+
+            cur.execute(
+                f"SELECT code, granted_days, created_at FROM {SCHEMA}.promo_activations "
+                f"WHERE user_id = %s ORDER BY created_at DESC LIMIT 10",
+                (uid,),
+            )
+            promos = [{"code": r[0], "days": r[1], "created_at": r[2]} for r in cur.fetchall()]
+
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.referrals WHERE inviter_id = %s", (uid,)
+            )
+            invited = cur.fetchone()[0]
+
+            paid_total = sum(p["amount"] for p in payments
+                             if p["status"] in ("paid", "succeeded"))
+            refunded_total = sum(p["refunded"] for p in payments)
+
+            return ok({
+                "billing": {
+                    "pro_until": pro_until or None,
+                    "is_pro": pro_until > now,
+                    "trial_used": bool(u[1]),
+                    "wallet": float(u[2] or 0),
+                    "paid_total": paid_total,
+                    "refunded_total": refunded_total,
+                    "invited": invited,
+                },
+                "payments": payments,
+                "subscriptions": subs,
+                "promos": promos,
+            })
 
         # ── Платежи ───────────────────────────────────────────────────────
         if action == "payments":
