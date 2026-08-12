@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs, timeAgo, formatNum } from "@/lib/devApi";
 
+const BAN_REASONS = [
+  "Спам и массовые рассылки",
+  "Оскорбления и травля",
+  "Мошенничество",
+  "Запрещённый контент",
+  "Обход блокировки",
+];
+
 interface UserDetail {
   id: number;
   name: string;
@@ -152,6 +160,8 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
   }
 
   const banned = !!user.banned_until && user.banned_until > Date.now() / 1000;
+  const [banDialog, setBanDialog] = useState<null | { days: number }>(null);
+  const [banReason, setBanReason] = useState("");
 
   return (
     <Overlay onClose={onClose} wide>
@@ -361,24 +371,14 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
                   ) : (
                     <>
                       <button
-                        onClick={() =>
-                          run(async () => {
-                            await devApi("ban_user", { user_id: user.id, days: 7 });
-                            await loadUser();
-                          })
-                        }
+                        onClick={() => { setBanDialog({ days: 7 }); setBanReason(""); }}
                         disabled={busy}
                         className="px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/25 text-amber-400 text-xs hover:bg-amber-500/25 transition disabled:opacity-50"
                       >
                         Бан 7 дней
                       </button>
                       <button
-                        onClick={() =>
-                          run(async () => {
-                            await devApi("ban_user", { user_id: user.id, days: 3650 });
-                            await loadUser();
-                          })
-                        }
+                        onClick={() => { setBanDialog({ days: 3650 }); setBanReason(""); }}
                         disabled={busy}
                         className="px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/25 text-red-400 text-xs hover:bg-red-500/25 transition disabled:opacity-50"
                       >
@@ -571,6 +571,74 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
           </div>
         )}
       </div>
+
+      {banDialog && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setBanDialog(null)}
+        >
+          <div
+            className="bg-[#12131f] border border-white/10 rounded-2xl p-5 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="font-semibold mb-1">
+              {banDialog.days >= 3650 ? "Блокировка навсегда" : `Блокировка на ${banDialog.days} дней`}
+            </h4>
+            <p className="text-xs text-slate-500 mb-4">
+              Причину увидит пользователь на экране блокировки
+            </p>
+
+            <div className="space-y-1.5 mb-3">
+              {BAN_REASONS.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setBanReason(r)}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs border transition ${
+                    banReason === r
+                      ? "bg-violet-600/20 border-violet-500/40 text-violet-200"
+                      : "bg-white/[0.03] border-white/8 text-slate-400 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+
+            <input
+              value={banReason}
+              onChange={(e) => setBanReason(e.target.value)}
+              placeholder="Или своя формулировка"
+              className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-violet-500/50 placeholder-slate-600 mb-4"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setBanDialog(null)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() =>
+                  run(async () => {
+                    await devApi("ban_user", {
+                      user_id: user.id,
+                      days: banDialog.days,
+                      reason: banReason.trim() || "Нарушение правил сервиса",
+                    });
+                    setBanDialog(null);
+                    await loadUser();
+                  })
+                }
+                disabled={busy}
+                className="flex-1 py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-medium disabled:opacity-50"
+              >
+                Заблокировать
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Overlay>
   );
 }

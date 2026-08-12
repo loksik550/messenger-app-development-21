@@ -270,6 +270,53 @@ def handler(event: dict, context) -> dict:
     conn = get_conn()
     cur = conn.cursor()
 
+    # ── Проверка блокировки ───────────────────────────────────────────────────
+    # Забаненный пользователь не может пользоваться приложением: разрешаем только
+    # чтение статуса бана и выход, всё остальное отклоняем с кодом 403.
+    BAN_ALLOWED = {"register", "auth_password", "auth_code", "send_code",
+                   "reset_password", "ban_status", "logout"}
+    if user_id and action not in BAN_ALLOWED:
+        try:
+            cur.execute(
+                f"SELECT banned_until, banned_reason FROM {SCHEMA}.users WHERE id = %s",
+                (int(user_id),),
+            )
+            brow = cur.fetchone()
+            if brow and brow[0] and int(brow[0]) > int(time.time()):
+                conn.close()
+                return {
+                    "statusCode": 403,
+                    "headers": CORS,
+                    "body": json.dumps({
+                        "error": "Аккаунт заблокирован",
+                        "banned": True,
+                        "banned_until": int(brow[0]),
+                        "banned_reason": brow[1] or "",
+                    }, ensure_ascii=False),
+                }
+        except (ValueError, TypeError):
+            pass
+
+    if action == "ban_status":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(
+            f"SELECT banned_until, banned_reason, banned_at FROM {SCHEMA}.users WHERE id = %s",
+            (int(user_id),),
+        )
+        r = cur.fetchone()
+        conn.close()
+        now = int(time.time())
+        active = bool(r and r[0] and int(r[0]) > now)
+        return ok({
+            "banned": active,
+            "banned_until": int(r[0]) if active and r[0] else None,
+            "banned_reason": (r[1] or "") if active else "",
+            "banned_at": int(r[2]) if active and r and r[2] else None,
+            "forever": bool(active and r[0] and int(r[0]) - now > 3600 * 24 * 3000),
+        })
+
     # ── register ──────────────────────────────────────────────────────────────
     if action == "register":
         phone = (body.get("phone") or "").strip()
@@ -406,6 +453,24 @@ def handler(event: dict, context) -> dict:
                     f"UPDATE {SCHEMA}.users SET password_hash = %s WHERE id = %s",
                     (_hash_password(password), user_id_db)
                 )
+            # Забаненного не пускаем внутрь — показываем причину
+            cur.execute(
+                f"SELECT banned_until, banned_reason FROM {SCHEMA}.users WHERE id = %s",
+                (user_id_db,),
+            )
+            brow = cur.fetchone()
+            if brow and brow[0] and int(brow[0]) > int(time.time()):
+                conn.close()
+                return {
+                    "statusCode": 403,
+                    "headers": CORS,
+                    "body": json.dumps({
+                        "error": "Аккаунт заблокирован",
+                        "banned": True,
+                        "banned_until": int(brow[0]),
+                        "banned_reason": brow[1] or "",
+                    }, ensure_ascii=False),
+                }
             cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (int(time.time()), user_id_db))
             cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (user_id_db,))
             row = cur.fetchone()
@@ -1885,6 +1950,76 @@ def handler(event: dict, context) -> dict:
                 "created_at": r[3], "reviewed_at": r[4],
             } if r else None,
         })
+
+    if action == "channel_verification_status":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        gid = int(body.get("group_id") or 0)
+        cur.execute(
+            f"SELECT COALESCE(verified, FALSE), owner_id FROM {SCHEMA}.groups WHERE id = %s",
+            (gid,),
+        )
+        g = cur.fetchone()
+        if not g:
+            conn.close()
+            return err("Группа не найдена", 404)
+        cur.execute(
+            f"SELECT id, status, reviewer_note, created_at FROM {SCHEMA}.verification_requests "
+            f"WHERE target_type = 'channel' AND target_id = %s ORDER BY created_at DESC LIMIT 1",
+            (gid,),
+        )
+        r = cur.fetchone()
+        conn.close()
+        return ok({
+            "verified": bool(g[0]),
+            "is_owner": int(g[1] or 0) == int(user_id),
+            "request": {"id": r[0], "status": r[1], "note": r[2], "created_at": r[3]} if r else None,
+        })
+
+    if action == "channel_verification_apply":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        gid = int(body.get("group_id") or 0)
+        links = (body.get("links") or "").strip()
+        comment = (body.get("comment") or "").strip()
+
+        cur.execute(f"SELECT name, owner_id, is_channel FROM {SCHEMA}.groups WHERE id = %s", (gid,))
+        g = cur.fetchone()
+        if not g:
+            conn.close()
+            return err("Группа не найдена", 404)
+        if int(g[1] or 0) != int(user_id):
+            conn.close()
+            return err("Заявку может подать только владелец")
+
+        cur.execute(
+            f"SELECT id FROM {SCHEMA}.verification_requests "
+            f"WHERE target_type = 'channel' AND target_id = %s AND status = 'pending'",
+            (gid,),
+        )
+        if cur.fetchone():
+            conn.close()
+            return err("Заявка уже на рассмотрении")
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.verification_requests "
+            f"(user_id, target_type, target_id, full_name, category, links, comment) "
+            f"VALUES (%s, 'channel', %s, %s, %s, %s, %s) RETURNING id",
+            (int(user_id), gid, (g[0] or "")[:100],
+             "channel" if g[2] else "group", links[:500], comment[:500]),
+        )
+        req_id = cur.fetchone()[0]
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.dev_notifications (kind, title, body, link_section) "
+            f"VALUES (%s, %s, %s, %s)",
+            ("verification", "Заявка на верификацию канала",
+             f"{g[0]} — {'канал' if g[2] else 'группа'}", "verification"),
+        )
+        conn.commit()
+        conn.close()
+        return ok({"success": True, "request_id": req_id})
 
     if action == "verification_apply":
         if not user_id:

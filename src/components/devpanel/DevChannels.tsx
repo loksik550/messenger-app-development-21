@@ -9,6 +9,7 @@ interface Channel {
   description: string | null;
   avatar_url: string | null;
   is_channel: boolean;
+  verified?: boolean;
   owner_id: number;
   owner_name: string;
   created_at: number;
@@ -125,6 +126,9 @@ export default function DevChannels({ can }: { can: (p: string) => boolean }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="font-semibold text-sm truncate">{c.name}</span>
+                    {c.verified && (
+                      <Icon name="BadgeCheck" size={14} className="text-sky-400 shrink-0" />
+                    )}
                     <span
                       className={`text-[9px] px-1.5 py-0.5 rounded-full shrink-0 ${
                         c.is_channel ? "bg-cyan-500/20 text-cyan-400" : "bg-violet-500/20 text-violet-400"
@@ -156,12 +160,27 @@ export default function DevChannels({ can }: { can: (p: string) => boolean }) {
               </div>
 
               {can("channels") && (
-                <button
-                  onClick={() => openEdit(c)}
-                  className="w-full py-2 rounded-xl bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition"
-                >
-                  Управление
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openEdit(c)}
+                    className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition"
+                  >
+                    Управление
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await devApi("set_channel_verified", { channel_id: c.id, verified: !c.verified });
+                      load();
+                    }}
+                    className={`px-3 py-2 rounded-xl border text-xs transition ${
+                      c.verified
+                        ? "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                        : "bg-sky-500/15 border-sky-500/25 text-sky-400 hover:bg-sky-500/25"
+                    }`}
+                  >
+                    {c.verified ? "Снять" : "Галочка"}
+                  </button>
+                </div>
               )}
             </div>
           ))}

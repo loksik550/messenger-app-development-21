@@ -52,6 +52,7 @@ ACTION_PERMS = {
     "change_password": "dashboard", "change_email": "dashboard",
     "update_me": "dashboard",
     "verifications": "reports", "verify_decide": "reports", "set_verified": "reports",
+    "set_channel_verified": "channels",
     "notifications": "dashboard", "notifications_read": "dashboard",
     "moderation_summary": "dashboard",
 }
@@ -221,7 +222,8 @@ def handler(event: dict, context) -> dict:
             password = body.get("password") or ""
 
             cur.execute(
-                f"SELECT id, email, name, role, password_hash, disabled FROM {SCHEMA}.dev_admins WHERE email = %s",
+                f"SELECT id, email, name, role, password_hash, disabled, title, avatar_url "
+                f"FROM {SCHEMA}.dev_admins WHERE email = %s",
                 (email,),
             )
             row = cur.fetchone()
@@ -239,7 +241,8 @@ def handler(event: dict, context) -> dict:
             )
             cur.execute(f"UPDATE {SCHEMA}.dev_admins SET last_login = %s WHERE id = %s", (now, row[0]))
             cur_admin = {"id": row[0], "email": row[1], "name": row[2], "role": row[3],
-                         "title": "", "role_label": ROLES.get(row[3], {}).get("label", row[3])}
+                         "title": row[6] or "", "avatar_url": row[7] or "",
+                         "role_label": ROLES.get(row[3], {}).get("label", row[3])}
             audit(cur, cur_admin, "login", "Вход в панель", ip)
             return ok({"token": token, "admin": cur_admin})
 
@@ -402,12 +405,24 @@ def handler(event: dict, context) -> dict:
                     (until, reason, now, uid),
                 )
                 audit(cur, admin, "ban_user", f"Блокировка ID {uid} на {days} дн: {reason}", ip)
+                human = "навсегда" if days >= 3650 else f"на {days} дн."
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                    f"VALUES (%s, %s, %s, %s)",
+                    (uid, "ban", f"Аккаунт заблокирован {human}", reason),
+                )
+
             else:
                 cur.execute(
                     f"UPDATE {SCHEMA}.users SET banned_until = NULL, banned_reason = NULL WHERE id = %s",
                     (uid,),
                 )
                 audit(cur, admin, "unban_user", f"Разблокировка ID {uid}", ip)
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                    f"VALUES (%s, %s, %s, %s)",
+                    (uid, "unban", "Блокировка снята", "Доступ к аккаунту восстановлен."),
+                )
             return ok({"success": True})
 
         if action == "reports":
@@ -612,7 +627,8 @@ def handler(event: dict, context) -> dict:
                 f"SELECT g.id, g.name, g.description, g.avatar_url, g.is_channel, g.owner_id, "
                 f"u.name, g.created_at, g.last_message_at, g.invite_link, "
                 f"(SELECT COUNT(*) FROM {SCHEMA}.group_members m WHERE m.group_id = g.id), "
-                f"(SELECT COUNT(*) FROM {SCHEMA}.group_messages gm WHERE gm.group_id = g.id) "
+                f"(SELECT COUNT(*) FROM {SCHEMA}.group_messages gm WHERE gm.group_id = g.id), "
+                f"COALESCE(g.verified, FALSE) "
                 f"FROM {SCHEMA}.groups g LEFT JOIN {SCHEMA}.users u ON u.id = g.owner_id "
                 f"WHERE g.removed_at IS NULL "
                 f"ORDER BY g.last_message_at DESC NULLS LAST LIMIT 100"
@@ -622,8 +638,37 @@ def handler(event: dict, context) -> dict:
                 "is_channel": bool(r[4]), "owner_id": r[5], "owner_name": r[6] or f"ID {r[5]}",
                 "created_at": r[7], "last_message_at": r[8], "invite_link": r[9],
                 "members": r[10], "messages": r[11],
+                "verified": bool(r[12]) if len(r) > 12 else False,
             } for r in cur.fetchall()]
             return ok({"channels": channels})
+
+        if action == "set_channel_verified":
+            gid = int(body.get("channel_id") or 0)
+            value = bool(body.get("verified"))
+            now = int(time.time())
+            cur.execute(
+                f"UPDATE {SCHEMA}.groups SET verified = %s, verified_at = %s WHERE id = %s",
+                (value, now if value else None, gid),
+            )
+            cur.execute(f"SELECT name, owner_id FROM {SCHEMA}.groups WHERE id = %s", (gid,))
+            g = cur.fetchone()
+            if value:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.verification_requests SET status = 'approved', reviewer_id = %s, "
+                    f"reviewed_at = %s WHERE target_type = 'channel' AND target_id = %s AND status = 'pending'",
+                    (admin["id"], now, gid),
+                )
+            if g and g[1]:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                    f"VALUES (%s, %s, %s, %s)",
+                    (g[1], "verification",
+                     "Галочка выдана" if value else "Галочка снята",
+                     f"«{g[0]}»: " + ("подтверждён" if value else "подтверждение отозвано")),
+                )
+            audit(cur, admin, "set_channel_verified",
+                  f"Канал #{gid}: галочка {'выдана' if value else 'снята'}", ip)
+            return ok({"success": True})
 
         if action == "channel_update":
             gid = int(body.get("channel_id") or 0)

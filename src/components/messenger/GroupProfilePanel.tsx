@@ -25,6 +25,34 @@ export function GroupProfilePanel({
   onClose, onGroupUpdated, onMembersChanged, onGroupDeleted, onHistoryCleared,
 }: Props) {
   const isOwner = myRole === "owner";
+  const [verifState, setVerifState] = useState<{
+    verified: boolean;
+    request: { status: string; note: string } | null;
+  }>({ verified: false, request: null });
+  const [verifBusy, setVerifBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api("channel_verification_status", { group_id: group.id }, currentUser.id).then(r => {
+      if (!alive || !r || r.error) return;
+      setVerifState({ verified: !!r.verified, request: r.request || null });
+    });
+    return () => { alive = false; };
+  }, [group.id, currentUser.id]);
+
+  const applyVerification = async () => {
+    setVerifBusy(true);
+    try {
+      const r = await api("channel_verification_apply", { group_id: group.id }, currentUser.id);
+      if (r?.error) {
+        alert(r.error);
+        return;
+      }
+      setVerifState(prev => ({ ...prev, request: { status: "pending", note: "" } }));
+    } finally {
+      setVerifBusy(false);
+    }
+  };
   const isAdmin = isOwner || myRole === "admin";
 
   const [tab, setTab] = useState<Tab>("info");
@@ -402,6 +430,41 @@ export function GroupProfilePanel({
                       ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       : <><Icon name="RefreshCw" size={12} /> Обновить</>}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Верификация канала/группы — только владелец */}
+            {isOwner && (
+              <div className="glass rounded-2xl p-4">
+                <div className="flex items-start gap-3">
+                  <Icon name="BadgeCheck" size={20} className="text-sky-400 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm mb-0.5">
+                      {verifState.verified ? "Подтверждён" : "Верификация"}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mb-2">
+                      {verifState.verified
+                        ? "Синяя галочка подтверждает подлинность"
+                        : verifState.request?.status === "pending"
+                          ? "Заявка на рассмотрении, обычно до трёх дней"
+                          : "Синяя галочка защитит от подделок"}
+                    </p>
+                    {!verifState.verified && verifState.request?.status !== "pending" && (
+                      <button
+                        onClick={applyVerification}
+                        disabled={verifBusy}
+                        className="px-3 py-1.5 rounded-xl grad-primary text-white text-xs font-bold disabled:opacity-60"
+                      >
+                        {verifBusy ? "Отправляем..." : "Подать заявку"}
+                      </button>
+                    )}
+                    {verifState.request?.status === "rejected" && !verifState.verified && (
+                      <p className="text-[11px] text-red-400 mt-2">
+                        Прошлая заявка отклонена{verifState.request.note ? `: ${verifState.request.note}` : ""}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

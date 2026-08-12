@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import Icon from "@/components/ui/icon";
 import { api, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
 import { playMessageSound } from "@/lib/sounds";
@@ -12,6 +12,7 @@ import InstallPrompt from "@/components/messenger/InstallPrompt";
 import InstallWelcome from "@/components/messenger/InstallWelcome";
 import EnableNotificationsBanner from "@/components/messenger/EnableNotificationsBanner";
 import { toast } from "@/hooks/use-toast";
+import NotificationsBell, { type UserNotif } from "@/components/messenger/NotificationsBell";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
 import { RealStoriesBar, type StoryGroup } from "@/components/messenger/RealStories";
@@ -48,6 +49,7 @@ const PrivacyPolicyPanel = lazy(() => import("@/components/messenger/PrivacyPoli
 const TermsPanel = lazy(() => import("@/components/messenger/TermsPanel"));
 const HelpPanel = lazy(() => import("@/components/messenger/HelpPanel"));
 const VerificationPanel = lazy(() => import("@/components/messenger/VerificationPanel"));
+const BannedScreen = lazy(() => import("@/components/messenger/BannedScreen"));
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
@@ -104,6 +106,10 @@ export default function Index() {
   const [showTerms, setShowTerms] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
+  const notifSeenRef = useRef<Set<number>>(new Set());
+  const [notifs, setNotifs] = useState<UserNotif[]>([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [banInfo, setBanInfo] = useState<{ banned_until: number | null; banned_reason: string; forever?: boolean } | null>(null);
 
   // Восстановление сессии из localStorage
   useEffect(() => {
@@ -280,29 +286,57 @@ export default function Index() {
     document.title = total > 0 ? `(${total > 99 ? "99+" : total}) ${base}` : base;
   }, [realChats]);
 
-  // Уведомления от команды (например, выдали галочку)
+  // Уведомления пользователя: копятся списком в колокольчике
+  const loadNotifs = useCallback(async (announce = false) => {
+    if (!currentUser) return;
+    const r = await api("my_notifications", {}, currentUser.id);
+    if (!r || r.error || !r.items) return;
+    const items = r.items as UserNotif[];
+    const prevIds = notifSeenRef.current;
+    setNotifs(items);
+    setNotifUnread(r.unread || 0);
+    if (announce) {
+      const fresh = items.filter(n => !n.read && !prevIds.has(n.id));
+      for (const n of fresh) toast({ title: n.title, description: n.body });
+      if (fresh.length > 0) {
+        const me = await api("refresh_me", {}, currentUser.id);
+        if (me?.user) setCurrentUser(prev => (prev ? { ...prev, ...me.user } : prev));
+      }
+    }
+    notifSeenRef.current = new Set(items.map(n => n.id));
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    loadNotifs(true);
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") loadNotifs(true);
+    }, 45000);
+    return () => clearInterval(t);
+  }, [currentUser?.id, loadNotifs]);
+
+  // Проверка блокировки аккаунта
   useEffect(() => {
     if (!currentUser) return;
     const uid = currentUser.id;
     let alive = true;
     const check = async () => {
-      const r = await api("my_notifications", {}, uid);
-      if (!alive || !r || r.error || !r.items) return;
-      const fresh = (r.items as Array<{ id: number; title: string; body: string; read: boolean }>)
-        .filter(n => !n.read);
-      if (fresh.length === 0) return;
-      await api("my_notifications_read", {}, uid);
-      for (const n of fresh) {
-        toast({ title: n.title, description: n.body });
+      const r = await api("ban_status", {}, uid);
+      if (!alive || !r) return;
+      if (r.banned) {
+        setBanInfo({
+          banned_until: r.banned_until ?? null,
+          banned_reason: r.banned_reason || "",
+          forever: r.forever,
+        });
+      } else if (r.banned === false) {
+        setBanInfo(null);
       }
-      // Галочку могли только что выдать — подтянем профиль
-      const me = await api("refresh_me", {}, uid);
-      if (alive && me?.user) setCurrentUser(prev => (prev ? { ...prev, ...me.user } : prev));
     };
     check();
     const t = setInterval(() => {
       if (document.visibilityState === "visible") check();
-    }, 45000);
+    }, 60000);
     return () => { alive = false; clearInterval(t); };
   }, [currentUser?.id]);
 
@@ -591,6 +625,19 @@ export default function Index() {
     );
   }
 
+  // Экран блокировки — перекрывает всё приложение
+  if (banInfo && currentUser) {
+    return (
+      <Suspense fallback={LAZY_FALLBACK}>
+        <BannedScreen
+          info={banInfo}
+          onLogout={() => { setBanInfo(null); logout(); }}
+          onSupport={() => { setBanInfo(null); logout(); }}
+        />
+      </Suspense>
+    );
+  }
+
   // Экран верификации (доступен из профиля)
   if (showVerification && currentUser) {
     return (
@@ -861,6 +908,15 @@ export default function Index() {
               <Icon name="Crown" size={12} />
               Premium
             </button>
+            {/* Уведомления */}
+            {currentUser && (
+              <NotificationsBell
+                currentUser={currentUser}
+                items={notifs}
+                unread={notifUnread}
+                onRefresh={() => loadNotifs(false)}
+              />
+            )}
             {/* Язык */}
             <LanguageSwitcher variant="compact" />
             {/* Все возможности */}
