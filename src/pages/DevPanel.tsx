@@ -17,25 +17,30 @@ import DevPlans from "@/components/devpanel/DevPlans";
 import DevPromo from "@/components/devpanel/DevPromo";
 import DevPayments from "@/components/devpanel/DevPayments";
 import DevTopBar from "@/components/devpanel/DevTopBar";
+import DevBroadcast from "@/components/devpanel/DevBroadcast";
+import DevModeration from "@/components/devpanel/DevModeration";
 
 type Section =
   | "dashboard" | "users" | "channels" | "verification" | "reports"
-  | "support" | "plans" | "promo" | "payments" | "logs" | "services" | "team" | "settings";
+  | "support" | "broadcast" | "plans" | "promo" | "payments"
+  | "moderation" | "logs" | "services" | "team" | "settings";
 
-const NAV: { key: Section; label: string; icon: string; perm: string }[] = [
-  { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard" },
-  { key: "users", label: "Пользователи", icon: "Users", perm: "users" },
-  { key: "channels", label: "Каналы и группы", icon: "Radio", perm: "channels" },
-  { key: "verification", label: "Верификация", icon: "BadgeCheck", perm: "reports" },
-  { key: "reports", label: "Жалобы", icon: "Flag", perm: "reports" },
-  { key: "support", label: "Поддержка", icon: "LifeBuoy", perm: "support" },
-  { key: "plans", label: "Тарифы Premium", icon: "Crown", perm: "dashboard" },
-  { key: "promo", label: "Промокоды и бонусы", icon: "Ticket", perm: "dashboard" },
-  { key: "payments", label: "Платежи", icon: "Receipt", perm: "dashboard" },
-  { key: "logs", label: "Логи и события", icon: "ScrollText", perm: "logs" },
-  { key: "services", label: "Серверы и доступ", icon: "Server", perm: "services" },
-  { key: "team", label: "Команда", icon: "UserCog", perm: "team" },
-  { key: "settings", label: "Настройки", icon: "Settings", perm: "dashboard" },
+const NAV: { key: Section; label: string; icon: string; perm: string; hint: string; keywords: string }[] = [
+  { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard", hint: "Главные цифры и что требует внимания", keywords: "статистика главная обзор цифры" },
+  { key: "users", label: "Пользователи", icon: "Users", perm: "users", hint: "Найти человека, заблокировать, продлить Premium", keywords: "люди аккаунты бан блокировка кошелёк баланс удалить" },
+  { key: "channels", label: "Каналы и группы", icon: "Radio", perm: "channels", hint: "Список сообществ, переименовать или удалить", keywords: "чаты сообщества группы каналы" },
+  { key: "verification", label: "Верификация", icon: "BadgeCheck", perm: "reports", hint: "Заявки на синюю галочку", keywords: "галочка подтверждение заявки" },
+  { key: "reports", label: "Жалобы", icon: "Flag", perm: "reports", hint: "На что жалуются пользователи", keywords: "модерация нарушения спам" },
+  { key: "support", label: "Поддержка", icon: "LifeBuoy", perm: "support", hint: "Обращения пользователей и ответы", keywords: "тикеты вопросы обращения помощь" },
+  { key: "broadcast", label: "Рассылка", icon: "Send", perm: "settings", hint: "Отправить объявление всем или выборочно", keywords: "объявление уведомление сообщение всем новость" },
+  { key: "plans", label: "Тарифы Premium", icon: "Crown", perm: "dashboard", hint: "Цены, сроки и что входит в подписку", keywords: "цены подписка премиум стоимость лимиты" },
+  { key: "promo", label: "Промокоды и бонусы", icon: "Ticket", perm: "dashboard", hint: "Скидки, подарки и приглашения друзей", keywords: "скидка акция подарок рефералы бонус" },
+  { key: "payments", label: "Платежи", icon: "Receipt", perm: "dashboard", hint: "Кто и сколько заплатил, возвраты, отчёты", keywords: "деньги доход оплата возврат выручка чеки экспорт" },
+  { key: "moderation", label: "Автомодерация", icon: "ShieldCheck", perm: "settings", hint: "Стоп-слова и защита от спама", keywords: "фильтр мат стоп-слова антиспам блокировка" },
+  { key: "logs", label: "Логи и события", icon: "ScrollText", perm: "logs", hint: "Кто из команды что сделал", keywords: "история действия журнал аудит" },
+  { key: "services", label: "Серверы и доступ", icon: "Server", perm: "services", hint: "Работают ли база, хранилище и звонки", keywords: "статус сервисы база хранилище приглашения" },
+  { key: "team", label: "Команда", icon: "UserCog", perm: "team", hint: "Администраторы и их права", keywords: "админы роли доступ сотрудники" },
+  { key: "settings", label: "Настройки", icon: "Settings", perm: "dashboard", hint: "Оформление панели, пароль и техработы", keywords: "оформление пароль почта профиль техработы обслуживание" },
 ];
 
 export default function DevPanel() {
@@ -49,6 +54,7 @@ export default function DevPanel() {
   const [checking, setChecking] = useState(true);
   const [section, setSection] = useState<Section>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [navQuery, setNavQuery] = useState("");
 
   const can = (perm: string) => perms.includes("*") || perms.includes(perm);
 
@@ -113,6 +119,16 @@ export default function DevPanel() {
   if (!admin) return <DevAuth onSuccess={afterAuth} />;
 
   const visibleNav = NAV.filter((n) => can(n.perm));
+  // Поиск ищет и по названию раздела, и по тому, что внутри
+  const q = navQuery.trim().toLowerCase();
+  const shownNav = q
+    ? visibleNav.filter(
+        (n) =>
+          n.label.toLowerCase().includes(q) ||
+          n.hint.toLowerCase().includes(q) ||
+          n.keywords.includes(q),
+      )
+    : visibleNav;
   const current = visibleNav.find((n) => n.key === section) || visibleNav[0];
   const activeSection = current?.key || "dashboard";
 
@@ -183,22 +199,61 @@ export default function DevPanel() {
           </div>
         </div>
 
+        <div className="px-3 pt-3 shrink-0">
+          <div className="relative">
+            <Icon
+              name="Search"
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"
+            />
+            <input
+              value={navQuery}
+              onChange={(e) => setNavQuery(e.target.value)}
+              placeholder="Поиск по панели"
+              className="w-full bg-black/30 border border-white/8 rounded-xl pl-8 pr-8 py-2 text-xs outline-none focus:border-violet-500/40 placeholder-slate-600"
+            />
+            {navQuery && (
+              <button
+                onClick={() => setNavQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400"
+              >
+                <Icon name="X" size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
         <nav className="flex-1 min-h-0 p-3 space-y-1 overflow-y-auto">
-          {visibleNav.map((item) => (
+          {shownNav.length === 0 && (
+            <div className="text-center py-8 text-xs text-slate-600">
+              Ничего не найдено
+            </div>
+          )}
+          {shownNav.map((item) => (
             <button
               key={item.key}
               onClick={() => {
                 setSection(item.key);
                 setMenuOpen(false);
+                setNavQuery("");
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+              className={`w-full text-left px-3.5 py-2.5 rounded-xl transition ${
                 activeSection === item.key
                   ? "bg-gradient-to-r from-violet-600/25 to-purple-600/10 text-violet-300 border border-violet-500/25"
                   : "text-slate-400 hover:text-slate-100 hover:bg-white/5 border border-transparent"
               }`}
             >
-              <Icon name={item.icon} size={17} />
-              {item.label}
+              <span className="flex items-center gap-3 text-sm font-medium">
+                <Icon name={item.icon} size={17} />
+                {item.label}
+              </span>
+              <span
+                className={`block text-[10px] mt-0.5 ml-[30px] leading-tight ${
+                  activeSection === item.key ? "text-violet-400/70" : "text-slate-600"
+                }`}
+              >
+                {item.hint}
+              </span>
             </button>
           ))}
         </nav>
@@ -237,6 +292,8 @@ export default function DevPanel() {
           {activeSection === "plans" && <DevPlans can={can} />}
           {activeSection === "promo" && <DevPromo can={can} />}
           {activeSection === "payments" && <DevPayments can={can} />}
+          {activeSection === "broadcast" && <DevBroadcast can={can} />}
+          {activeSection === "moderation" && <DevModeration can={can} />}
           {activeSection === "logs" && <DevLogs />}
           {activeSection === "services" && <DevServices />}
           {activeSection === "team" && <DevTeam myId={admin.id} can={can} />}

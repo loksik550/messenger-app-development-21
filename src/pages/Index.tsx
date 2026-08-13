@@ -97,6 +97,7 @@ const LAZY_FALLBACK = (
 export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [maintenance, setMaintenance] = useState<{ title: string; text: string } | null>(null);
   // PIN-блокировка: если код установлен — требуем ввод при запуске
   const [pinUnlocked, setPinUnlocked] = useState(false);
   // Требование RuStore / 152-ФЗ: явное согласие на обработку ПД при первом запуске
@@ -127,6 +128,22 @@ export default function Index() {
       }
     } catch { /* ignore */ }
     setSessionChecked(true);
+  }, []);
+
+  // Проверяем, не идут ли технические работы (включается в Dev-панели)
+  useEffect(() => {
+    let alive = true;
+    const check = () => {
+      api("app_status", {})
+        .then((r) => {
+          if (!alive) return;
+          setMaintenance(r?.maintenance ? { title: r.title, text: r.text } : null);
+        })
+        .catch(() => {});
+    };
+    check();
+    const timer = setInterval(check, 60000);
+    return () => { alive = false; clearInterval(timer); };
   }, []);
 
   // Применяем настройки оформления с сервера (тема/акцент/шрифт/стиль сообщений)
@@ -588,6 +605,29 @@ export default function Index() {
       </div>
     </div>
   );
+
+  if (maintenance) {
+    return (
+      <div className="h-screen flex items-center justify-center relative overflow-hidden p-6">
+        <div className="mesh-bg" />
+        <div className="relative text-center max-w-sm">
+          <div className="w-20 h-20 rounded-3xl bg-amber-500/15 flex items-center justify-center mx-auto mb-5">
+            <Icon name="Wrench" size={36} className="text-amber-400" />
+          </div>
+          <h1 className="text-2xl font-black mb-2">{maintenance.title}</h1>
+          <p className="text-sm text-muted-foreground leading-relaxed mb-6 whitespace-pre-wrap">
+            {maintenance.text}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-3 glass rounded-2xl text-sm font-semibold"
+          >
+            Проверить снова
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Гейт согласия на обработку ПД — обязательное требование RuStore.
   // Показываем ДО любых форм авторизации, чтобы не собирать ни байта данных

@@ -20,6 +20,9 @@ export default function DevAuth({ onSuccess }: Props) {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [code, setCode] = useState("");
+  const [needCode, setNeedCode] = useState(false);
+  const [phoneHint, setPhoneHint] = useState("");
 
   useEffect(() => {
     devApi<{ name: string; subtitle: string; logo_url: string }>("panel_info")
@@ -33,6 +36,10 @@ export default function DevAuth({ onSuccess }: Props) {
       setError("Заполните почту и пароль");
       return;
     }
+    if (needCode && code.trim().length < 4) {
+      setError("Введите код из SMS");
+      return;
+    }
     if (mode === "register" && !invite.trim()) {
       setError("Нужен код-приглашение");
       return;
@@ -41,9 +48,18 @@ export default function DevAuth({ onSuccess }: Props) {
     try {
       const payload =
         mode === "login"
-          ? { email: email.trim(), password }
+          ? { email: email.trim(), password, code: code.trim() }
           : { email: email.trim(), password, name: name.trim(), invite_code: invite.trim() };
-      const data = await devApi<{ token: string; admin: DevAdmin }>(mode, payload);
+      const data = await devApi<{
+        token: string; admin: DevAdmin; need_code?: boolean; phone_hint?: string;
+      }>(mode, payload);
+
+      // Включена защита входа — сначала просим код из SMS
+      if (data.need_code) {
+        setNeedCode(true);
+        setPhoneHint(data.phone_hint || "");
+        return;
+      }
       setDevToken(data.token);
       onSuccess(data.admin);
     } catch (e) {
@@ -133,6 +149,24 @@ export default function DevAuth({ onSuccess }: Props) {
               </button>
             </div>
 
+            {needCode && (
+              <div className="space-y-2">
+                <div className="flex items-start gap-2 text-xs text-violet-300 bg-violet-500/10 border border-violet-500/25 rounded-xl px-3 py-2.5">
+                  <Icon name="ShieldCheck" size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    Код отправлен по SMS{phoneHint ? ` на номер ${phoneHint}` : ""}. Действует 5 минут.
+                  </span>
+                </div>
+                <Field
+                  icon="KeyRound"
+                  placeholder="Код из SMS"
+                  value={code}
+                  onChange={(v) => setCode(v.replace(/\D/g, "").slice(0, 6))}
+                  onEnter={submit}
+                />
+              </div>
+            )}
+
             {mode === "register" && (
               <Field
                 icon="KeyRound"
@@ -163,7 +197,7 @@ export default function DevAuth({ onSuccess }: Props) {
               </>
             ) : (
               <>
-                {mode === "login" ? "Войти в панель" : "Создать аккаунт"}
+                {needCode ? "Подтвердить вход" : mode === "login" ? "Войти в панель" : "Создать аккаунт"}
                 <Icon name="ArrowRight" size={18} />
               </>
             )}

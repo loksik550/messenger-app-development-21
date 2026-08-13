@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
@@ -72,6 +73,13 @@ function fmtDate(iso: string | null) {
   });
 }
 
+interface RevenueChart {
+  chart: { date: string; sum: number; count: number }[];
+  total: number;
+  avg_per_day: number;
+  best_day: { date: string; sum: number; count: number } | null;
+}
+
 type Tab = "all" | "succeeded" | "pending" | "canceled" | "refunded" | "manual";
 
 export default function DevPayments({ can }: { can: (p: string) => boolean }) {
@@ -83,6 +91,7 @@ export default function DevPayments({ can }: { can: (p: string) => boolean }) {
   const [error, setError] = useState("");
   const [refund, setRefund] = useState<Payment | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [chart, setChart] = useState<RevenueChart | null>(null);
 
   const editable = can("settings");
 
@@ -94,6 +103,12 @@ export default function DevPayments({ can }: { can: (p: string) => boolean }) {
         query,
       });
       setItems(res.payments);
+      try {
+        const c = await devApi<RevenueChart>("revenue_chart", { days: 30 });
+        setChart(c);
+      } catch {
+        /* график недоступен по правам */
+      }
       try {
         const s = await devApi<{ summary: Summary }>("payments_summary");
         setSummary(s.summary);
@@ -124,6 +139,56 @@ export default function DevPayments({ can }: { can: (p: string) => boolean }) {
           <Card label="За 30 дней" value={`${formatNum(summary.sum_30d)} ₽`} sub={`${formatNum(summary.count_30d)} платежей`} icon="TrendingUp" />
           <Card label="Возвраты" value={`${formatNum(summary.refund_sum)} ₽`} sub={`${formatNum(summary.refund_count)} шт`} icon="Undo2" />
           <Card label="Доходят до оплаты" value={`${summary.conversion}%`} sub={`${formatNum(summary.failed)} не прошли`} icon="Percent" />
+        </div>
+      )}
+
+      {chart && chart.chart.length > 0 && (
+        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h3 className="font-semibold">Доход по дням</h3>
+              <p className="text-xs text-slate-500 mt-0.5">За последние 30 дней</p>
+            </div>
+            <div className="flex gap-2 text-xs">
+              <span className="px-2.5 py-1 rounded-lg bg-white/5 text-slate-400">
+                В среднем {formatNum(chart.avg_per_day)} ₽/день
+              </span>
+              {chart.best_day && chart.best_day.sum > 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400">
+                  Лучший день: {chart.best_day.date} — {formatNum(chart.best_day.sum)} ₽
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chart.chart}>
+                <defs>
+                  <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.55} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} interval={4} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    background: "#12131f",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 12,
+                    fontSize: 12,
+                    color: "#e2e8f0",
+                  }}
+                  formatter={(v: number, _n, item) => [
+                    `${formatNum(v)} ₽ · ${(item?.payload as { count?: number })?.count ?? 0} шт`,
+                    "Доход",
+                  ]}
+                />
+                <Area type="monotone" dataKey="sum" stroke="#34d399" strokeWidth={2} fill="url(#revGrad)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 

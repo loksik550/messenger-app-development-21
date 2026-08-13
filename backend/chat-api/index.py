@@ -250,6 +250,55 @@ def _rate_limit(cur, key: str, max_per_minute: int) -> bool:
         return True  # при ошибке — пропускаем, не ломаем приложение
 
 
+
+_MOD_CACHE = {"at": 0, "enabled": True, "spam_on": True, "limit": 30, "words": []}
+
+
+def _moderation_config(cur):
+    """Настройки автомодерации из Dev-панели. Кэшируем на минуту, чтобы не грузить базу."""
+    now = int(time.time())
+    if now - _MOD_CACHE["at"] < 60:
+        return _MOD_CACHE
+    try:
+        cur.execute(
+            f"SELECT key, value FROM {SCHEMA}.dev_settings "
+            f"WHERE key IN ('moderation_enabled', 'antispam_enabled', 'antispam_max_per_min')"
+        )
+        cfg = {r[0]: r[1] for r in cur.fetchall()}
+        cur.execute(f"SELECT word, action FROM {SCHEMA}.moderation_rules")
+        words = [(r[0], r[1]) for r in cur.fetchall()]
+        _MOD_CACHE.update({
+            "at": now,
+            "enabled": cfg.get("moderation_enabled", "1") == "1",
+            "spam_on": cfg.get("antispam_enabled", "1") == "1",
+            "limit": int(cfg.get("antispam_max_per_min", "30") or 30),
+            "words": words,
+        })
+    except Exception:
+        _MOD_CACHE["at"] = now
+    return _MOD_CACHE
+
+
+def _check_forbidden(cur, uid, text, cfg):
+    """Ищет стоп-слова. Возвращает слово, если сообщение нужно заблокировать."""
+    if not cfg["enabled"] or not text or not cfg["words"]:
+        return None
+    low = text.lower()
+    for word, act in cfg["words"]:
+        if word and word in low:
+            try:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.moderation_hits (user_id, word, action, snippet) "
+                    f"VALUES (%s, %s, %s, %s)",
+                    (uid, word, act, text[:200]),
+                )
+            except Exception:
+                pass
+            if act == "block":
+                return word
+    return None
+
+
 def handler(event: dict, context) -> dict:
     """
     Chat API для Nova мессенджера.
@@ -296,6 +345,20 @@ def handler(event: dict, context) -> dict:
                 }
         except (ValueError, TypeError):
             pass
+
+    if action == "app_status":
+        """Проверка режима технических работ — приложение спрашивает при запуске."""
+        cur.execute(
+            f"SELECT key, value FROM {SCHEMA}.dev_settings "
+            f"WHERE key IN ('maintenance_enabled', 'maintenance_title', 'maintenance_text')"
+        )
+        cfg = {r[0]: r[1] for r in cur.fetchall()}
+        conn.close()
+        return ok({
+            "maintenance": cfg.get("maintenance_enabled", "0") == "1",
+            "title": cfg.get("maintenance_title", "Технические работы"),
+            "text": cfg.get("maintenance_text", "Скоро вернёмся!"),
+        })
 
     if action == "ban_status":
         if not user_id:
@@ -1576,8 +1639,9 @@ def handler(event: dict, context) -> dict:
         if not user_id:
             conn.close()
             return err("Нужен X-User-Id")
-        # Rate-limit: не более 30 сообщений в минуту на пользователя
-        if not _rate_limit(cur, f"msg:{user_id}", 30):
+        # Антиспам и стоп-слова настраиваются в Dev-панели
+        _mod = _moderation_config(cur)
+        if _mod["spam_on"] and not _rate_limit(cur, f"msg:{user_id}", _mod["limit"]):
             conn.close()
             return err("Слишком быстро. Подождите минуту.", 429)
         chat_id = body.get("chat_id")
@@ -1602,6 +1666,12 @@ def handler(event: dict, context) -> dict:
         if not chat_id or (not text and not media_url and kind == "text"):
             conn.close()
             return err("Укажите chat_id и text или media")
+
+        _bad = _check_forbidden(cur, user_id, text, _mod)
+        if _bad:
+            conn.commit()
+            conn.close()
+            return err("Сообщение содержит запрещённые слова", 403)
 
         # Блокировка: нельзя писать, если получатель заблокировал отправителя
         cur.execute(

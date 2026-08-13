@@ -5,6 +5,7 @@ import hashlib
 import secrets
 import base64
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 from urllib.error import HTTPError
 import psycopg2
 
@@ -59,9 +60,15 @@ ACTION_PERMS = {
     "notifications": "dashboard", "notifications_read": "dashboard",
     "moderation_summary": "dashboard",
     "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
+    "broadcast_send": "settings", "broadcast_history": "dashboard",
+    "broadcast_preview": "settings",
+    "mod_rules": "dashboard", "mod_rule_add": "settings", "mod_rule_delete": "settings",
+    "mod_hits": "dashboard", "mod_settings_save": "settings",
+    "revenue_chart": "dashboard",
     "payments": "dashboard", "payments_summary": "dashboard",
     "payments_export": "dashboard",
     "user_billing": "users", "wallet_set": "settings",
+    "twofa_get": "dashboard", "twofa_save": "dashboard",
     "payment_refund": "settings", "subscription_extend": "settings",
     "subscription_cancel": "settings",
     "subscriptions_summary": "dashboard",
@@ -232,7 +239,8 @@ def handler(event: dict, context) -> dict:
             password = body.get("password") or ""
 
             cur.execute(
-                f"SELECT id, email, name, role, password_hash, disabled, title, avatar_url "
+                f"SELECT id, email, name, role, password_hash, disabled, title, avatar_url, "
+                f"COALESCE(twofa_enabled, FALSE), COALESCE(phone, '') "
                 f"FROM {SCHEMA}.dev_admins WHERE email = %s",
                 (email,),
             )
@@ -243,6 +251,37 @@ def handler(event: dict, context) -> dict:
                 return err("Доступ заблокирован", 403)
 
             now = int(time.time())
+
+            # Двухэтапный вход: пароль верный, но нужен код из SMS
+            if row[8] and row[9]:
+                submitted = (body.get("code") or "").strip()
+                if not submitted:
+                    code = f"{secrets.randbelow(900000) + 100000}"
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.dev_login_codes "
+                        f"(admin_id, code, expires_at, ip_addr) VALUES (%s, %s, %s, %s)",
+                        (row[0], code, now + 300, ip),
+                    )
+                    conn.commit()
+                    sent = _send_login_sms(row[9], code)
+                    masked = row[9][:-4].replace(row[9][2:-4], "*" * max(len(row[9]) - 6, 0)) + row[9][-4:]
+                    if not sent:
+                        return err("Не удалось отправить код. Попробуйте позже.", 503)
+                    return ok({"need_code": True, "phone_hint": masked})
+
+                cur.execute(
+                    f"SELECT id FROM {SCHEMA}.dev_login_codes "
+                    f"WHERE admin_id = %s AND code = %s AND used = FALSE AND expires_at > %s "
+                    f"ORDER BY id DESC LIMIT 1",
+                    (row[0], submitted, now),
+                )
+                found = cur.fetchone()
+                if not found:
+                    return err("Неверный или устаревший код", 401)
+                cur.execute(
+                    f"UPDATE {SCHEMA}.dev_login_codes SET used = TRUE WHERE id = %s",
+                    (found[0],),
+                )
             token = secrets.token_urlsafe(32)
             cur.execute(
                 f"INSERT INTO {SCHEMA}.dev_sessions (token, admin_id, expires_at, ip_addr, user_agent) "
@@ -1681,6 +1720,32 @@ def handler(event: dict, context) -> dict:
             return ok({"items": items})
 
         # ── Настройки панели ──────────────────────────────────────────────
+        if action == "twofa_get":
+            cur.execute(
+                f"SELECT COALESCE(twofa_enabled, FALSE), COALESCE(phone, '') "
+                f"FROM {SCHEMA}.dev_admins WHERE id = %s",
+                (admin["id"],),
+            )
+            r = cur.fetchone() or (False, "")
+            sms_ready = bool(os.environ.get("SMSC_LOGIN") and os.environ.get("SMSC_PASSWORD"))
+            return ok({"enabled": bool(r[0]), "phone": r[1], "sms_ready": sms_ready})
+
+        if action == "twofa_save":
+            enabled = bool(body.get("enabled"))
+            phone = "".join(c for c in str(body.get("phone") or "") if c.isdigit())
+            if enabled:
+                if len(phone) < 11:
+                    return err("Укажите номер телефона полностью, например 79991234567")
+                if not (os.environ.get("SMSC_LOGIN") and os.environ.get("SMSC_PASSWORD")):
+                    return err("SMS не настроены. Добавьте доступы SMSC в секреты проекта.")
+            cur.execute(
+                f"UPDATE {SCHEMA}.dev_admins SET twofa_enabled = %s, phone = %s WHERE id = %s",
+                (enabled, phone[:20], admin["id"]),
+            )
+            audit(cur, admin, "twofa_save",
+                  "Включена защита входа кодом" if enabled else "Отключена защита входа", ip)
+            return ok({"success": True, "enabled": enabled})
+
         if action == "settings_get":
             cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings")
             return ok({"settings": {r[0]: r[1] for r in cur.fetchall()}})
@@ -1693,10 +1758,176 @@ def handler(event: dict, context) -> dict:
                     f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) "
                     f"VALUES (%s, %s, %s, %s) ON CONFLICT (key) DO UPDATE "
                     f"SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
-                    (str(key)[:50], str(value)[:200], now, admin["id"]),
+                    (str(key)[:50], str(value)[:2000], now, admin["id"]),
                 )
             audit(cur, admin, "settings_save", "Изменены настройки панели", ip)
             return ok({"success": True})
+
+        # ── Рассылка пользователям ────────────────────────────────────────
+        if action in ("broadcast_preview", "broadcast_send"):
+            audience = (body.get("audience") or "all").strip()
+            now_ts = int(time.time())
+
+            conds = [f"COALESCE(banned_until, 0) < {now_ts}"]
+            if audience == "premium":
+                conds.append(f"COALESCE(pro_until, 0) > {now_ts}")
+            elif audience == "free":
+                conds.append(f"COALESCE(pro_until, 0) <= {now_ts}")
+            elif audience == "new_7d":
+                conds.append(f"created_at > {now_ts - 7 * 86400}")
+            elif audience == "inactive_30d":
+                conds.append(f"COALESCE(last_seen, 0) < {now_ts - 30 * 86400}")
+            elif audience == "expiring_7d":
+                conds.append(
+                    f"COALESCE(pro_until, 0) > {now_ts} "
+                    f"AND COALESCE(pro_until, 0) < {now_ts + 7 * 86400}"
+                )
+            where_sql = "WHERE " + " AND ".join(conds)
+
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users {where_sql}")
+            total = int(cur.fetchone()[0] or 0)
+
+            if action == "broadcast_preview":
+                return ok({"count": total})
+
+            title = (body.get("title") or "").strip()
+            text = (body.get("body") or "").strip()
+            if not title or not text:
+                return err("Заполните заголовок и текст")
+            if total == 0:
+                return err("По выбранным условиям никого нет")
+
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                f"SELECT id, 'system', %s, %s FROM {SCHEMA}.users {where_sql}",
+                (title[:200], text[:1000]),
+            )
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.broadcasts "
+                f"(title, body, audience, sent_count, admin_id, admin_email, created_at) "
+                f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (title[:200], text[:1000], audience, total,
+                 admin["id"], admin["email"], now_ts),
+            )
+            audit(cur, admin, "broadcast_send",
+                  f"Рассылка «{title[:60]}» — {total} получателей ({audience})", ip)
+            return ok({"success": True, "sent": total})
+
+        if action == "broadcast_history":
+            cur.execute(
+                f"SELECT id, title, body, audience, sent_count, admin_email, created_at "
+                f"FROM {SCHEMA}.broadcasts ORDER BY created_at DESC LIMIT 30"
+            )
+            items = [{
+                "id": r[0], "title": r[1], "body": r[2], "audience": r[3],
+                "sent": r[4], "admin": r[5], "created_at": r[6],
+            } for r in cur.fetchall()]
+            return ok({"items": items})
+
+        # ── Автомодерация ─────────────────────────────────────────────────
+        if action == "mod_rules":
+            cur.execute(
+                f"SELECT id, word, action, created_at FROM {SCHEMA}.moderation_rules "
+                f"ORDER BY created_at DESC"
+            )
+            rules = [{"id": r[0], "word": r[1], "action": r[2], "created_at": r[3]}
+                     for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT key, value FROM {SCHEMA}.dev_settings "
+                f"WHERE key IN ('moderation_enabled', 'antispam_enabled', 'antispam_max_per_min')"
+            )
+            cfg = {r[0]: r[1] for r in cur.fetchall()}
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.moderation_hits "
+                f"WHERE created_at > {int(time.time()) - 86400}"
+            )
+            hits_24h = int(cur.fetchone()[0] or 0)
+            return ok({
+                "rules": rules,
+                "settings": {
+                    "moderation_enabled": cfg.get("moderation_enabled", "1") == "1",
+                    "antispam_enabled": cfg.get("antispam_enabled", "1") == "1",
+                    "antispam_max_per_min": int(cfg.get("antispam_max_per_min", "30") or 30),
+                },
+                "hits_24h": hits_24h,
+            })
+
+        if action == "mod_rule_add":
+            word = (body.get("word") or "").strip().lower()
+            act = (body.get("rule_action") or "block").strip()
+            if len(word) < 2:
+                return err("Слово должно быть не короче 2 символов")
+            if act not in ("block", "flag"):
+                act = "block"
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.moderation_rules (word, action) VALUES (%s, %s) "
+                f"ON CONFLICT (word) DO UPDATE SET action = EXCLUDED.action",
+                (word[:100], act),
+            )
+            audit(cur, admin, "mod_rule_add", f"Добавлено стоп-слово: {word[:40]}", ip)
+            return ok({"success": True})
+
+        if action == "mod_rule_delete":
+            rid = int(body.get("id") or 0)
+            cur.execute(f"DELETE FROM {SCHEMA}.moderation_rules WHERE id = %s", (rid,))
+            audit(cur, admin, "mod_rule_delete", f"Удалено стоп-слово #{rid}", ip)
+            return ok({"success": True})
+
+        if action == "mod_hits":
+            cur.execute(
+                f"SELECT h.id, h.user_id, COALESCE(u.name, ''), h.word, h.action, "
+                f"COALESCE(h.snippet, ''), h.created_at "
+                f"FROM {SCHEMA}.moderation_hits h "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = h.user_id "
+                f"ORDER BY h.created_at DESC LIMIT 60"
+            )
+            items = [{
+                "id": r[0], "user_id": r[1], "user_name": r[2] or f"ID {r[1]}",
+                "word": r[3], "action": r[4], "snippet": r[5], "created_at": r[6],
+            } for r in cur.fetchall()]
+            return ok({"items": items})
+
+        if action == "mod_settings_save":
+            now = int(time.time())
+            vals = {
+                "moderation_enabled": "1" if body.get("moderation_enabled") else "0",
+                "antispam_enabled": "1" if body.get("antispam_enabled") else "0",
+                "antispam_max_per_min": str(max(5, min(int(body.get("antispam_max_per_min") or 30), 300))),
+            }
+            for k, v in vals.items():
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) "
+                    f"VALUES (%s, %s, %s, %s) ON CONFLICT (key) DO UPDATE "
+                    f"SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+                    (k, v, now, admin["id"]),
+                )
+            audit(cur, admin, "mod_settings_save", "Изменены настройки автомодерации", ip)
+            return ok({"success": True})
+
+        # ── График доходов по дням ────────────────────────────────────────
+        if action == "revenue_chart":
+            days = min(int(body.get("days") or 30), 180)
+            cur.execute(
+                f"SELECT to_char(d.day, 'DD.MM') AS label, "
+                f"COALESCE(SUM(o.amount), 0), COUNT(o.id) "
+                f"FROM generate_series("
+                f"  (CURRENT_DATE - INTERVAL '{days - 1} days'), CURRENT_DATE, INTERVAL '1 day'"
+                f") AS d(day) "
+                f"LEFT JOIN {SCHEMA}.orders o "
+                f"  ON date_trunc('day', o.created_at) = d.day "
+                f"  AND o.status IN ('paid', 'succeeded') "
+                f"GROUP BY d.day ORDER BY d.day"
+            )
+            chart = [{"date": r[0], "sum": float(r[1] or 0), "count": int(r[2] or 0)}
+                     for r in cur.fetchall()]
+            best = max(chart, key=lambda x: x["sum"]) if chart else None
+            total = sum(c["sum"] for c in chart)
+            return ok({
+                "chart": chart,
+                "total": round(total, 2),
+                "avg_per_day": round(total / max(len(chart), 1), 2),
+                "best_day": best,
+            })
 
         # ── Логи и события ────────────────────────────────────────────────
         if action == "logs":

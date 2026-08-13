@@ -225,9 +225,205 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged, onPro
         )}
       </div>
 
+      <Maintenance editable={editable} />
+
+      <TwoFactor />
+
       <MyProfile admin={admin} onChanged={onProfileChanged} />
       <ChangePassword />
       <ChangeEmail currentEmail={admin.email} onChanged={onEmailChanged} />
+    </div>
+  );
+}
+
+function TwoFactor() {
+  const [enabled, setEnabled] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [smsReady, setSmsReady] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    devApi<{ enabled: boolean; phone: string; sms_ready: boolean }>("twofa_get")
+      .then((r) => {
+        setEnabled(r.enabled);
+        setPhone(r.phone);
+        setSmsReady(r.sms_ready);
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async (next: boolean) => {
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      await devApi("twofa_save", { enabled: next, phone });
+      setEnabled(next);
+      setMsg(next ? "Защита включена. При входе будет приходить код." : "Защита отключена");
+      setTimeout(() => setMsg(""), 3000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Не удалось сохранить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={`border rounded-2xl p-5 ${
+      enabled ? "bg-emerald-500/[0.06] border-emerald-500/25" : "bg-white/[0.03] border-white/10"
+    }`}>
+      <div className="flex items-start gap-3 mb-4">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+          enabled ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-slate-500"
+        }`}>
+          <Icon name="ShieldCheck" size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold">
+            {enabled ? "Вход защищён кодом" : "Защита входа по SMS"}
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Даже зная пароль, войти без кода из SMS не получится
+          </p>
+        </div>
+      </div>
+
+      {!smsReady && (
+        <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5 mb-3">
+          <Icon name="TriangleAlert" size={14} className="mt-0.5 shrink-0" />
+          <span>Сначала подключите отправку SMS — доступы SMSC в секретах проекта</span>
+        </div>
+      )}
+
+      <div>
+        <label className="text-xs text-slate-500 mb-1.5 block">Номер для кода</label>
+        <Input
+          value={phone}
+          onChange={(v) => setPhone(v.replace(/\D/g, "").slice(0, 15))}
+          placeholder="79991234567"
+        />
+      </div>
+
+      {err && <Note text={err} error />}
+      {msg && <Note text={msg} />}
+
+      <button
+        onClick={() => {
+          if (enabled && !confirm("Отключить защиту входа?")) return;
+          save(!enabled);
+        }}
+        disabled={busy || (!enabled && (!smsReady || phone.length < 11))}
+        className={`w-full mt-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 ${
+          enabled
+            ? "bg-white/5 border border-white/10 text-slate-300"
+            : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
+        }`}
+      >
+        {busy ? "Сохраняем..." : enabled ? "Отключить защиту" : "Включить защиту"}
+      </button>
+    </div>
+  );
+}
+
+function Maintenance({ editable }: { editable: boolean }) {
+  const [on, setOn] = useState(false);
+  const [title, setTitle] = useState("Технические работы");
+  const [text, setText] = useState("Мы улучшаем Nova и скоро вернёмся. Спасибо за терпение!");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    devApi<{ settings: Record<string, string> }>("settings_get").then((r) => {
+      setOn(r.settings.maintenance_enabled === "1");
+      if (r.settings.maintenance_title) setTitle(r.settings.maintenance_title);
+      if (r.settings.maintenance_text) setText(r.settings.maintenance_text);
+    }).catch(() => {});
+  }, []);
+
+  const apply = async (enabled: boolean) => {
+    setBusy(true);
+    setMsg("");
+    try {
+      await devApi("settings_save", {
+        settings: {
+          maintenance_enabled: enabled ? "1" : "0",
+          maintenance_title: title.trim(),
+          maintenance_text: text.trim(),
+        },
+      });
+      setOn(enabled);
+      setMsg(enabled ? "Приложение закрыто на техработы" : "Приложение снова работает");
+      setTimeout(() => setMsg(""), 3000);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Не удалось сохранить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={`border rounded-2xl p-5 ${
+      on ? "bg-amber-500/[0.07] border-amber-500/25" : "bg-white/[0.03] border-white/10"
+    }`}>
+      <div className="flex items-start gap-3 mb-4">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+          on ? "bg-amber-500/20 text-amber-400" : "bg-white/5 text-slate-500"
+        }`}>
+          <Icon name="Wrench" size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold">
+            {on ? "Идут технические работы" : "Режим технических работ"}
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {on
+              ? "Пользователи видят объявление вместо приложения"
+              : "Закрыть вход и показать объявление, пока идут работы"}
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs text-slate-500 mb-1.5 block">Заголовок объявления</label>
+          <Input value={title} onChange={setTitle} placeholder="Технические работы" />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 mb-1.5 block">Что написать людям</label>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+            maxLength={500}
+            className="w-full bg-black/30 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-violet-500/50 resize-none placeholder-slate-600"
+          />
+        </div>
+      </div>
+
+      {msg && <Note text={msg} />}
+
+      {editable ? (
+        <button
+          onClick={() => {
+            if (!on && !confirm("Закрыть приложение для всех пользователей?")) return;
+            apply(!on);
+          }}
+          disabled={busy}
+          className={`w-full mt-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 ${
+            on
+              ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
+              : "bg-amber-500/20 border border-amber-500/30 text-amber-300"
+          }`}
+        >
+          {busy ? "Применяем..." : on ? "Снять техработы" : "Включить техработы"}
+        </button>
+      ) : (
+        <p className="text-xs text-slate-600 mt-4 text-center">
+          Включать техработы может только владелец панели
+        </p>
+      )}
     </div>
   );
 }
