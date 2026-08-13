@@ -658,3 +658,74 @@
   from { width: 100%; }
   to { width: 0%; }
 }
+
+/* ── Светлая тема Dev-панели ─────────────────────────────────────────────
+   Панель свёрстана в тёмных тонах; здесь мягко переопределяем фон, текст
+   и границы, не трогая акцентные (фиолетовые/цветные) элементы. */
+.dev-light {
+  background: #f4f5f9 !important;
+  color: #1e2233 !important;
+}
+.dev-light .bg-\[\#0d0e1a\]\/95,
+.dev-light .bg-\[\#12131f\] {
+  background: #ffffff !important;
+}
+.dev-light [class*="bg-white/[0.0"],
+.dev-light .bg-white\/5,
+.dev-light .bg-black\/30,
+.dev-light .bg-black\/25 {
+  background: rgba(15, 20, 40, 0.04) !important;
+}
+.dev-light [class*="border-white/"] {
+  border-color: rgba(15, 20, 40, 0.12) !important;
+}
+.dev-light .text-slate-100,
+.dev-light .text-slate-200,
+.dev-light .text-slate-300 {
+  color: #1e2233 !important;
+}
+.dev-light .text-slate-400,
+.dev-light .text-slate-500 {
+  color: #5a6076 !important;
+}
+.dev-light .text-slate-600 {
+  color: #838aa0 !important;
+}
+.dev-light input,
+.dev-light textarea,
+.dev-light select {
+  color: #1e2233 !important;
+}
+.dev-light .placeholder-slate-600::placeholder {
+  color: #9aa0b4 !important;
+}
+.dev-light .backdrop-blur-xl,
+.dev-light .backdrop-blur-md {
+  backdrop-filter: none !important;
+}
+
+/* ── Компактный режим: плотнее строки, больше данных на экране ────────── */
+.dev-compact table td,
+.dev-compact table th {
+  padding-top: 0.4rem !important;
+  padding-bottom: 0.4rem !important;
+}
+.dev-compact .rounded-2xl {
+  border-radius: 0.85rem;
+}
+.dev-compact nav button {
+  padding-top: 0.4rem !important;
+  padding-bottom: 0.4rem !important;
+}
+.dev-compact nav button > span:last-child {
+  display: none;
+}
+
+/* В светлой теме цветные метки на белом бледнят — делаем текст насыщеннее */
+.dev-light .text-emerald-400 { color: #047857 !important; }
+.dev-light .text-red-400 { color: #b91c1c !important; }
+.dev-light .text-amber-400,
+.dev-light .text-amber-300 { color: #b45309 !important; }
+.dev-light .text-violet-300,
+.dev-light .text-violet-200 { color: #6d28d9 !important; }
+.dev-light .text-sky-400 { color: #0369a1 !important; }

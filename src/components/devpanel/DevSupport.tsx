@@ -25,6 +25,8 @@ export default function DevSupport() {
   const [active, setActive] = useState<Ticket | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [reply, setReply] = useState("");
+  const [canned, setCanned] = useState<{ id: number; title: string; body: string }[]>([]);
+  const [cannedOpen, setCannedOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,6 +57,12 @@ export default function DevSupport() {
       alert(e instanceof Error ? e.message : "Не удалось открыть");
     }
   };
+
+  useEffect(() => {
+    devApi<{ items: { id: number; title: string; body: string }[] }>("canned_list")
+      .then((r) => setCanned(r.items))
+      .catch(() => {});
+  }, []);
 
   const send = async () => {
     if (!active || !reply.trim()) return;
@@ -177,8 +185,42 @@ export default function DevSupport() {
               )}
             </div>
 
+            {active.status !== "closed" && cannedOpen && canned.length > 0 && (
+              <div className="px-3 pt-3 border-t border-white/8">
+                <div className="text-[10px] text-slate-600 mb-1.5">Готовые ответы</div>
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                  {canned.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        setReply(c.body);
+                        setCannedOpen(false);
+                      }}
+                      title={c.body}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-[11px] text-slate-300 hover:bg-white/10 transition"
+                    >
+                      {c.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {active.status !== "closed" && (
               <div className="p-3 border-t border-white/8 flex items-center gap-2">
+                {canned.length > 0 && (
+                  <button
+                    onClick={() => setCannedOpen(!cannedOpen)}
+                    title="Готовые ответы"
+                    className={`p-2.5 rounded-xl border transition shrink-0 ${
+                      cannedOpen
+                        ? "bg-violet-600/20 border-violet-500/40 text-violet-300"
+                        : "bg-white/[0.04] border-white/10 text-slate-400 hover:bg-white/10"
+                    }`}
+                  >
+                    <Icon name="Zap" size={16} />
+                  </button>
+                )}
                 <input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}

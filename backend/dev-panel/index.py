@@ -69,6 +69,9 @@ ACTION_PERMS = {
     "payments_export": "dashboard",
     "user_billing": "users", "wallet_set": "settings",
     "twofa_get": "dashboard", "twofa_save": "dashboard",
+    "trends": "dashboard", "expiring_soon": "dashboard",
+    "users_export": "users", "bulk_action": "user_write",
+    "canned_list": "support", "canned_save": "support", "canned_delete": "support",
     "payment_refund": "settings", "subscription_extend": "settings",
     "subscription_cancel": "settings",
     "subscriptions_summary": "dashboard",
@@ -1761,6 +1764,164 @@ def handler(event: dict, context) -> dict:
                     (str(key)[:50], str(value)[:2000], now, admin["id"]),
                 )
             audit(cur, admin, "settings_save", "Изменены настройки панели", ip)
+            return ok({"success": True})
+
+        # ── Сравнение с прошлой неделей ───────────────────────────────────
+        if action == "trends":
+            now_ts = int(time.time())
+            week = 7 * 86400
+            cur_from, prev_from = now_ts - week, now_ts - 2 * week
+
+            def pair(sql_tpl, col):
+                cur.execute(sql_tpl, (cur_from, now_ts))
+                a = int(cur.fetchone()[0] or 0)
+                cur.execute(sql_tpl, (prev_from, cur_from))
+                b = int(cur.fetchone()[0] or 0)
+                delta = None if b == 0 else round((a - b) / b * 100)
+                return {"key": col, "now": a, "prev": b, "delta": delta}
+
+            items = [
+                pair(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE created_at BETWEEN %s AND %s", "users"),
+                pair(f"SELECT COUNT(*) FROM {SCHEMA}.messages WHERE created_at BETWEEN %s AND %s", "messages"),
+            ]
+            cur.execute(
+                f"SELECT COALESCE(SUM(amount), 0) FROM {SCHEMA}.orders "
+                f"WHERE status IN ('paid','succeeded') AND created_at > to_timestamp(%s)",
+                (cur_from,),
+            )
+            rev_now = float(cur.fetchone()[0] or 0)
+            cur.execute(
+                f"SELECT COALESCE(SUM(amount), 0) FROM {SCHEMA}.orders "
+                f"WHERE status IN ('paid','succeeded') "
+                f"AND created_at BETWEEN to_timestamp(%s) AND to_timestamp(%s)",
+                (prev_from, cur_from),
+            )
+            rev_prev = float(cur.fetchone()[0] or 0)
+            items.append({
+                "key": "revenue", "now": rev_now, "prev": rev_prev,
+                "delta": None if rev_prev == 0 else round((rev_now - rev_prev) / rev_prev * 100),
+            })
+            return ok({"items": items})
+
+        # ── У кого заканчивается Premium ──────────────────────────────────
+        if action == "expiring_soon":
+            now_ts = int(time.time())
+            cur.execute(
+                f"SELECT id, name, COALESCE(phone, ''), COALESCE(avatar_url, ''), pro_until "
+                f"FROM {SCHEMA}.users "
+                f"WHERE COALESCE(pro_until, 0) > %s AND COALESCE(pro_until, 0) < %s "
+                f"ORDER BY pro_until LIMIT 30",
+                (now_ts, now_ts + 7 * 86400),
+            )
+            items = [{
+                "id": r[0], "name": r[1], "phone": r[2], "avatar_url": r[3],
+                "pro_until": int(r[4]),
+                "days_left": max(0, (int(r[4]) - now_ts) // 86400),
+            } for r in cur.fetchall()]
+            return ok({"items": items, "count": len(items)})
+
+        # ── Выгрузка базы пользователей ───────────────────────────────────
+        if action == "users_export":
+            now_ts = int(time.time())
+            cur.execute(
+                f"SELECT id, name, COALESCE(phone, ''), COALESCE(pro_until, 0), "
+                f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE), "
+                f"created_at, COALESCE(last_seen, 0), COALESCE(banned_until, 0) "
+                f"FROM {SCHEMA}.users ORDER BY created_at DESC LIMIT 10000"
+            )
+            rows = [{
+                "id": r[0], "name": r[1], "phone": r[2],
+                "premium": "Да" if int(r[3] or 0) > now_ts else "Нет",
+                "premium_until": int(r[3] or 0),
+                "wallet": float(r[4] or 0),
+                "verified": "Да" if r[5] else "Нет",
+                "created_at": int(r[6] or 0),
+                "last_seen": int(r[7] or 0),
+                "banned": "Да" if int(r[8] or 0) > now_ts else "Нет",
+            } for r in cur.fetchall()]
+            audit(cur, admin, "users_export", f"Выгрузка базы: {len(rows)} строк", ip)
+            return ok({"rows": rows, "count": len(rows)})
+
+        # ── Массовые действия ─────────────────────────────────────────────
+        if action == "bulk_action":
+            ids = [int(x) for x in (body.get("ids") or []) if str(x).isdigit()][:200]
+            what = (body.get("bulk") or "").strip()
+            if not ids:
+                return err("Не выбрано ни одного пользователя")
+            now_ts = int(time.time())
+            id_list = ",".join(str(i) for i in ids)
+
+            if what == "ban":
+                days = int(body.get("days") or 7)
+                until = now_ts + days * 86400
+                reason = (body.get("reason") or "Нарушение правил")[:200]
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET banned_until = %s, banned_reason = %s, "
+                    f"banned_at = %s WHERE id IN ({id_list})",
+                    (until, reason, now_ts),
+                )
+                label = f"Блокировка на {days} дн."
+            elif what == "unban":
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET banned_until = NULL, banned_reason = NULL "
+                    f"WHERE id IN ({id_list})"
+                )
+                label = "Снятие блокировки"
+            elif what == "premium":
+                days = int(body.get("days") or 30)
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET pro_until = "
+                    f"GREATEST(COALESCE(pro_until, 0), %s) + %s WHERE id IN ({id_list})",
+                    (now_ts, days * 86400),
+                )
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) "
+                    f"SELECT id, 'system', %s, %s FROM {SCHEMA}.users WHERE id IN ({id_list})",
+                    (f"Premium продлён на {days} дн.",
+                     (body.get("reason") or "Подарок от команды Nova")[:200]),
+                )
+                label = f"Продление Premium на {days} дн."
+            elif what == "logout":
+                cur.execute(f"DELETE FROM {SCHEMA}.user_sessions WHERE user_id IN ({id_list})")
+                label = "Выход со всех устройств"
+            else:
+                return err("Неизвестное действие")
+
+            audit(cur, admin, "bulk_action", f"{label} — {len(ids)} чел.", ip)
+            return ok({"success": True, "affected": len(ids), "label": label})
+
+        # ── Заготовки ответов поддержки ───────────────────────────────────
+        if action == "canned_list":
+            cur.execute(
+                f"SELECT id, title, body FROM {SCHEMA}.canned_replies ORDER BY sort_order, id"
+            )
+            return ok({"items": [{"id": r[0], "title": r[1], "body": r[2]}
+                                 for r in cur.fetchall()]})
+
+        if action == "canned_save":
+            rid = body.get("id")
+            title = (body.get("title") or "").strip()
+            text = (body.get("body") or "").strip()
+            if not title or not text:
+                return err("Заполните название и текст")
+            if rid:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.canned_replies SET title = %s, body = %s WHERE id = %s",
+                    (title[:100], text[:2000], int(rid)),
+                )
+            else:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.canned_replies (title, body) VALUES (%s, %s)",
+                    (title[:100], text[:2000]),
+                )
+            audit(cur, admin, "canned_save", f"Заготовка ответа: {title[:50]}", ip)
+            return ok({"success": True})
+
+        if action == "canned_delete":
+            cur.execute(
+                f"DELETE FROM {SCHEMA}.canned_replies WHERE id = %s",
+                (int(body.get("id") or 0),),
+            )
             return ok({"success": True})
 
         # ── Рассылка пользователям ────────────────────────────────────────

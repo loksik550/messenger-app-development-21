@@ -33,7 +33,15 @@ interface SubsData {
   by_plan: { plan: string; count: number; sum: number }[];
 }
 
+interface Trend { key: string; now: number; prev: number; delta: number | null }
+interface Expiring {
+  id: number; name: string; phone: string; avatar_url: string;
+  pro_until: number; days_left: number;
+}
+
 export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) => void } = {}) {
+  const [trends, setTrends] = useState<Trend[]>([]);
+  const [expiring, setExpiring] = useState<Expiring[]>([]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [mod, setMod] = useState<ModerationData | null>(null);
   const [subs, setSubs] = useState<SubsData | null>(null);
@@ -67,6 +75,12 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
   useEffect(() => {
     load();
     const timer = setInterval(load, 30000);
+    devApi<{ items: Trend[] }>("trends")
+      .then((r) => setTrends(r.items))
+      .catch(() => {});
+    devApi<{ items: Expiring[] }>("expiring_soon")
+      .then((r) => setExpiring(r.items))
+      .catch(() => {});
     return () => clearInterval(timer);
   }, []);
 
@@ -96,6 +110,61 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
           <StatCard key={c.label} {...c} />
         ))}
       </div>
+
+      {trends.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {trends.map((t) => (
+            <TrendCard key={t.key} trend={t} />
+          ))}
+        </div>
+      )}
+
+      {expiring.length > 0 && (
+        <div className="bg-amber-500/[0.07] border border-amber-500/25 rounded-2xl p-5">
+          <div className="flex items-start gap-3 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+              <Icon name="Clock" size={17} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold">Premium скоро закончится</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                У {expiring.length} чел. подписка истекает на этой неделе
+              </p>
+            </div>
+            <button
+              onClick={() => onNavigate?.("broadcast")}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs shrink-0 hover:bg-amber-500/25 transition"
+            >
+              Напомнить
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {expiring.slice(0, 8).map((u) => (
+              <div
+                key={u.id}
+                className="flex items-center gap-2 bg-black/25 border border-white/8 rounded-xl pl-1.5 pr-3 py-1.5"
+              >
+                {u.avatar_url ? (
+                  <img src={u.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover" />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-[10px] font-bold">
+                    {(u.name || "?").slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <span className="text-xs">{u.name}</span>
+                <span className="text-[10px] text-amber-400">
+                  {u.days_left === 0 ? "сегодня" : `${u.days_left} дн.`}
+                </span>
+              </div>
+            ))}
+            {expiring.length > 8 && (
+              <div className="flex items-center px-3 text-xs text-slate-500">
+                и ещё {expiring.length - 8}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
@@ -323,6 +392,45 @@ function MiniStat({ label, value, icon }: { label: string; value: number; icon: 
       <Icon name={icon} size={13} className="text-slate-500 mb-1" />
       <div className="text-base font-bold">{formatNum(value)}</div>
       <div className="text-[10px] text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+const TREND_META: Record<string, { label: string; icon: string; money?: boolean }> = {
+  users: { label: "Новых пользователей", icon: "UserPlus" },
+  messages: { label: "Сообщений", icon: "MessageSquare" },
+  revenue: { label: "Доход", icon: "Wallet", money: true },
+};
+
+function TrendCard({ trend }: { trend: Trend }) {
+  const meta = TREND_META[trend.key] || { label: trend.key, icon: "Activity" };
+  const up = (trend.delta ?? 0) > 0;
+  const flat = trend.delta === 0 || trend.delta === null;
+
+  return (
+    <div className="bg-white/[0.03] border border-white/10 rounded-2xl px-4 py-3.5">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon name={meta.icon} size={14} className="text-slate-500" />
+        <span className="text-xs text-slate-500">{meta.label}</span>
+      </div>
+      <div className="flex items-end gap-2 flex-wrap">
+        <span className="text-xl font-bold">
+          {formatNum(trend.now)}{meta.money ? " ₽" : ""}
+        </span>
+        {!flat && (
+          <span
+            className={`text-xs font-medium flex items-center gap-0.5 mb-0.5 ${
+              up ? "text-emerald-400" : "text-red-400"
+            }`}
+          >
+            <Icon name={up ? "TrendingUp" : "TrendingDown"} size={13} />
+            {up ? "+" : ""}{trend.delta}%
+          </span>
+        )}
+      </div>
+      <div className="text-[11px] text-slate-600 mt-1">
+        неделей раньше: {formatNum(trend.prev)}{meta.money ? " ₽" : ""}
+      </div>
     </div>
   );
 }

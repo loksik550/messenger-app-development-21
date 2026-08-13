@@ -101,3 +101,29 @@ export function timeAgo(ts?: number | null): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)} ч назад`;
   return `${Math.floor(diff / 86400)} дн назад`;
 }
+
+/** Скачивает таблицу в формате CSV — открывается в Excel и Google Таблицах */
+export function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: (string | number)[][],
+  footer: string[] = [],
+) {
+  const esc = (v: string | number | null) => {
+    const t = String(v ?? "");
+    return /[";\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const lines = [headers.join(";")];
+  for (const row of rows) lines.push(row.map(esc).join(";"));
+  if (footer.length) {
+    lines.push("");
+    for (const f of footer) lines.push(f);
+  }
+  // BOM нужен, чтобы Excel правильно показал русские буквы
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}

@@ -29,6 +29,7 @@ const ROLE_COLOR: Record<string, string> = {
 
 export default function DevTopBar({
   admin, title, onMenu, onLogout, onOpenSettings, onNavigate,
+  light, compact, onToggleLight, onToggleCompact,
 }: {
   admin: DevAdmin;
   title: string;
@@ -36,6 +37,10 @@ export default function DevTopBar({
   onLogout: () => void;
   onOpenSettings: () => void;
   onNavigate: (section: string) => void;
+  light?: boolean;
+  compact?: boolean;
+  onToggleLight?: () => void;
+  onToggleCompact?: () => void;
 }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -100,6 +105,30 @@ export default function DevTopBar({
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           Online
         </div>
+
+        {onToggleCompact && (
+          <button
+            onClick={onToggleCompact}
+            title={compact ? "Обычные строки" : "Компактные строки"}
+            className={`p-2.5 rounded-xl border transition hidden sm:block ${
+              compact
+                ? "bg-violet-600/20 border-violet-500/40 text-violet-300"
+                : "bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/10"
+            }`}
+          >
+            <Icon name={compact ? "Rows2" : "Rows3"} size={17} />
+          </button>
+        )}
+
+        {onToggleLight && (
+          <button
+            onClick={onToggleLight}
+            title={light ? "Тёмная тема" : "Светлая тема"}
+            className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-slate-300 hover:bg-white/10 transition"
+          >
+            <Icon name={light ? "Moon" : "Sun"} size={17} />
+          </button>
+        )}
 
         {/* Колокольчик */}
         <div className="relative">

@@ -55,6 +55,25 @@ export default function DevPanel() {
   const [section, setSection] = useState<Section>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
   const [navQuery, setNavQuery] = useState("");
+  const [light, setLight] = useState(() => {
+    try { return localStorage.getItem("nova_dev_light") === "1"; } catch { return false; }
+  });
+  const [compact, setCompact] = useState(() => {
+    try { return localStorage.getItem("nova_dev_compact") === "1"; } catch { return false; }
+  });
+
+  const toggleLight = () => {
+    setLight((v) => {
+      try { localStorage.setItem("nova_dev_light", v ? "0" : "1"); } catch { /* ignore */ }
+      return !v;
+    });
+  };
+  const toggleCompact = () => {
+    setCompact((v) => {
+      try { localStorage.setItem("nova_dev_compact", v ? "0" : "1"); } catch { /* ignore */ }
+      return !v;
+    });
+  };
 
   const can = (perm: string) => perms.includes("*") || perms.includes(perm);
 
@@ -137,7 +156,11 @@ export default function DevPanel() {
   };
 
   return (
-    <div className="h-[100dvh] bg-[#0a0b14] text-slate-100 flex overflow-hidden relative">
+    <div
+      className={`h-[100dvh] bg-[#0a0b14] text-slate-100 flex overflow-hidden relative ${
+        light ? "dev-light" : ""
+      } ${compact ? "dev-compact" : ""}`}
+    >
       {/* Фон панели */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         {bgImage ? (
@@ -280,11 +303,15 @@ export default function DevPanel() {
           onLogout={logout}
           onOpenSettings={() => setSection("settings")}
           onNavigate={go}
+          light={light}
+          compact={compact}
+          onToggleLight={toggleLight}
+          onToggleCompact={toggleCompact}
         />
 
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-5 lg:p-8">
           {activeSection === "dashboard" && <DevDashboard onNavigate={go} />}
-          {activeSection === "users" && <DevUsers can={can} />}
+          {activeSection === "users" && <DevUsers can={can} compact={compact} />}
           {activeSection === "channels" && <DevChannels can={can} />}
           {activeSection === "verification" && <DevVerification can={can} />}
           {activeSection === "reports" && <DevReports />}
