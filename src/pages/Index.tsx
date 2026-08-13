@@ -131,20 +131,27 @@ export default function Index() {
   }, []);
 
   // Проверяем, не идут ли технические работы (включается в Dev-панели)
-  useEffect(() => {
-    let alive = true;
-    const check = () => {
-      api("app_status", {})
-        .then((r) => {
-          if (!alive) return;
-          setMaintenance(r?.maintenance ? { title: r.title, text: r.text } : null);
-        })
-        .catch(() => {});
-    };
-    check();
-    const timer = setInterval(check, 60000);
-    return () => { alive = false; clearInterval(timer); };
+  const checkMaintenance = useCallback(() => {
+    return api("app_status", {})
+      .then((r) => {
+        setMaintenance(r?.maintenance ? { title: r.title, text: r.text } : null);
+      })
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    checkMaintenance();
+    const timer = setInterval(checkMaintenance, 15000);
+    // Вернулись во вкладку — проверяем сразу, не дожидаясь таймера
+    const onFocus = () => {
+      if (document.visibilityState === "visible") checkMaintenance();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [checkMaintenance]);
 
   // Применяем настройки оформления с сервера (тема/акцент/шрифт/стиль сообщений)
   useEffect(() => {
@@ -606,27 +613,9 @@ export default function Index() {
     </div>
   );
 
-  if (maintenance) {
-    return (
-      <div className="h-screen flex items-center justify-center relative overflow-hidden p-6">
-        <div className="mesh-bg" />
-        <div className="relative text-center max-w-sm">
-          <div className="w-20 h-20 rounded-3xl bg-amber-500/15 flex items-center justify-center mx-auto mb-5">
-            <Icon name="Wrench" size={36} className="text-amber-400" />
-          </div>
-          <h1 className="text-2xl font-black mb-2">{maintenance.title}</h1>
-          <p className="text-sm text-muted-foreground leading-relaxed mb-6 whitespace-pre-wrap">
-            {maintenance.text}
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-6 py-3 glass rounded-2xl text-sm font-semibold"
-          >
-            Проверить снова
-          </button>
-        </div>
-      </div>
-    );
+  // До входа показываем отдельным экраном — приложения ещё нет, терять нечего
+  if (maintenance && !currentUser) {
+    return <MaintenanceScreen info={maintenance} onRecheck={checkMaintenance} />;
   }
 
   // Гейт согласия на обработку ПД — обязательное требование RuStore.
@@ -1355,7 +1344,64 @@ export default function Index() {
           }}
         />
       )}
+      {maintenance && (
+        <MaintenanceScreen info={maintenance} onRecheck={checkMaintenance} overlay />
+      )}
     </div>
     </Suspense>
+  );
+}
+
+function MaintenanceScreen({
+  info, onRecheck, overlay,
+}: {
+  info: { title: string; text: string };
+  onRecheck: () => Promise<void> | void;
+  overlay?: boolean;
+}) {
+  const [checking, setChecking] = useState(false);
+
+  const recheck = async () => {
+    setChecking(true);
+    await onRecheck();
+    setTimeout(() => setChecking(false), 500);
+  };
+
+  return (
+    <div
+      className={`flex items-center justify-center p-6 overflow-hidden ${
+        overlay
+          ? "fixed inset-0 z-[100] bg-background/95 backdrop-blur-md"
+          : "h-screen relative"
+      }`}
+    >
+      {!overlay && <div className="mesh-bg" />}
+      <div className="relative text-center max-w-sm">
+        <div className="w-20 h-20 rounded-3xl bg-amber-500/15 flex items-center justify-center mx-auto mb-5">
+          <Icon name="Wrench" size={36} className="text-amber-400" />
+        </div>
+        <h1 className="text-2xl font-black mb-2">{info.title}</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed mb-6 whitespace-pre-wrap">
+          {info.text}
+        </p>
+        <button
+          onClick={recheck}
+          disabled={checking}
+          className="px-6 py-3 glass rounded-2xl text-sm font-semibold disabled:opacity-60 inline-flex items-center gap-2"
+        >
+          {checking ? (
+            <>
+              <Icon name="Loader2" size={16} className="animate-spin" />
+              Проверяем...
+            </>
+          ) : (
+            "Проверить снова"
+          )}
+        </button>
+        <p className="text-xs text-muted-foreground/70 mt-4">
+          Мы проверяем автоматически — окно закроется само
+        </p>
+      </div>
+    </div>
   );
 }
