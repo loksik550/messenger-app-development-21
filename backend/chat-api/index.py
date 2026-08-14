@@ -299,6 +299,29 @@ def _check_forbidden(cur, uid, text, cfg):
     return None
 
 
+def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
+    """Шлёт владельцу уведомление в Telegram, если это включено в панели."""
+    try:
+        cur.execute(
+            f"SELECT key, value FROM {SCHEMA}.dev_settings "
+            f"WHERE key IN ('tg_enabled','tg_bot_token','tg_chat_id','tg_events')"
+        )
+        st = {r[0]: r[1] for r in cur.fetchall()}
+        if st.get("tg_enabled") != "1":
+            return
+        if kind not in (st.get("tg_events") or "report,support,pay").split(","):
+            return
+        token, chat = st.get("tg_bot_token"), st.get("tg_chat_id")
+        if not token or not chat:
+            return
+        from urllib.parse import urlencode as _ue
+        from urllib.request import Request as _Rq, urlopen as _uo
+        data = _ue({"chat_id": chat, "text": f"{title}\n\n{body_text}"}).encode()
+        _uo(_Rq(f"https://api.telegram.org/bot{token}/sendMessage", data=data), timeout=4)
+    except Exception:
+        pass
+
+
 def handler(event: dict, context) -> dict:
     """
     Chat API для Nova мессенджера.
@@ -1552,6 +1575,10 @@ def handler(event: dict, context) -> dict:
                 VALUES (%s, %s, FALSE, %s, %s)""",
             (tid, int(user_id), text, now)
         )
+        cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        _from = cur.fetchone()
+        tg_notify(cur, "support", "Новое обращение в поддержку",
+                  f"От: {_from[0] if _from else user_id}\nТема: {subject}\n\n{text[:200]}")
         conn.close()
         return ok({"ticket_id": tid})
 
@@ -1938,6 +1965,10 @@ def handler(event: dict, context) -> dict:
             (int(user_id), reported_id,
              int(chat_id) if chat_id else None, reason, comment, now)
         )
+        cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (reported_id,))
+        _who = cur.fetchone()
+        tg_notify(cur, "report", "Новая жалоба",
+                  f"На: {_who[0] if _who else reported_id}\nПричина: {reason}")
         conn.close()
         return ok({"ok": True})
 

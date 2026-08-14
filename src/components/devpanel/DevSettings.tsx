@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, type DevAdmin } from "@/lib/devApi";
+import DevTelegram, { DevBackup } from "./DevTelegram";
 import { UPLOAD_API } from "@/lib/api";
 import { Loading, ErrorBox } from "./DevDashboard";
 
@@ -224,6 +225,10 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged, onPro
           </p>
         )}
       </div>
+
+      {editable && <DevTelegram />}
+
+      {editable && <DevBackup />}
 
       <Maintenance editable={editable} />
 

@@ -21,15 +21,22 @@ import DevBroadcast from "@/components/devpanel/DevBroadcast";
 import DevConfirm, { DevLoginToast } from "@/components/devpanel/DevConfirm";
 import DevStatusBar from "@/components/devpanel/DevStatusBar";
 import DevModeration from "@/components/devpanel/DevModeration";
+import DevGrowth from "@/components/devpanel/DevGrowth";
+import DevAutoRules from "@/components/devpanel/DevAutoRules";
+import DevSearch, { DevShortcuts } from "@/components/devpanel/DevSearch";
+import DevUndoBar from "@/components/devpanel/DevUndoBar";
 
 type Section =
   | "dashboard" | "users" | "channels" | "verification" | "reports"
   | "support" | "broadcast" | "plans" | "promo" | "payments"
-  | "moderation" | "logs" | "services" | "team" | "settings";
+  | "moderation" | "logs" | "services" | "team" | "settings"
+  | "growth"
+  | "autorules";
 
 const NAV: { key: Section; label: string; icon: string; perm: string; hint: string; keywords: string }[] = [
   { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard", hint: "Главные цифры и что требует внимания", keywords: "статистика главная обзор цифры" },
   { key: "users", label: "Пользователи", icon: "Users", perm: "users", hint: "Найти человека, заблокировать, продлить Premium", keywords: "люди аккаунты бан блокировка кошелёк баланс удалить" },
+  { key: "growth", label: "Рост и удержание", icon: "TrendingUp", perm: "dashboard", hint: "Где теряются люди и кто возвращается", keywords: "воронка удержание конверсия рост retention отток" },
   { key: "channels", label: "Каналы и группы", icon: "Radio", perm: "channels", hint: "Список сообществ, переименовать или удалить", keywords: "чаты сообщества группы каналы" },
   { key: "verification", label: "Верификация", icon: "BadgeCheck", perm: "reports", hint: "Заявки на синюю галочку", keywords: "галочка подтверждение заявки" },
   { key: "reports", label: "Жалобы", icon: "Flag", perm: "reports", hint: "На что жалуются пользователи", keywords: "модерация нарушения спам" },
@@ -39,6 +46,7 @@ const NAV: { key: Section; label: string; icon: string; perm: string; hint: stri
   { key: "promo", label: "Промокоды и бонусы", icon: "Ticket", perm: "dashboard", hint: "Скидки, подарки и приглашения друзей", keywords: "скидка акция подарок рефералы бонус" },
   { key: "payments", label: "Платежи", icon: "Receipt", perm: "dashboard", hint: "Кто и сколько заплатил, возвраты, отчёты", keywords: "деньги доход оплата возврат выручка чеки экспорт" },
   { key: "moderation", label: "Автомодерация", icon: "ShieldCheck", perm: "settings", hint: "Стоп-слова и защита от спама", keywords: "фильтр мат стоп-слова антиспам блокировка" },
+  { key: "autorules", label: "Автоправила", icon: "Bot", perm: "dashboard", hint: "Само блокирует спамеров и нарушителей", keywords: "автобан автоматически правила модерация спам жалобы" },
   { key: "logs", label: "Логи и события", icon: "ScrollText", perm: "logs", hint: "Кто из команды что сделал", keywords: "история действия журнал аудит" },
   { key: "services", label: "Серверы и доступ", icon: "Server", perm: "services", hint: "Работают ли база, хранилище и звонки", keywords: "статус сервисы база хранилище приглашения" },
   { key: "team", label: "Команда", icon: "UserCog", perm: "team", hint: "Администраторы и их права", keywords: "админы роли доступ сотрудники" },
@@ -60,9 +68,65 @@ export default function DevPanel() {
   const [confirmAsk, setConfirmAsk] = useState<{
     action: string; resolve: (v: string | null) => void;
   } | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   const [loginNotice, setLoginNotice] = useState<{
     name: string; role: string; device: string; ip: string; when: string;
   } | null>(null);
+
+  // Горячие клавиши: Ctrl+K — поиск, G+буква — переход, ? — подсказка
+  useEffect(() => {
+    if (!admin) return;
+    let waitingG = false;
+    let gTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const GO_KEYS: Record<string, Section> = {
+      d: "dashboard", u: "users", p: "payments",
+      s: "support", r: "reports", g: "growth", a: "autorules",
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = el && (
+        el.tagName === "INPUT" || el.tagName === "TEXTAREA" ||
+        el.tagName === "SELECT" || el.isContentEditable
+      );
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (typing) return;
+
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setKeysOpen(true);
+        return;
+      }
+      if (e.key.toLowerCase() === "g" && !waitingG) {
+        waitingG = true;
+        gTimer = setTimeout(() => { waitingG = false; }, 1200);
+        return;
+      }
+      if (waitingG) {
+        waitingG = false;
+        if (gTimer) clearTimeout(gTimer);
+        const target = GO_KEYS[e.key.toLowerCase()];
+        if (target && can(NAV.find((n) => n.key === target)?.perm || "")) {
+          e.preventDefault();
+          setSection(target);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (gTimer) clearTimeout(gTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin, perms]);
 
   // Сервер может попросить подтвердить действие паролем — показываем окно
   useEffect(() => {
@@ -346,6 +410,8 @@ export default function DevPanel() {
           {activeSection === "promo" && <DevPromo can={can} />}
           {activeSection === "payments" && <DevPayments can={can} />}
           {activeSection === "broadcast" && <DevBroadcast can={can} />}
+          {activeSection === "growth" && <DevGrowth onNavigate={go} />}
+          {activeSection === "autorules" && <DevAutoRules can={can} />}
           {activeSection === "moderation" && <DevModeration can={can} />}
           {activeSection === "logs" && <DevLogs />}
           {activeSection === "services" && <DevServices />}
@@ -383,6 +449,16 @@ export default function DevPanel() {
           }}
         />
       )}
+
+      <DevSearch
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onNavigate={go}
+      />
+
+      <DevShortcuts open={keysOpen} onClose={() => setKeysOpen(false)} />
+
+      {admin && <DevUndoBar />}
 
       {loginNotice && (
         <DevLoginToast notice={loginNotice} onClose={() => setLoginNotice(null)} />

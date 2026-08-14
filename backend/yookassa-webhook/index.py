@@ -110,6 +110,31 @@ def handler(event, context):
                 amt = float(order_amount)
                 uid = int(nova_user_id) if nova_user_id else None
 
+                # Уведомление владельцу в Telegram, если включено в панели
+                try:
+                    cur.execute(
+                        f"SELECT key, value FROM {S}dev_settings "
+                        f"WHERE key IN ('tg_enabled','tg_bot_token','tg_chat_id','tg_events')"
+                    )
+                    _st = {r[0]: r[1] for r in cur.fetchall()}
+                    if (_st.get("tg_enabled") == "1"
+                            and "pay" in (_st.get("tg_events") or "").split(",")
+                            and _st.get("tg_bot_token") and _st.get("tg_chat_id")):
+                        _name = ""
+                        if uid:
+                            cur.execute(f"SELECT name FROM {S}users WHERE id = %s", (uid,))
+                            _r = cur.fetchone()
+                            _name = _r[0] if _r else ""
+                        from urllib.parse import urlencode as _ue
+                        from urllib.request import Request as _Rq, urlopen as _uo
+                        _txt = f"Оплата {amt:.0f} ₽\n\nОт: {_name or 'гость'}\nЗаказ №{order_id}"
+                        _uo(_Rq(
+                            f"https://api.telegram.org/bot{_st['tg_bot_token']}/sendMessage",
+                            data=_ue({"chat_id": _st["tg_chat_id"], "text": _txt}).encode(),
+                        ), timeout=4)
+                except Exception:
+                    pass
+
                 if uid and (purpose in (None, '', 'wallet_topup')):
                     cur.execute(
                         f"UPDATE {S}users SET wallet_balance = COALESCE(wallet_balance,0) + %s WHERE id = %s RETURNING wallet_balance",

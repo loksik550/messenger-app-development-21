@@ -79,6 +79,14 @@ ACTION_PERMS = {
     "twofa_get": "dashboard", "twofa_save": "dashboard",
     "trends": "dashboard", "expiring_soon": "dashboard",
     "live_feed": "dashboard", "system_health": "dashboard", "spark": "dashboard",
+    "funnel": "dashboard", "retention": "dashboard",
+    "auto_rules": "dashboard", "auto_rule_save": "settings", "auto_rule_delete": "settings",
+    "auto_rule_run": "settings", "auto_rule_hits": "dashboard",
+    "global_search": "users", "filters_list": "users", "filter_save": "users",
+    "filter_delete": "users", "users_filtered": "users",
+    "undo_list": "dashboard", "undo_apply": "user_write",
+    "backup_export": "settings", "user_full": "users",
+    "tg_get": "settings", "tg_save": "settings", "tg_test": "settings",
     "users_export": "users", "bulk_action": "user_write",
     "canned_list": "support", "canned_save": "support", "canned_delete": "support",
     "payment_refund": "settings", "subscription_extend": "settings",
@@ -105,6 +113,50 @@ def ok(data):
 
 def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
+
+
+def _tg_send(token: str, chat_id: str, text: str) -> bool:
+    """Отправляет сообщение в Telegram. Возвращает True при успехе."""
+    try:
+        data = urlencode({"chat_id": chat_id, "text": text}).encode()
+        req = Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
+        with urlopen(req, timeout=4) as r:
+            return json.loads(r.read()).get("ok", False)
+    except Exception:
+        return False
+
+
+def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
+    """Шлёт уведомление владельцу в Telegram, если это включено."""
+    try:
+        cur.execute(
+            f"SELECT key, value FROM {SCHEMA}.dev_settings "
+            f"WHERE key IN ('tg_enabled','tg_bot_token','tg_chat_id','tg_events')"
+        )
+        st = {r[0]: r[1] for r in cur.fetchall()}
+        if st.get("tg_enabled") != "1":
+            return
+        events = (st.get("tg_events") or "report,support,pay").split(",")
+        if kind not in events:
+            return
+        token, chat = st.get("tg_bot_token"), st.get("tg_chat_id")
+        if token and chat:
+            _tg_send(token, chat, f"{title}\n\n{body_text}")
+    except Exception:
+        pass
+
+
+def remember_undo(cur, admin: dict, action_name: str, label: str, snapshot: dict) -> None:
+    """Запоминает прежнее состояние, чтобы действие можно было отменить."""
+    try:
+        snapshot["label"] = label
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.dev_undo (admin_id, action, label, payload) "
+            f"VALUES (%s, %s, %s, %s)",
+            (admin["id"], action_name, label, json.dumps(snapshot, ensure_ascii=False)),
+        )
+    except Exception:
+        pass
 
 
 def hash_password(password: str, salt: str = "") -> str:
@@ -484,6 +536,26 @@ def handler(event: dict, context) -> dict:
             days = int(body.get("days") or 0)
             reason = (body.get("reason") or "Нарушение правил").strip()
             now = int(time.time())
+
+            cur.execute(
+                f"SELECT COALESCE(banned_until, 0), COALESCE(banned_reason, ''), name "
+                f"FROM {SCHEMA}.users WHERE id = %s",
+                (uid,),
+            )
+            _prev = cur.fetchone()
+            if _prev:
+                remember_undo(
+                    cur, admin, "ban_user",
+                    f"{'Блокировка' if days > 0 else 'Разблокировка'} {_prev[2] or f'ID {uid}'}",
+                    {"user_id": uid, "banned_until": int(_prev[0] or 0) or None,
+                     "banned_reason": _prev[1] or None},
+                )
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.ban_history (user_id, until_ts, reason, by_admin, kind) "
+                    f"VALUES (%s, %s, %s, %s, %s)",
+                    (uid, now + days * 86400 if days > 0 else None, reason,
+                     admin["email"], "ban" if days > 0 else "unban"),
+                )
             if days > 0:
                 until = now + days * 86400
                 cur.execute(
@@ -660,6 +732,12 @@ def handler(event: dict, context) -> dict:
             new_name = (body.get("name") or "").strip()
             if not new_name:
                 return err("Имя не может быть пустым")
+            cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            _old = cur.fetchone()
+            if _old:
+                remember_undo(cur, admin, "rename_user",
+                              f"Переименование «{_old[0]}» → «{new_name}»",
+                              {"user_id": uid, "name": _old[0]})
             cur.execute(f"UPDATE {SCHEMA}.users SET name = %s WHERE id = %s", (new_name[:64], uid))
             audit(cur, admin, "rename_user", f"ID {uid} переименован в «{new_name}»", ip)
             return ok({"success": True})
@@ -1800,6 +1878,577 @@ def handler(event: dict, context) -> dict:
             audit(cur, admin, "settings_save", "Изменены настройки панели", ip)
             return ok({"success": True})
 
+        # ── Уведомления в Telegram ────────────────────────────────────────
+        if action == "tg_get":
+            cur.execute(
+                f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key LIKE 'tg_%%'"
+            )
+            st = {r[0]: r[1] for r in cur.fetchall()}
+            return ok({
+                "enabled": st.get("tg_enabled") == "1",
+                "has_token": bool(st.get("tg_bot_token")),
+                "chat_id": st.get("tg_chat_id") or "",
+                "events": (st.get("tg_events") or "report,support,pay").split(","),
+            })
+
+        if action == "tg_save":
+            pairs = {}
+            if body.get("token") is not None:
+                pairs["tg_bot_token"] = (body.get("token") or "").strip()
+            if body.get("chat_id") is not None:
+                pairs["tg_chat_id"] = (body.get("chat_id") or "").strip()
+            if body.get("events") is not None:
+                pairs["tg_events"] = ",".join(body.get("events") or [])
+            pairs["tg_enabled"] = "1" if body.get("enabled") else "0"
+
+            for k, v in pairs.items():
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_by) "
+                    f"VALUES (%s, %s, %s) ON CONFLICT (key) DO UPDATE "
+                    f"SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by",
+                    (k, v, admin["email"]),
+                )
+            audit(cur, admin, "tg_save", "Настроены уведомления в Telegram", ip)
+            return ok({"success": True})
+
+        if action == "tg_test":
+            cur.execute(
+                f"SELECT key, value FROM {SCHEMA}.dev_settings "
+                f"WHERE key IN ('tg_bot_token', 'tg_chat_id')"
+            )
+            st = {r[0]: r[1] for r in cur.fetchall()}
+            token, chat = st.get("tg_bot_token"), st.get("tg_chat_id")
+            if not token or not chat:
+                return err("Сначала укажите ключ бота и получателя")
+            sent = _tg_send(token, chat,
+                            "Проверка связи\n\nУведомления Nova настроены — сообщения будут приходить сюда.")
+            if not sent:
+                return err("Не удалось отправить. Проверьте ключ бота и что вы написали ему первым")
+            return ok({"success": True})
+
+        # ── Карточка пользователя целиком ─────────────────────────────────
+        if action == "user_full":
+            uid = int(body.get("user_id") or 0)
+            now_ts = int(time.time())
+
+            cur.execute(
+                f"SELECT id, name, COALESCE(phone, ''), created_at, COALESCE(last_seen, 0), "
+                f"COALESCE(avatar_url, ''), COALESCE(about, ''), COALESCE(banned_until, 0), "
+                f"COALESCE(banned_reason, ''), COALESCE(wallet_balance, 0), "
+                f"COALESCE(verified, FALSE), COALESCE(pro_until, 0) "
+                f"FROM {SCHEMA}.users WHERE id = %s",
+                (uid,),
+            )
+            u = cur.fetchone()
+            if not u:
+                return err("Пользователь не найден", 404)
+
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.messages WHERE sender_id = %s", (uid,))
+            msgs = int(cur.fetchone()[0] or 0)
+            cur.execute(
+                f"SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM {SCHEMA}.orders "
+                f"WHERE nova_user_id = %s AND status IN ('paid','succeeded')",
+                (uid,),
+            )
+            pay = cur.fetchone()
+
+            cur.execute(
+                f"SELECT r.reason, COALESCE(r.comment, ''), r.status, r.created_at, "
+                f"COALESCE(ru.name, '—') FROM {SCHEMA}.reports r "
+                f"LEFT JOIN {SCHEMA}.users ru ON ru.id = r.reporter_id "
+                f"WHERE r.reported_user_id = %s ORDER BY r.created_at DESC LIMIT 20",
+                (uid,),
+            )
+            reports = [{"reason": r[0], "comment": r[1], "status": r[2],
+                        "ts": r[3], "from": r[4]} for r in cur.fetchall()]
+
+            cur.execute(
+                f"SELECT until_ts, COALESCE(reason, ''), COALESCE(by_admin, ''), kind, created_at "
+                f"FROM {SCHEMA}.ban_history WHERE user_id = %s ORDER BY created_at DESC LIMIT 20",
+                (uid,),
+            )
+            bans = [{"until": r[0], "reason": r[1], "by": r[2], "kind": r[3], "ts": r[4]}
+                    for r in cur.fetchall()]
+
+            cur.execute(
+                f"SELECT id, amount, status, EXTRACT(epoch FROM created_at)::bigint "
+                f"FROM {SCHEMA}.orders WHERE nova_user_id = %s ORDER BY created_at DESC LIMIT 20",
+                (uid,),
+            )
+            orders = [{"id": r[0], "amount": float(r[1] or 0), "status": r[2],
+                       "ts": int(r[3] or 0)} for r in cur.fetchall()]
+
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.moderation_hits WHERE user_id = %s", (uid,)
+            )
+            mod_hits = int(cur.fetchone()[0] or 0)
+
+            risk = min(100, len(reports) * 15 + mod_hits * 10 + (30 if int(u[7] or 0) > now_ts else 0))
+
+            return ok({
+                "user": {
+                    "id": u[0], "name": u[1], "phone": u[2], "created_at": u[3],
+                    "last_seen": u[4], "avatar_url": u[5], "about": u[6],
+                    "banned_until": int(u[7] or 0), "banned_reason": u[8],
+                    "wallet": float(u[9] or 0), "verified": bool(u[10]),
+                    "pro_until": int(u[11] or 0),
+                    "online": bool(u[4] and u[4] > now_ts - 300),
+                },
+                "stats": {
+                    "messages": msgs, "paid_total": float(pay[0] or 0),
+                    "orders_count": int(pay[1] or 0), "mod_hits": mod_hits,
+                    "reports_count": len(reports), "risk": risk,
+                },
+                "reports": reports, "bans": bans, "orders": orders,
+            })
+
+        # ── Общий поиск по всей панели ────────────────────────────────────
+        if action == "global_search":
+            q = (body.get("query") or "").strip()
+            if len(q) < 2:
+                return ok({"groups": []})
+            like = f"%{q}%"
+            digits = "".join(c for c in q if c.isdigit())
+            groups = []
+
+            cur.execute(
+                f"SELECT id, name, COALESCE(phone, ''), COALESCE(avatar_url, '') "
+                f"FROM {SCHEMA}.users WHERE name ILIKE %s OR COALESCE(phone, '') ILIKE %s "
+                f"OR CAST(id AS TEXT) = %s LIMIT 8",
+                (like, like, digits or "0"),
+            )
+            rows = [{"id": r[0], "title": r[1] or "Без имени",
+                     "sub": r[2] or f"ID {r[0]}", "avatar": r[3]} for r in cur.fetchall()]
+            if rows:
+                groups.append({"key": "users", "label": "Пользователи", "section": "users", "items": rows})
+
+            cur.execute(
+                f"SELECT id, name, COALESCE(is_channel, FALSE) FROM {SCHEMA}.groups "
+                f"WHERE name ILIKE %s LIMIT 6",
+                (like,),
+            )
+            rows = [{"id": r[0], "title": r[1], "sub": "Канал" if r[2] else "Группа"}
+                    for r in cur.fetchall()]
+            if rows:
+                groups.append({"key": "channels", "label": "Каналы и группы",
+                               "section": "channels", "items": rows})
+
+            if digits:
+                cur.execute(
+                    f"SELECT o.id, COALESCE(u.name, o.user_name, '—'), o.amount, o.status "
+                    f"FROM {SCHEMA}.orders o LEFT JOIN {SCHEMA}.users u ON u.id = o.nova_user_id "
+                    f"WHERE CAST(o.id AS TEXT) LIKE %s LIMIT 6",
+                    (f"%{digits}%",),
+                )
+                rows = [{"id": r[0], "title": f"Заказ №{r[0]} — {float(r[2] or 0):.0f} ₽",
+                         "sub": f"{r[1]} · {r[3]}"} for r in cur.fetchall()]
+                if rows:
+                    groups.append({"key": "payments", "label": "Платежи",
+                                   "section": "payments", "items": rows})
+
+            cur.execute(
+                f"SELECT t.id, COALESCE(u.name, '—'), t.subject FROM {SCHEMA}.support_tickets t "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = t.user_id "
+                f"WHERE t.subject ILIKE %s LIMIT 6",
+                (like,),
+            )
+            rows = [{"id": r[0], "title": r[2] or "Без темы", "sub": r[1]}
+                    for r in cur.fetchall()]
+            if rows:
+                groups.append({"key": "support", "label": "Обращения",
+                               "section": "support", "items": rows})
+
+            return ok({"groups": groups})
+
+        # ── Сохранённые фильтры ───────────────────────────────────────────
+        if action == "filters_list":
+            cur.execute(
+                f"SELECT id, name, filters FROM {SCHEMA}.dev_saved_filters "
+                f"WHERE shared = TRUE OR admin_id = %s ORDER BY id",
+                (admin["id"],),
+            )
+            return ok({"items": [{"id": r[0], "name": r[1], "filters": json.loads(r[2])}
+                                 for r in cur.fetchall()]})
+
+        if action == "filter_save":
+            name = (body.get("name") or "").strip()[:80]
+            filters = body.get("filters") or {}
+            if not name:
+                return err("Укажите название фильтра")
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.dev_saved_filters (admin_id, name, filters) "
+                f"VALUES (%s, %s, %s)",
+                (admin["id"], name, json.dumps(filters, ensure_ascii=False)),
+            )
+            return ok({"success": True})
+
+        if action == "filter_delete":
+            cur.execute(f"DELETE FROM {SCHEMA}.dev_saved_filters WHERE id = %s",
+                        (int(body.get("id") or 0),))
+            return ok({"success": True})
+
+        # Список пользователей с условиями (для фильтров)
+        if action == "users_filtered":
+            f = body.get("filters") or {}
+            now_ts = int(time.time())
+            where, params = ["1=1"], []
+
+            if f.get("premium") == "yes":
+                where.append("COALESCE(pro_until, 0) > %s"); params.append(now_ts)
+            elif f.get("premium") == "no":
+                where.append("COALESCE(pro_until, 0) <= %s"); params.append(now_ts)
+            if f.get("banned") == "yes":
+                where.append("COALESCE(banned_until, 0) > %s"); params.append(now_ts)
+            if f.get("verified") == "yes":
+                where.append("COALESCE(verified, FALSE) = TRUE")
+            if f.get("inactive_days"):
+                where.append("COALESCE(last_seen, 0) < %s")
+                params.append(now_ts - int(f["inactive_days"]) * 86400)
+            if f.get("new_days"):
+                where.append("created_at > %s")
+                params.append(now_ts - int(f["new_days"]) * 86400)
+            if f.get("has_wallet") == "yes":
+                where.append("COALESCE(wallet_balance, 0) > 0")
+
+            sql = (f"SELECT id, name, COALESCE(phone, ''), created_at, last_seen, "
+                   f"COALESCE(avatar_url, ''), COALESCE(verified, FALSE), "
+                   f"COALESCE(pro_until, 0), COALESCE(banned_until, 0) "
+                   f"FROM {SCHEMA}.users WHERE " + " AND ".join(where) +
+                   " ORDER BY created_at DESC LIMIT 200")
+            cur.execute(sql, tuple(params))
+            users = [{
+                "id": r[0], "name": r[1], "phone": r[2], "created_at": r[3],
+                "last_seen": r[4], "avatar_url": r[5], "verified": bool(r[6]),
+                "online": bool(r[4] and r[4] > now_ts - 300),
+                "premium": int(r[7] or 0) > now_ts,
+                "banned": int(r[8] or 0) > now_ts,
+            } for r in cur.fetchall()]
+            return ok({"users": users, "total": len(users)})
+
+        # ── Отмена последнего действия ────────────────────────────────────
+        if action == "undo_list":
+            cur.execute(
+                f"SELECT id, action, label, created_at FROM {SCHEMA}.dev_undo "
+                f"WHERE admin_id = %s AND undone = FALSE AND created_at > %s "
+                f"ORDER BY created_at DESC LIMIT 10",
+                (admin["id"], int(time.time()) - 3600),
+            )
+            return ok({"items": [{"id": r[0], "action": r[1], "label": r[2], "ts": r[3]}
+                                 for r in cur.fetchall()]})
+
+        if action == "undo_apply":
+            cur.execute(
+                f"SELECT id, action, payload FROM {SCHEMA}.dev_undo "
+                f"WHERE id = %s AND admin_id = %s AND undone = FALSE",
+                (int(body.get("id") or 0), admin["id"]),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Действие не найдено или уже отменено")
+            snap = json.loads(row[2])
+
+            if row[1] == "ban_user":
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET banned_until = %s, banned_reason = %s "
+                    f"WHERE id = %s",
+                    (snap.get("banned_until"), snap.get("banned_reason"), snap["user_id"]),
+                )
+            elif row[1] == "wallet_set":
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET wallet_balance = %s WHERE id = %s",
+                    (snap.get("wallet_balance"), snap["user_id"]),
+                )
+            elif row[1] == "rename_user":
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET name = %s WHERE id = %s",
+                    (snap.get("name"), snap["user_id"]),
+                )
+            elif row[1] == "bulk_action":
+                for item in snap.get("users", []):
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.users SET banned_until = %s, pro_until = %s "
+                        f"WHERE id = %s",
+                        (item.get("banned_until"), item.get("pro_until"), item["id"]),
+                    )
+            else:
+                return err("Это действие нельзя отменить")
+
+            cur.execute(f"UPDATE {SCHEMA}.dev_undo SET undone = TRUE WHERE id = %s", (row[0],))
+            audit(cur, admin, "undo_apply", f"Отменено: {snap.get('label', row[1])}", ip)
+            return ok({"success": True})
+
+        # ── Резервная копия основных данных ───────────────────────────────
+        if action == "backup_export":
+            out = {}
+            cur.execute(
+                f"SELECT id, name, COALESCE(phone, ''), created_at, COALESCE(pro_until, 0), "
+                f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE) "
+                f"FROM {SCHEMA}.users ORDER BY id"
+            )
+            out["users"] = [{
+                "id": r[0], "name": r[1], "phone": r[2], "created_at": r[3],
+                "pro_until": int(r[4] or 0), "wallet": float(r[5] or 0), "verified": bool(r[6]),
+            } for r in cur.fetchall()]
+
+            cur.execute(
+                f"SELECT id, COALESCE(nova_user_id, 0), amount, status, "
+                f"EXTRACT(epoch FROM created_at)::bigint FROM {SCHEMA}.orders ORDER BY id"
+            )
+            out["orders"] = [{"id": r[0], "user_id": r[1], "amount": float(r[2] or 0),
+                              "status": r[3], "created_at": int(r[4] or 0)} for r in cur.fetchall()]
+
+            cur.execute(f"SELECT id, name, COALESCE(is_channel, FALSE) FROM {SCHEMA}.groups ORDER BY id")
+            out["groups"] = [{"id": r[0], "name": r[1], "is_channel": bool(r[2])}
+                             for r in cur.fetchall()]
+
+            cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings")
+            out["settings"] = {r[0]: r[1] for r in cur.fetchall()}
+
+            audit(cur, admin, "backup_export", "Скачана резервная копия", ip)
+            return ok({
+                "backup": out, "made_at": int(time.time()),
+                "counts": {k: len(v) if isinstance(v, list) else len(v) for k, v in out.items()},
+            })
+
+        # ── Автоправила модерации ─────────────────────────────────────────
+        if action == "auto_rules":
+            cur.execute(
+                f"SELECT id, name, trigger_kind, threshold, window_hours, action, "
+                f"action_days, enabled, fired_count, last_fired_at "
+                f"FROM {SCHEMA}.auto_rules ORDER BY id"
+            )
+            rules = [{
+                "id": r[0], "name": r[1], "trigger_kind": r[2], "threshold": r[3],
+                "window_hours": r[4], "action": r[5], "action_days": r[6],
+                "enabled": bool(r[7]), "fired_count": r[8], "last_fired_at": r[9],
+            } for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.auto_rule_hits WHERE created_at > %s",
+                (int(time.time()) - 86400,),
+            )
+            return ok({"rules": rules, "hits_24h": int(cur.fetchone()[0] or 0)})
+
+        if action == "auto_rule_save":
+            rid = body.get("id")
+            name = (body.get("name") or "").strip()[:120]
+            kind = body.get("trigger_kind") or "reports"
+            threshold = max(1, int(body.get("threshold") or 3))
+            window = max(1, int(body.get("window_hours") or 24))
+            act = body.get("rule_action") or "notify"
+            act_days = max(0, int(body.get("action_days") or 0))
+            enabled = bool(body.get("enabled"))
+            if not name:
+                return err("Укажите название правила")
+            if kind not in ("reports", "msg_rate", "mod_hits"):
+                return err("Неизвестное условие")
+            if act not in ("ban", "freeze", "notify"):
+                return err("Неизвестное действие")
+
+            if rid:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.auto_rules SET name = %s, trigger_kind = %s, "
+                    f"threshold = %s, window_hours = %s, action = %s, action_days = %s, "
+                    f"enabled = %s WHERE id = %s",
+                    (name, kind, threshold, window, act, act_days, enabled, int(rid)),
+                )
+            else:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.auto_rules "
+                    f"(name, trigger_kind, threshold, window_hours, action, action_days, enabled) "
+                    f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (name, kind, threshold, window, act, act_days, enabled),
+                )
+            audit(cur, admin, "auto_rule_save", f"Автоправило: {name}", ip)
+            return ok({"success": True})
+
+        if action == "auto_rule_delete":
+            cur.execute(f"DELETE FROM {SCHEMA}.auto_rules WHERE id = %s",
+                        (int(body.get("id") or 0),))
+            audit(cur, admin, "auto_rule_delete", "Удалено автоправило", ip)
+            return ok({"success": True})
+
+        if action == "auto_rule_hits":
+            cur.execute(
+                f"SELECT h.id, h.user_id, COALESCE(u.name, '—'), r.name, h.detail, h.created_at "
+                f"FROM {SCHEMA}.auto_rule_hits h "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = h.user_id "
+                f"LEFT JOIN {SCHEMA}.auto_rules r ON r.id = h.rule_id "
+                f"ORDER BY h.created_at DESC LIMIT 60"
+            )
+            return ok({"items": [{
+                "id": r[0], "user_id": r[1], "user_name": r[2],
+                "rule": r[3] or "удалённое правило", "detail": r[4], "ts": r[5],
+            } for r in cur.fetchall()]})
+
+        # Проверка правил: находит нарушителей и применяет действие
+        if action == "auto_rule_run":
+            now_ts = int(time.time())
+            cur.execute(
+                f"SELECT id, name, trigger_kind, threshold, window_hours, action, action_days "
+                f"FROM {SCHEMA}.auto_rules WHERE enabled = TRUE"
+            )
+            rules = cur.fetchall()
+            applied = []
+
+            for rid, rname, kind, thr, win, act, act_days in rules:
+                since = now_ts - win * 3600
+                if kind == "reports":
+                    cur.execute(
+                        f"SELECT reported_user_id, COUNT(*) FROM {SCHEMA}.reports "
+                        f"WHERE created_at > %s GROUP BY reported_user_id HAVING COUNT(*) >= %s",
+                        (since, thr),
+                    )
+                elif kind == "msg_rate":
+                    cur.execute(
+                        f"SELECT sender_id, COUNT(*) FROM {SCHEMA}.messages "
+                        f"WHERE created_at > %s GROUP BY sender_id HAVING COUNT(*) >= %s",
+                        (since, thr),
+                    )
+                else:
+                    cur.execute(
+                        f"SELECT user_id, COUNT(*) FROM {SCHEMA}.moderation_hits "
+                        f"WHERE created_at > %s GROUP BY user_id HAVING COUNT(*) >= %s",
+                        (since, thr),
+                    )
+                found = cur.fetchall()
+
+                for uid, cnt in found:
+                    if not uid:
+                        continue
+                    # Не наказываем дважды за то же правило в том же окне
+                    cur.execute(
+                        f"SELECT 1 FROM {SCHEMA}.auto_rule_hits "
+                        f"WHERE rule_id = %s AND user_id = %s AND created_at > %s LIMIT 1",
+                        (rid, uid, since),
+                    )
+                    if cur.fetchone():
+                        continue
+
+                    detail = f"{cnt} за {win} ч"
+                    if act in ("ban", "freeze"):
+                        days = act_days or (1 if act == "freeze" else 7)
+                        until = now_ts + days * 86400
+                        cur.execute(
+                            f"UPDATE {SCHEMA}.users SET banned_until = %s, banned_reason = %s, "
+                            f"banned_at = %s WHERE id = %s",
+                            (until, f"Автоправило: {rname}", now_ts, uid),
+                        )
+                        cur.execute(
+                            f"INSERT INTO {SCHEMA}.ban_history (user_id, until_ts, reason, by_admin, kind) "
+                            f"VALUES (%s, %s, %s, %s, %s)",
+                            (uid, until, f"Автоправило: {rname}", "автоматически", "ban"),
+                        )
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.dev_notifications (kind, title, body, link_section) "
+                        f"VALUES (%s, %s, %s, %s)",
+                        ("report", f"Автоправило сработало: {rname}",
+                         f"Пользователь ID {uid} — {detail}", "moderation"),
+                    )
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.auto_rule_hits (rule_id, user_id, detail) "
+                        f"VALUES (%s, %s, %s)",
+                        (rid, uid, detail),
+                    )
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.auto_rules SET fired_count = fired_count + 1, "
+                        f"last_fired_at = %s WHERE id = %s",
+                        (now_ts, rid),
+                    )
+                    applied.append({"rule": rname, "user_id": uid, "detail": detail, "action": act})
+
+            audit(cur, admin, "auto_rule_run", f"Проверка автоправил: {len(applied)} срабатываний", ip)
+            return ok({"applied": applied, "count": len(applied), "checked": len(rules)})
+
+        # ── Воронка: путь от регистрации до оплаты ───────────────────────
+        if action == "funnel":
+            days = int(body.get("days") or 30)
+            since = int(time.time()) - days * 86400
+
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE created_at > %s", (since,))
+            registered = int(cur.fetchone()[0] or 0)
+
+            cur.execute(
+                f"SELECT COUNT(DISTINCT u.id) FROM {SCHEMA}.users u "
+                f"WHERE u.created_at > %s AND EXISTS ("
+                f"  SELECT 1 FROM {SCHEMA}.messages m WHERE m.sender_id = u.id)",
+                (since,),
+            )
+            wrote = int(cur.fetchone()[0] or 0)
+
+            cur.execute(
+                f"SELECT COUNT(DISTINCT u.id) FROM {SCHEMA}.users u "
+                f"WHERE u.created_at > %s AND EXISTS ("
+                f"  SELECT 1 FROM {SCHEMA}.messages m WHERE m.sender_id = u.id) "
+                f"AND COALESCE(u.last_seen, 0) > u.created_at + 86400",
+                (since,),
+            )
+            active = int(cur.fetchone()[0] or 0)
+
+            cur.execute(
+                f"SELECT COUNT(DISTINCT u.id) FROM {SCHEMA}.users u "
+                f"WHERE u.created_at > %s AND COALESCE(u.pro_until, 0) > 0",
+                (since,),
+            )
+            paid = int(cur.fetchone()[0] or 0)
+
+            # Шаги идут по вложенности, поэтому каждый следующий не больше предыдущего
+            wrote = min(wrote, registered)
+            active = min(active, wrote)
+            paid = min(paid, registered)
+
+            steps = [
+                {"key": "registered", "label": "Зарегистрировались", "value": registered},
+                {"key": "wrote", "label": "Написали первое сообщение", "value": wrote},
+                {"key": "active", "label": "Вернулись на следующий день", "value": active},
+                {"key": "paid", "label": "Купили Premium", "value": paid},
+            ]
+            base = registered or 1
+            for i, st in enumerate(steps):
+                st["percent"] = round(st["value"] / base * 100)
+                prev = steps[i - 1]["value"] if i else st["value"]
+                st["drop"] = (0 if i == 0 or prev == 0
+                              else max(0, round((prev - st["value"]) / prev * 100)))
+            return ok({"steps": steps, "days": days})
+
+        # ── Удержание: возвращаются ли люди ──────────────────────────────
+        if action == "retention":
+            now_ts = int(time.time())
+            weeks = []
+            for w in range(4, 0, -1):
+                a, b = now_ts - w * 7 * 86400, now_ts - (w - 1) * 7 * 86400
+                cur.execute(
+                    f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE created_at BETWEEN %s AND %s",
+                    (a, b),
+                )
+                total = int(cur.fetchone()[0] or 0)
+                cur.execute(
+                    f"SELECT COUNT(*) FROM {SCHEMA}.users "
+                    f"WHERE created_at BETWEEN %s AND %s AND COALESCE(last_seen, 0) > %s",
+                    (a, b, now_ts - 7 * 86400),
+                )
+                back = int(cur.fetchone()[0] or 0)
+                weeks.append({
+                    "label": f"{w} нед. назад" if w > 1 else "На прошлой неделе",
+                    "total": total, "back": back,
+                    "percent": 0 if total == 0 else round(back / total * 100),
+                })
+
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE COALESCE(last_seen, 0) > %s",
+                        (now_ts - 86400,))
+            dau = int(cur.fetchone()[0] or 0)
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE COALESCE(last_seen, 0) > %s",
+                        (now_ts - 30 * 86400,))
+            mau = int(cur.fetchone()[0] or 0)
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users "
+                        f"WHERE COALESCE(last_seen, 0) < %s AND COALESCE(last_seen, 0) > 0",
+                        (now_ts - 30 * 86400,))
+            sleeping = int(cur.fetchone()[0] or 0)
+
+            return ok({
+                "weeks": weeks, "dau": dau, "mau": mau, "sleeping": sleeping,
+                "stickiness": 0 if mau == 0 else round(dau / mau * 100),
+            })
+
         # ── Лента последних событий (как в дашборде на макете) ───────────
         if action == "live_feed":
             now_ts = int(time.time())
@@ -1992,6 +2641,16 @@ def handler(event: dict, context) -> dict:
                 return err("Не выбрано ни одного пользователя")
             now_ts = int(time.time())
             id_list = ",".join(str(i) for i in ids)
+
+            cur.execute(
+                f"SELECT id, COALESCE(banned_until, 0), COALESCE(pro_until, 0) "
+                f"FROM {SCHEMA}.users WHERE id IN ({id_list})"
+            )
+            remember_undo(
+                cur, admin, "bulk_action", f"Действие для {len(ids)} чел.",
+                {"users": [{"id": r[0], "banned_until": int(r[1] or 0) or None,
+                            "pro_until": int(r[2] or 0)} for r in cur.fetchall()]},
+            )
 
             if what == "ban":
                 days = int(body.get("days") or 7)

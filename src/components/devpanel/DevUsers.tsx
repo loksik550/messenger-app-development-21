@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { devApi, formatTs, timeAgo, formatNum, downloadCsv } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
 import DevUserCard from "./DevUserCard";
+import { Empty } from "./DevAutoRules";
 
 interface DevUser {
   id: number;
@@ -41,6 +42,9 @@ export default function DevUsers({
   const [error, setError] = useState("");
   const [cardId, setCardId] = useState<number | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<{ id: number; name: string; filters: Record<string, string> }[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -49,10 +53,13 @@ export default function DevUsers({
   const pad = compact ? "px-3 py-1.5" : "px-4 py-3";
   const avatar = compact ? "w-7 h-7" : "w-9 h-9";
 
-  const load = useCallback(async (q: string) => {
+  const load = useCallback(async (q: string, f: Record<string, string> = {}) => {
     setLoading(true);
     try {
-      const res = await devApi<{ users: DevUser[]; total: number }>("users", { query: q });
+      const hasFilters = Object.keys(f).length > 0;
+      const res = hasFilters
+        ? await devApi<{ users: DevUser[]; total: number }>("users_filtered", { filters: f })
+        : await devApi<{ users: DevUser[]; total: number }>("users", { query: q });
       setUsers(res.users);
       setTotal(res.total);
       setError("");
@@ -64,9 +71,25 @@ export default function DevUsers({
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => load(query), 300);
+    const t = setTimeout(() => load(query, filters), 300);
     return () => clearTimeout(t);
-  }, [query, load]);
+  }, [query, filters, load]);
+
+  useEffect(() => {
+    devApi<{ items: { id: number; name: string; filters: Record<string, string> }[] }>("filters_list")
+      .then((r) => setSaved(r.items))
+      .catch(() => {});
+  }, []);
+
+  const saveFilter = async () => {
+    const name = prompt("Название фильтра");
+    if (!name?.trim()) return;
+    await devApi("filter_save", { name, filters });
+    const r = await devApi<{ items: typeof saved }>("filters_list");
+    setSaved(r.items);
+    setMsg("Фильтр сохранён");
+    setTimeout(() => setMsg(""), 3000);
+  };
 
   const toggle = (id: number) => {
     setPicked((prev) => {
@@ -76,6 +99,8 @@ export default function DevUsers({
       return next;
     });
   };
+
+  const activeCount = Object.values(filters).filter(Boolean).length;
 
   const allPicked = users.length > 0 && users.every((u) => picked.has(u.id));
   const toggleAll = () => {
@@ -92,7 +117,7 @@ export default function DevUsers({
       setTimeout(() => setMsg(""), 4000);
       setPicked(new Set());
       setBulkOpen(false);
-      await load(query);
+      await load(query, filters);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Не удалось выполнить");
     } finally {
@@ -155,13 +180,90 @@ export default function DevUsers({
           <span className="hidden sm:inline">Выгрузить</span>
         </button>
         <button
-          onClick={() => load(query)}
+          onClick={() => setFilterOpen(!filterOpen)}
+          title="Фильтры"
+          className={`px-3.5 py-2.5 rounded-xl border transition flex items-center gap-2 text-xs ${
+            activeCount > 0 || filterOpen
+              ? "bg-violet-600/20 border-violet-500/40 text-violet-200"
+              : "bg-white/[0.04] border-white/10 text-slate-400 hover:bg-white/10"
+          }`}
+        >
+          <Icon name="SlidersHorizontal" size={15} />
+          {activeCount > 0 && <span>{activeCount}</span>}
+        </button>
+        <button
+          onClick={() => load(query, filters)}
           className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10 hover:bg-white/10 transition"
           title="Обновить"
         >
           <Icon name="RefreshCw" size={16} className="text-slate-400" />
         </button>
       </div>
+
+      {filterOpen && (
+        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <Pick label="Premium" value={filters.premium} onPick={(v) => setFilters({ ...filters, premium: v })}
+                  options={[["yes", "Есть"], ["no", "Нет"]]} />
+            <Pick label="Блокировка" value={filters.banned} onPick={(v) => setFilters({ ...filters, banned: v })}
+                  options={[["yes", "Заблокированы"]]} />
+            <Pick label="Галочка" value={filters.verified} onPick={(v) => setFilters({ ...filters, verified: v })}
+                  options={[["yes", "Проверенные"]]} />
+            <Pick label="Не заходили" value={filters.inactive_days} onPick={(v) => setFilters({ ...filters, inactive_days: v })}
+                  options={[["7", "неделю"], ["30", "месяц"], ["90", "3 месяца"]]} />
+            <Pick label="Новые" value={filters.new_days} onPick={(v) => setFilters({ ...filters, new_days: v })}
+                  options={[["1", "за сутки"], ["7", "за неделю"], ["30", "за месяц"]]} />
+            <Pick label="Кошелёк" value={filters.has_wallet} onPick={(v) => setFilters({ ...filters, has_wallet: v })}
+                  options={[["yes", "с деньгами"]]} />
+          </div>
+
+          {saved.length > 0 && (
+            <div>
+              <div className="text-[11px] text-slate-600 mb-1.5">Сохранённые</div>
+              <div className="flex flex-wrap gap-1.5">
+                {saved.map((f) => (
+                  <div key={f.id} className="flex items-center bg-white/[0.04] border border-white/10 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setFilters(f.filters)}
+                      className="px-2.5 py-1.5 text-[11px] hover:bg-white/10 transition"
+                    >
+                      {f.name}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await devApi("filter_delete", { id: f.id });
+                        setSaved(saved.filter((x) => x.id !== f.id));
+                      }}
+                      className="px-1.5 py-1.5 text-slate-600 hover:text-red-400 transition"
+                    >
+                      <Icon name="X" size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 flex-wrap">
+            {activeCount > 0 && (
+              <>
+                <button
+                  onClick={saveFilter}
+                  className="px-3 py-1.5 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-200 text-xs"
+                >
+                  Сохранить фильтр
+                </button>
+                <button
+                  onClick={() => setFilters({})}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs"
+                >
+                  Сбросить
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {msg && (
         <div className="flex items-start gap-2 text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
@@ -194,11 +296,83 @@ export default function DevUsers({
       {loading ? (
         <Loading />
       ) : error ? (
-        <ErrorBox text={error} onRetry={() => load(query)} />
+        <ErrorBox text={error} onRetry={() => load(query, filters)} />
       ) : users.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 text-sm">Никого не найдено</div>
+        <Empty
+          icon={activeCount > 0 ? "SlidersHorizontal" : "UserSearch"}
+          title={activeCount > 0 ? "Под фильтры никто не подходит" : "Никого не найдено"}
+          text={
+            activeCount > 0
+              ? "Попробуйте убрать часть условий"
+              : query
+                ? `По запросу «${query}» ничего нет. Проверьте имя или номер`
+                : "Пользователи появятся здесь после первой регистрации"
+          }
+          action={
+            activeCount > 0
+              ? { label: "Сбросить фильтры", onClick: () => setFilters({}) }
+              : query
+                ? { label: "Очистить поиск", onClick: () => setQuery("") }
+                : undefined
+          }
+        />
       ) : (
-        <div className="bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden">
+        <>
+        {/* На телефоне — карточки: таблица не влезает в узкий экран */}
+        <div className="sm:hidden space-y-2">
+          {users.map((u) => (
+            <div
+              key={u.id}
+              className={`rounded-2xl border p-3 transition ${
+                picked.has(u.id)
+                  ? "bg-violet-600/10 border-violet-500/30"
+                  : "bg-white/[0.03] border-white/10"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                {canWrite && (
+                  <button onClick={() => toggle(u.id)} className="shrink-0">
+                    <Box checked={picked.has(u.id)} />
+                  </button>
+                )}
+                <div className="relative shrink-0">
+                  {u.avatar_url ? (
+                    <img src={u.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-sm font-bold">
+                      {(u.name || "?").slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  {u.online && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0a0b14]" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium truncate text-sm">{u.name || "Без имени"}</span>
+                    {u.verified && <Icon name="BadgeCheck" size={13} className="text-sky-400 shrink-0" />}
+                  </div>
+                  <div className="text-xs text-slate-500 truncate">{u.phone || `ID ${u.id}`}</div>
+                  <div className="text-[11px] text-slate-600 mt-0.5">
+                    {u.online ? (
+                      <span className="text-emerald-400">в сети</span>
+                    ) : (
+                      timeAgo(u.last_seen)
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCardId(u.id)}
+                  className="p-2 rounded-lg bg-white/5 border border-white/10 shrink-0"
+                >
+                  <Icon name="ChevronRight" size={15} className="text-slate-400" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden sm:block bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -282,6 +456,7 @@ export default function DevUsers({
             </table>
           </div>
         </div>
+        </>
       )}
 
       {bulkOpen && (
@@ -298,9 +473,39 @@ export default function DevUsers({
           userId={cardId}
           can={can}
           onClose={() => setCardId(null)}
-          onChanged={() => load(query)}
+          onChanged={() => load(query, filters)}
         />
       )}
+    </div>
+  );
+}
+
+function Pick({
+  label, value, options, onPick,
+}: {
+  label: string;
+  value?: string;
+  options: [string, string][];
+  onPick: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] text-slate-600 mb-1">{label}</div>
+      <div className="flex flex-wrap gap-1">
+        {options.map(([v, t]) => (
+          <button
+            key={v}
+            onClick={() => onPick(value === v ? "" : v)}
+            className={`px-2 py-1 rounded-lg text-[11px] border transition ${
+              value === v
+                ? "bg-violet-600/25 border-violet-500/40 text-violet-200"
+                : "bg-white/[0.03] border-white/8 text-slate-400"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

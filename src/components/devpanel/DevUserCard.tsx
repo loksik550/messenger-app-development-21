@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs, timeAgo, formatNum } from "@/lib/devApi";
 import DevUserBilling from "@/components/devpanel/DevUserBilling";
+import DevUserHistory from "./DevUserHistory";
 
 const BAN_REASONS = [
   "Спам и массовые рассылки",
@@ -61,7 +62,7 @@ interface MediaFile {
   created_at: number;
 }
 
-type Tab = "profile" | "billing" | "chats" | "media";
+type Tab = "profile" | "history" | "billing" | "chats" | "media";
 
 interface Props {
   userId: number;
@@ -234,6 +235,7 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
         {(
           [
             ["profile", "Профиль", "User"],
+            ["history", "История", "History"],
             ["billing", "Оплаты", "Receipt"],
             ["chats", "Переписка", "MessagesSquare"],
             ["media", "Файлы", "Image"],
@@ -253,6 +255,8 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
       </div>
 
       <div className="max-h-[52vh] overflow-y-auto pr-1">
+        {tab === "history" && <DevUserHistory userId={user.id} />}
+
         {tab === "billing" && (
           <DevUserBilling
             userId={user.id}
