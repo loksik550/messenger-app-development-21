@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
+import { DevEnvBadge } from "./DevStatusBar";
 import { devApi, timeAgo, type DevAdmin } from "@/lib/devApi";
 
 interface Notif {
@@ -96,8 +97,9 @@ export default function DevTopBar({
         <Icon name="Menu" size={20} />
       </button>
 
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex items-center gap-2.5">
         <h1 className="text-lg font-bold truncate">{title}</h1>
+        <DevEnvBadge />
       </div>
 
       <div ref={wrapRef} className="flex items-center gap-2 shrink-0">

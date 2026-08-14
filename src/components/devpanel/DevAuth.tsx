@@ -3,7 +3,10 @@ import Icon from "@/components/ui/icon";
 import { devApi, setDevToken, type DevAdmin } from "@/lib/devApi";
 
 interface Props {
-  onSuccess: (admin: DevAdmin) => void;
+  onSuccess: (
+    admin: DevAdmin,
+    notice?: { name: string; role: string; device: string; ip: string; when: string },
+  ) => void;
 }
 
 export default function DevAuth({ onSuccess }: Props) {
@@ -52,6 +55,7 @@ export default function DevAuth({ onSuccess }: Props) {
           : { email: email.trim(), password, name: name.trim(), invite_code: invite.trim() };
       const data = await devApi<{
         token: string; admin: DevAdmin; need_code?: boolean; phone_hint?: string;
+        login_notice?: { name: string; role: string; device: string; ip: string; when: string };
       }>(mode, payload);
 
       // Включена защита входа — сначала просим код из SMS
@@ -61,7 +65,7 @@ export default function DevAuth({ onSuccess }: Props) {
         return;
       }
       setDevToken(data.token);
-      onSuccess(data.admin);
+      onSuccess(data.admin, data.login_notice);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось войти");
     } finally {

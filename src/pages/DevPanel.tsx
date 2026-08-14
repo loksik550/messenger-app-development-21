@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { devApi, getDevToken, clearDevToken, type DevAdmin } from "@/lib/devApi";
+import { devApi, getDevToken, clearDevToken, setPasswordAsker, type DevAdmin } from "@/lib/devApi";
 import { APP_VERSION } from "@/lib/version";
 import DevAuth from "@/components/devpanel/DevAuth";
 import DevDashboard, { Loading } from "@/components/devpanel/DevDashboard";
@@ -18,6 +18,8 @@ import DevPromo from "@/components/devpanel/DevPromo";
 import DevPayments from "@/components/devpanel/DevPayments";
 import DevTopBar from "@/components/devpanel/DevTopBar";
 import DevBroadcast from "@/components/devpanel/DevBroadcast";
+import DevConfirm, { DevLoginToast } from "@/components/devpanel/DevConfirm";
+import DevStatusBar from "@/components/devpanel/DevStatusBar";
 import DevModeration from "@/components/devpanel/DevModeration";
 
 type Section =
@@ -55,6 +57,20 @@ export default function DevPanel() {
   const [section, setSection] = useState<Section>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
   const [navQuery, setNavQuery] = useState("");
+  const [confirmAsk, setConfirmAsk] = useState<{
+    action: string; resolve: (v: string | null) => void;
+  } | null>(null);
+  const [loginNotice, setLoginNotice] = useState<{
+    name: string; role: string; device: string; ip: string; when: string;
+  } | null>(null);
+
+  // Сервер может попросить подтвердить действие паролем — показываем окно
+  useEffect(() => {
+    setPasswordAsker(
+      (action: string) =>
+        new Promise<string | null>((resolve) => setConfirmAsk({ action, resolve })),
+    );
+  }, []);
   const [light, setLight] = useState(() => {
     try { return localStorage.getItem("nova_dev_light") === "1"; } catch { return false; }
   });
@@ -105,8 +121,11 @@ export default function DevPanel() {
     document.title = panelName;
   }, [panelName]);
 
-  const afterAuth = async (a: DevAdmin) => {
+  const afterAuth = async (a: DevAdmin, notice?: {
+    name: string; role: string; device: string; ip: string; when: string;
+  }) => {
     setAdmin(a);
+    if (notice) setLoginNotice(notice);
     try {
       const res = await devApi<{ perms: string[]; settings: Record<string, string> }>("me");
       setPerms(res.perms || []);
@@ -282,15 +301,22 @@ export default function DevPanel() {
         </nav>
 
         {/* Версия приложения — на месте прежнего блока профиля */}
-        <div className="p-4 border-t border-white/8 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
-              <Icon name="Smartphone" size={14} className="text-slate-500" />
+        <div className="p-3 shrink-0">
+          <div className="relative rounded-2xl overflow-hidden border border-violet-500/25 bg-gradient-to-br from-violet-600/25 via-fuchsia-600/10 to-transparent px-4 py-3.5">
+            <div className="absolute -right-6 -bottom-8 w-24 h-24 rounded-full bg-gradient-to-br from-violet-400/40 to-fuchsia-500/10 blur-[2px]" />
+            <div className="absolute -right-6 -bottom-8 w-24 h-24 rounded-full border border-white/10" />
+            <div className="relative flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-400 to-fuchsia-600 flex items-center justify-center shrink-0 shadow-lg shadow-violet-500/30">
+                <Icon name="Orbit" size={19} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-black tracking-[0.15em] leading-none">NOVA</div>
+                <div className="text-[9px] tracking-[0.28em] text-violet-300/80 mt-1">
+                  MESSENGER
+                </div>
+              </div>
             </div>
-            <div className="min-w-0">
-              <div className="text-[11px] text-slate-400">Nova Messenger</div>
-              <div className="text-[10px] text-slate-600">Версия {APP_VERSION}</div>
-            </div>
+            <div className="relative text-[10px] text-slate-400 mt-2.5">v{APP_VERSION}</div>
           </div>
         </div>
       </aside>
@@ -341,7 +367,27 @@ export default function DevPanel() {
           )}
           <div className="h-10" />
         </div>
+
+        <DevStatusBar />
       </main>
+      {confirmAsk && (
+        <DevConfirm
+          action={confirmAsk.action}
+          onSubmit={(pwd) => {
+            confirmAsk.resolve(pwd);
+            setConfirmAsk(null);
+          }}
+          onCancel={() => {
+            confirmAsk.resolve(null);
+            setConfirmAsk(null);
+          }}
+        />
+      )}
+
+      {loginNotice && (
+        <DevLoginToast notice={loginNotice} onClose={() => setLoginNotice(null)} />
+      )}
+
     </div>
   );
 }

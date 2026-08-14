@@ -33,6 +33,10 @@ interface SubsData {
   by_plan: { plan: string; count: number; sum: number }[];
 }
 
+interface FeedItem {
+  tag: string; title: string; sub: string; ts: number; section: string;
+}
+
 interface Trend { key: string; now: number; prev: number; delta: number | null }
 interface Expiring {
   id: number; name: string; phone: string; avatar_url: string;
@@ -41,6 +45,9 @@ interface Expiring {
 
 export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) => void } = {}) {
   const [trends, setTrends] = useState<Trend[]>([]);
+  const [spark, setSpark] = useState<Record<string, number[]>>({});
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [feedTag, setFeedTag] = useState("");
   const [expiring, setExpiring] = useState<Expiring[]>([]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [mod, setMod] = useState<ModerationData | null>(null);
@@ -75,6 +82,12 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
   useEffect(() => {
     load();
     const timer = setInterval(load, 30000);
+    devApi<{ items: FeedItem[] }>("live_feed")
+      .then((r) => setFeed(r.items))
+      .catch(() => {});
+    devApi<{ spark: Record<string, number[]> }>("spark")
+      .then((r) => setSpark(r.spark))
+      .catch(() => {});
     devApi<{ items: Trend[] }>("trends")
       .then((r) => setTrends(r.items))
       .catch(() => {});
@@ -88,11 +101,17 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
   if (error) return <ErrorBox text={error} onRetry={load} />;
   if (!data) return null;
 
+  const trendOf = (k: string) => trends.find((t) => t.key === k)?.delta ?? null;
+
   const cards = [
-    { label: "Всего пользователей", value: data.users.total, icon: "Users", color: "violet", sub: `+${data.users.new_24h} за сутки` },
-    { label: "Сейчас в сети", value: data.users.online, icon: "Wifi", color: "emerald", sub: `${data.users.active_24h} активных за сутки` },
-    { label: "Сообщений за сутки", value: data.messages.last_24h, icon: "MessageSquare", color: "cyan", sub: `${data.messages.last_hour} за последний час` },
-    { label: "Открытых обращений", value: data.moderation.open_tickets, icon: "LifeBuoy", color: "amber", sub: `${data.moderation.reports} жалоб всего` },
+    { label: "Всего пользователей", value: data.users.total, icon: "Users", color: "violet",
+      sub: `+${data.users.new_24h} за сутки`, spark: spark.users, delta: trendOf("users") },
+    { label: "Сейчас в сети", value: data.users.online, icon: "Wifi", color: "emerald",
+      sub: `${data.users.active_24h} активных за сутки`, spark: spark.online, delta: null },
+    { label: "Сообщений за сутки", value: data.messages.last_24h, icon: "MessageSquare", color: "cyan",
+      sub: `${data.messages.last_hour} за последний час`, spark: spark.messages, delta: trendOf("messages") },
+    { label: "Открытых обращений", value: data.moderation.open_tickets, icon: "LifeBuoy", color: "amber",
+      sub: `${data.moderation.reports} жалоб всего`, spark: undefined, delta: null },
   ];
 
   const secondary = [
@@ -166,6 +185,7 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
         </div>
       )}
 
+      <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-4 items-start">
       <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -205,6 +225,62 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
           </ResponsiveContainer>
         </div>
       </div>
+
+      <div className="bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/8">
+          <h3 className="font-semibold">Последние события</h3>
+          <select
+            value={feedTag}
+            onChange={(e) => setFeedTag(e.target.value)}
+            className="bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none"
+          >
+            <option value="">Все</option>
+            <option value="AUTH">Входы</option>
+            <option value="MESSAGE">Сообщения</option>
+            <option value="PAY">Оплаты</option>
+            <option value="WARN">Жалобы</option>
+            <option value="PANEL">Действия в панели</option>
+          </select>
+        </div>
+        <div className="max-h-[360px] overflow-y-auto">
+          {feed.filter((f) => !feedTag || f.tag === feedTag).length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-slate-500">Пока пусто</div>
+          ) : (
+            feed
+              .filter((f) => !feedTag || f.tag === feedTag)
+              .map((f, i) => {
+                const meta = FEED_META[f.tag] || FEED_META.PANEL;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => onNavigate?.(f.section)}
+                    className="w-full flex items-start gap-3 px-4 py-2.5 border-b border-white/5 last:border-0 hover:bg-white/[0.03] transition text-left"
+                  >
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.bg} ${meta.fg}`}>
+                      <Icon name={meta.icon} size={13} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium truncate">{f.title}</div>
+                      <div className="text-[11px] text-slate-500 truncate">{f.sub}</div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide ${meta.bg} ${meta.fg}`}>
+                        {f.tag}
+                      </span>
+                      <span className="text-[10px] text-slate-600">
+                        {new Date(f.ts * 1000).toLocaleTimeString("ru", {
+                          hour: "2-digit", minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+          )}
+        </div>
+      </div>
+      </div>
+
 
       {subs && (
         <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
@@ -333,18 +409,72 @@ const COLORS: Record<string, string> = {
   amber: "from-amber-500/20 to-amber-500/5 text-amber-400 border-amber-500/20",
 };
 
-function StatCard({ label, value, icon, color, sub }: { label: string; value: number; icon: string; color: string; sub: string }) {
+function Spark({ points, color }: { points: number[]; color: string }) {
+  if (!points || points.length < 2) return null;
+  const max = Math.max(...points, 1);
+  const min = Math.min(...points);
+  const span = max - min || 1;
+  const w = 88, h = 30;
+  const d = points
+    .map((p, i) => {
+      const x = (i / (points.length - 1)) * w;
+      const y = h - ((p - min) / span) * (h - 4) - 2;
+      return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return (
+    <svg width={w} height={h} className="overflow-visible shrink-0">
+      <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle
+        cx={w}
+        cy={h - ((points[points.length - 1] - min) / span) * (h - 4) - 2}
+        r="2.5"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
+const FEED_META: Record<string, { icon: string; bg: string; fg: string }> = {
+  AUTH: { icon: "UserPlus", bg: "bg-emerald-500/15", fg: "text-emerald-400" },
+  MESSAGE: { icon: "MessageSquare", bg: "bg-violet-500/15", fg: "text-violet-300" },
+  WARN: { icon: "TriangleAlert", bg: "bg-amber-500/15", fg: "text-amber-400" },
+  PAY: { icon: "Wallet", bg: "bg-cyan-500/15", fg: "text-cyan-400" },
+  ERROR: { icon: "CircleX", bg: "bg-red-500/15", fg: "text-red-400" },
+  PANEL: { icon: "Terminal", bg: "bg-slate-500/15", fg: "text-slate-400" },
+};
+
+const SPARK_COLOR: Record<string, string> = {
+  violet: "#a78bfa", emerald: "#34d399", cyan: "#22d3ee", amber: "#fbbf24",
+};
+
+function StatCard({ label, value, icon, color, sub, spark, delta }: {
+  label: string; value: number; icon: string; color: string; sub: string;
+  spark?: number[]; delta?: number | null;
+}) {
   const cls = COLORS[color] || COLORS.violet;
+  const up = (delta ?? 0) > 0;
   return (
     <div className={`bg-gradient-to-br ${cls.split(" ").slice(0, 2).join(" ")} border ${cls.split(" ")[3]} rounded-2xl p-5`}>
       <div className="flex items-start justify-between mb-3">
         <div className={`w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center ${cls.split(" ")[2]}`}>
           <Icon name={icon} size={18} />
         </div>
+        <div className="text-sm text-slate-300 text-right leading-tight max-w-[55%]">{label}</div>
       </div>
       <div className="text-3xl font-bold tracking-tight">{formatNum(value)}</div>
-      <div className="text-sm text-slate-300 mt-1">{label}</div>
-      <div className="text-xs text-slate-500 mt-1">{sub}</div>
+      <div className="flex items-end justify-between gap-2 mt-2">
+        <div className="min-w-0">
+          {delta !== null && delta !== undefined && delta !== 0 && (
+            <div className={`text-xs font-medium flex items-center gap-0.5 ${up ? "text-emerald-400" : "text-red-400"}`}>
+              <Icon name={up ? "ArrowUp" : "ArrowDown"} size={12} />
+              {Math.abs(delta)}% за неделю
+            </div>
+          )}
+          <div className="text-xs text-slate-500 mt-0.5 truncate">{sub}</div>
+        </div>
+        {spark && <Spark points={spark} color={SPARK_COLOR[color] || "#a78bfa"} />}
+      </div>
     </div>
   );
 }

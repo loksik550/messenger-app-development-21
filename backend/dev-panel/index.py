@@ -36,6 +36,14 @@ ROLES = {
     "developer": {"label": "Разработчик", "perms": ["dashboard", "logs", "services", "users"]},
 }
 
+# Действия, которые перед выполнением требуют повторно ввести пароль —
+# защита на случай, если админ отошёл от открытого компьютера
+CONFIRM_ACTIONS = {
+    "delete_user", "delete_chat", "bulk_action", "team_update", "team_remove",
+    "wallet_set", "payment_refund", "settings_save", "broadcast_send",
+    "channel_delete", "create_invite",
+}
+
 ACTION_PERMS = {
     "dashboard": "dashboard",
     "users": "users", "user_detail": "users", "user_devices": "users",
@@ -70,6 +78,7 @@ ACTION_PERMS = {
     "user_billing": "users", "wallet_set": "settings",
     "twofa_get": "dashboard", "twofa_save": "dashboard",
     "trends": "dashboard", "expiring_soon": "dashboard",
+    "live_feed": "dashboard", "system_health": "dashboard", "spark": "dashboard",
     "users_export": "users", "bulk_action": "user_write",
     "canned_list": "support", "canned_save": "support", "canned_delete": "support",
     "payment_refund": "settings", "subscription_extend": "settings",
@@ -181,6 +190,17 @@ def handler(event: dict, context) -> dict:
             need = ACTION_PERMS.get(action)
             if need and not has_perm(admin, need):
                 return err("Недостаточно прав для этого действия", 403)
+
+            # Опасные действия требуют подтверждения паролем
+            if action in CONFIRM_ACTIONS:
+                confirm = body.get("confirm_password") or ""
+                cur.execute(
+                    f"SELECT password_hash FROM {SCHEMA}.dev_admins WHERE id = %s",
+                    (admin["id"],),
+                )
+                prow = cur.fetchone()
+                if not confirm or not prow or not verify_password(confirm, prow[0]):
+                    return err("Подтвердите паролем", 428)
 
         # ── Регистрация по коду-приглашению ──────────────────────────────
         if action == "register":
@@ -296,7 +316,21 @@ def handler(event: dict, context) -> dict:
                          "title": row[6] or "", "avatar_url": row[7] or "",
                          "role_label": ROLES.get(row[3], {}).get("label", row[3])}
             audit(cur, cur_admin, "login", "Вход в панель", ip)
-            return ok({"token": token, "admin": cur_admin})
+
+            ua = ((event.get("headers") or {}).get("User-Agent") or "")
+            device = "Телефон" if "Mobile" in ua else "Компьютер"
+            when = time.strftime("%d.%m.%Y в %H:%M", time.localtime(now + 3 * 3600))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.dev_notifications (kind, title, body, link_section) "
+                f"VALUES (%s, %s, %s, %s)",
+                ("login", f"Вход в панель: {cur_admin['name'] or cur_admin['email']}",
+                 f"{cur_admin['role_label']} · {device} · IP {ip} · {when}", "logs"),
+            )
+            return ok({"token": token, "admin": cur_admin, "login_notice": {
+                "name": cur_admin["name"] or cur_admin["email"],
+                "role": cur_admin["role_label"],
+                "device": device, "ip": ip, "when": when,
+            }})
 
         if action == "panel_info":
             cur.execute(
@@ -1765,6 +1799,114 @@ def handler(event: dict, context) -> dict:
                 )
             audit(cur, admin, "settings_save", "Изменены настройки панели", ip)
             return ok({"success": True})
+
+        # ── Лента последних событий (как в дашборде на макете) ───────────
+        if action == "live_feed":
+            now_ts = int(time.time())
+            feed = []
+
+            cur.execute(
+                f"SELECT id, name, created_at FROM {SCHEMA}.users "
+                f"WHERE created_at > %s ORDER BY created_at DESC LIMIT 12",
+                (now_ts - 3 * 86400,),
+            )
+            for r in cur.fetchall():
+                feed.append({
+                    "tag": "AUTH", "title": f"{r[1] or 'Без имени'} зарегистрировался",
+                    "sub": f"ID {r[0]}", "ts": int(r[2]), "section": "users",
+                })
+
+            cur.execute(
+                f"SELECT m.id, u.name, m.created_at FROM {SCHEMA}.messages m "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = m.sender_id "
+                f"WHERE m.created_at > %s ORDER BY m.created_at DESC LIMIT 12",
+                (now_ts - 86400,),
+            )
+            for r in cur.fetchall():
+                feed.append({
+                    "tag": "MESSAGE", "title": "Новое сообщение",
+                    "sub": f"От: {r[1] or 'неизвестно'}", "ts": int(r[2]), "section": "chats",
+                })
+
+            cur.execute(
+                f"SELECT r.id, u.name, r.reason, r.created_at FROM {SCHEMA}.reports r "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = r.reported_user_id "
+                f"ORDER BY r.created_at DESC LIMIT 8"
+            )
+            for r in cur.fetchall():
+                feed.append({
+                    "tag": "WARN", "title": f"Жалоба на {r[1] or 'пользователя'}",
+                    "sub": (r[2] or "без причины")[:60], "ts": int(r[3]), "section": "reports",
+                })
+
+            cur.execute(
+                f"SELECT id, amount, status, EXTRACT(epoch FROM created_at)::bigint "
+                f"FROM {SCHEMA}.orders ORDER BY created_at DESC LIMIT 8"
+            )
+            for r in cur.fetchall():
+                paid = r[2] in ("paid", "succeeded")
+                feed.append({
+                    "tag": "PAY" if paid else "ERROR",
+                    "title": f"Оплата {float(r[1] or 0):.0f} ₽" if paid else "Платёж не прошёл",
+                    "sub": f"Заказ №{r[0]}", "ts": int(r[3] or 0), "section": "payments",
+                })
+
+            cur.execute(
+                f"SELECT admin_email, action, details, created_at FROM {SCHEMA}.dev_audit "
+                f"ORDER BY created_at DESC LIMIT 10"
+            )
+            for r in cur.fetchall():
+                feed.append({
+                    "tag": "PANEL", "title": (r[2] or r[1])[:70],
+                    "sub": r[0], "ts": int(r[3]), "section": "logs",
+                })
+
+            feed.sort(key=lambda x: x["ts"], reverse=True)
+            return ok({"items": feed[:40]})
+
+        # ── Состояние системы для нижней строки ───────────────────────────
+        if action == "system_health":
+            now_ts = int(time.time())
+            t0 = time.time()
+            cur.execute("SELECT 1")
+            db_ms = round((time.time() - t0) * 1000)
+
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE last_seen > %s", (now_ts - 300,))
+            online = int(cur.fetchone()[0] or 0)
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.messages WHERE created_at > %s", (now_ts - 60,))
+            per_min = int(cur.fetchone()[0] or 0)
+            cur.execute(f"SELECT pg_database_size(current_database())")
+            db_size = int(cur.fetchone()[0] or 0)
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.messages WHERE created_at > %s", (now_ts - 86400,))
+            msgs_24h = int(cur.fetchone()[0] or 0)
+
+            return ok({
+                "db_ms": db_ms,
+                "online": online,
+                "per_min": per_min,
+                "db_size_mb": round(db_size / 1048576, 1),
+                "msgs_24h": msgs_24h,
+                "server_time": now_ts,
+                "env": os.environ.get("APP_ENV", "PRODUCTION").upper(),
+                "healthy": db_ms < 500,
+            })
+
+        # ── Мини-графики для карточек ─────────────────────────────────────
+        if action == "spark":
+            now_ts = int(time.time())
+            out = {}
+            for key, sql in (
+                ("users", f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE created_at BETWEEN %s AND %s"),
+                ("messages", f"SELECT COUNT(*) FROM {SCHEMA}.messages WHERE created_at BETWEEN %s AND %s"),
+                ("online", f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE last_seen BETWEEN %s AND %s"),
+            ):
+                pts = []
+                for i in range(11, -1, -1):
+                    a, b = now_ts - (i + 1) * 7200, now_ts - i * 7200
+                    cur.execute(sql, (a, b))
+                    pts.append(int(cur.fetchone()[0] or 0))
+                out[key] = pts
+            return ok({"spark": out})
 
         # ── Сравнение с прошлой неделей ───────────────────────────────────
         if action == "trends":

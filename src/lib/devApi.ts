@@ -36,6 +36,14 @@ export function clearDevToken() {
   }
 }
 
+// Когда сервер требует подтвердить действие паролем, панель показывает окно.
+// Сюда DevPanel подставляет свою функцию показа окна.
+let passwordAsker: ((action: string) => Promise<string | null>) | null = null;
+
+export function setPasswordAsker(fn: (action: string) => Promise<string | null>) {
+  passwordAsker = fn;
+}
+
 export async function devApi<T = Record<string, unknown>>(
   action: string,
   payload: Record<string, unknown> = {},
@@ -73,6 +81,13 @@ export async function devApi<T = Record<string, unknown>>(
     clearDevToken();
     throw new Error("Сессия истекла, войдите заново");
   }
+  // 428 — сервер просит подтвердить действие паролем
+  if (res.status === 428 && passwordAsker && !payload.confirm_password) {
+    const pwd = await passwordAsker(action);
+    if (!pwd) throw new Error("Действие отменено");
+    return devApi<T>(action, { ...payload, confirm_password: pwd });
+  }
+
   if (!res.ok) {
     throw new Error((data as { error?: string }).error || "Ошибка запроса");
   }
