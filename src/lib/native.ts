@@ -17,7 +17,6 @@ import { Device } from "@capacitor/device";
 import { Dialog } from "@capacitor/dialog";
 import { Browser } from "@capacitor/browser";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
-import { Geolocation } from "@capacitor/geolocation";
 import { Keyboard } from "@capacitor/keyboard";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { App } from "@capacitor/app";
@@ -233,28 +232,6 @@ async function takePhoto(opts?: { source?: "camera" | "gallery"; quality?: numbe
   }
 }
 
-// ── Геолокация ──────────────────────────────────────────────────────────────
-const geo = {
-  async get(): Promise<{ lat: number; lng: number; accuracy: number } | null> {
-    try {
-      if (isNative) {
-        const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-        return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
-      }
-      return await new Promise((resolve) => {
-        if (!("geolocation" in navigator)) { resolve(null); return; }
-        navigator.geolocation.getCurrentPosition(
-          p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-          () => resolve(null),
-          { enableHighAccuracy: true, timeout: 10000 }
-        );
-      });
-    } catch {
-      return null;
-    }
-  },
-};
-
 // ── Клавиатура (только нативно) ─────────────────────────────────────────────
 const keyboard = {
   async hide() { if (isNative) try { await Keyboard.hide(); } catch { /* ignore */ } },
@@ -359,7 +336,6 @@ export const native = {
   dialog,
   openUrl,
   takePhoto,
-  geo,
   keyboard,
   statusBar,
   push,

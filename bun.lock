@@ -14,7 +14,6 @@
         "@capacitor/device": "6.0.2",
         "@capacitor/dialog": "6.0.2",
         "@capacitor/filesystem": "6.0.3",
-        "@capacitor/geolocation": "6.1.0",
         "@capacitor/haptics": "6.0.2",
         "@capacitor/keyboard": "6.0.3",
         "@capacitor/local-notifications": "6.1.1",
@@ -313,8 +312,6 @@
     "@capacitor/dialog": ["@capacitor/dialog@6.0.2", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-yHWCJjEJeZJwltAuWdoPeUE11KFxfkmE/ybZXQu9AuQYYO0tO12fQyz3b3kQtupnL5wlH3Dff3M8RsQiLyTzQg=="],
 
     "@capacitor/filesystem": ["@capacitor/filesystem@6.0.3", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-PdIP/yOGAbG1lq1wbFbSPhXQ9/5lpTpeiok2NneawJOk6UXvy9W7QZXRo7wXAP7J6FdzU7bKfOORRXpOJpgXyw=="],
-
-    "@capacitor/geolocation": ["@capacitor/geolocation@6.1.0", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-jEY5DcZirxX1gOBuOvf/FL7FlPMOKcsnF8PlfYxu7OFwRDD7HRwehEPWtJXR6wSYLgsCujm7yRqKrjtyN+f14g=="],
 
     "@capacitor/haptics": ["@capacitor/haptics@6.0.2", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-xcFdIH4iIIeW2+1lzmlYMVicqB9ytaiuZ9NE3a9laKFPvMGC7hdj6i6tHFezwPJ/96xkHOwXT2b0F8Mh9xtTWg=="],
 
