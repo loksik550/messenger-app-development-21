@@ -76,7 +76,13 @@ USER_DATA_TABLES = [
     ("support_tickets", "user_id"),
     ("fundraiser_payments", "user_id"),
     ("fundraisers", "user_id"),
-    ("orders", "user_id"),
+    ("orders", "nova_user_id"),
+    ("reports", "reporter_id"),
+    ("login_events", "user_id"),
+    ("ban_history", "user_id"),
+    ("moderation_hits", "user_id"),
+    ("auto_rule_hits", "user_id"),
+    ("pending_contacts", "user_id"),
 ]
 
 
@@ -179,6 +185,19 @@ def handler(event: dict, context) -> dict:
                 except Exception:
                     conn.rollback()
                     cur.execute("BEGIN")
+
+            # Жалобы НА этого человека оставляем для истории модерации,
+            # но обезличиваем — привязка к аккаунту снимается
+            try:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.reports SET reported_user_id = 0 "
+                    f"WHERE reported_user_id = %s",
+                    (user_id,),
+                )
+                stats["reports.anonymized"] = cur.rowcount
+            except Exception:
+                conn.rollback()
+                cur.execute("BEGIN")
 
             # Личные чаты этого человека закрываются вместе с ним,
             # поэтому сообщения внутри них тоже убираем — иначе они повиснут.
