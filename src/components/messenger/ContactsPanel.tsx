@@ -44,6 +44,14 @@ export function ContactsPanel({
 
   useEffect(() => { loadContacts(); }, []);
 
+  // Контакт могли удалить из профиля собеседника — обновляем список
+  useEffect(() => {
+    const onChanged = () => loadContacts();
+    window.addEventListener("nova:contacts-changed", onChanged);
+    return () => window.removeEventListener("nova:contacts-changed", onChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const addContact = async () => {
     if (!phone.trim()) return;
     setAdding(true);

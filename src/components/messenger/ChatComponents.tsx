@@ -429,6 +429,8 @@ export function ChatWindow({
           onDeleteContact={chat.partner_id ? async () => {
             await api("remove_contact", { contact_id: chat.partner_id }, currentUser.id);
             setIsUnknown(true);
+            // Сообщаем списку контактов, что его пора обновить
+            window.dispatchEvent(new CustomEvent("nova:contacts-changed"));
           } : undefined}
         />
       )}

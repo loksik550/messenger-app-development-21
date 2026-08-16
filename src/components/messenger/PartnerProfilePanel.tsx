@@ -93,18 +93,26 @@ export default function PartnerProfilePanel({
     window.setTimeout(() => setToast(""), 2200);
   };
 
-  const Row = ({ icon, label, value, onClick, red, active }: {
+  const Row = ({ icon, label, value, onClick, red, active, disabled, hint }: {
     icon: IconName; label: string; value?: string; onClick: () => void;
-    red?: boolean; active?: boolean;
+    red?: boolean; active?: boolean; disabled?: boolean; hint?: string;
   }) => (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={`w-full flex items-center gap-3 px-4 py-3.5 transition-colors text-sm ${
-        red ? "text-red-400 hover:bg-red-500/10" : "hover:bg-white/5"
+        disabled
+          ? "opacity-40 cursor-default"
+          : red ? "text-red-400 hover:bg-red-500/10" : "hover:bg-white/5"
       }`}
     >
-      <Icon name={icon} size={18} className={red ? "text-red-400" : active ? "text-violet-400" : "text-muted-foreground"} />
-      <span className="flex-1 text-left">{label}</span>
+      <Icon
+        name={icon}
+        size={18}
+        className={disabled ? "text-muted-foreground" : red ? "text-red-400" : active ? "text-violet-400" : "text-muted-foreground"}
+      />
+      <span className={`flex-1 text-left ${disabled ? "text-muted-foreground" : ""}`}>{label}</span>
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       {value && <span className="text-xs text-muted-foreground">{value}</span>}
       {active && <Icon name="Check" size={16} className="text-violet-400" />}
     </button>
@@ -172,10 +180,17 @@ export default function PartnerProfilePanel({
           <Row icon="Flag" label={t("partner.report")} red onClick={() => setShowReport(true)} />
           <div className="h-px bg-white/5 ml-12" />
           <Row icon="Trash2" label={t("partner.clearHistory")} red onClick={() => { onClose(); onClearHistory(); }} />
-          {onDeleteContact && isContact && (
+          {onDeleteContact && (
             <>
               <div className="h-px bg-white/5 ml-12" />
-              <Row icon="UserMinus" label="Удалить из контактов" red onClick={() => setConfirmDelete(true)} />
+              <Row
+                icon="UserMinus"
+                label="Удалить из контактов"
+                red
+                disabled={!isContact}
+                hint={isContact ? undefined : "Не в ваших контактах"}
+                onClick={() => setConfirmDelete(true)}
+              />
             </>
           )}
           <div className="h-px bg-white/5 ml-12" />
