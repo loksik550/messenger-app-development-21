@@ -299,6 +299,92 @@ def _check_forbidden(cur, uid, text, cfg):
     return None
 
 
+def _device_key(headers: dict) -> str:
+    """Отпечаток устройства по браузеру и системе — чтобы узнавать «своих»."""
+    ua = (headers.get("user-agent") or headers.get("User-Agent") or "")[:300]
+    return hashlib.sha256(ua.encode("utf-8", "ignore")).hexdigest()[:32]
+
+
+def _device_name(headers: dict) -> str:
+    """Человеческое название устройства для показа в списке."""
+    ua = (headers.get("user-agent") or headers.get("User-Agent") or "").lower()
+    if "iphone" in ua:
+        dev = "iPhone"
+    elif "ipad" in ua:
+        dev = "iPad"
+    elif "android" in ua:
+        dev = "Android"
+    elif "windows" in ua:
+        dev = "Компьютер Windows"
+    elif "mac" in ua:
+        dev = "Mac"
+    elif "linux" in ua:
+        dev = "Компьютер Linux"
+    else:
+        dev = "Устройство"
+
+    if "firefox" in ua:
+        br = "Firefox"
+    elif "edg/" in ua:
+        br = "Edge"
+    elif "chrome" in ua or "crios" in ua:
+        br = "Chrome"
+    elif "safari" in ua:
+        br = "Safari"
+    else:
+        br = ""
+    return f"{dev} · {br}" if br else dev
+
+
+def track_login(cur, uid: int, event: dict) -> None:
+    """
+    Запоминает вход и предупреждает хозяина, если устройство незнакомое.
+    Так человек сразу узнает, если в аккаунт зашли без его ведома.
+    """
+    try:
+        headers = event.get("headers", {}) or {}
+        key = _device_key(headers)
+        name = _device_name(headers)
+        ip = ((event.get("requestContext", {}) or {})
+              .get("identity", {}) or {}).get("sourceIp", "")
+
+        cur.execute(
+            f"SELECT 1 FROM {SCHEMA}.login_events "
+            f"WHERE user_id = %s AND device_key = %s LIMIT 1",
+            (uid, key),
+        )
+        known = bool(cur.fetchone())
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.login_events "
+            f"(user_id, device_key, device_name, ip_addr, is_new) "
+            f"VALUES (%s, %s, %s, %s, %s)",
+            (uid, key, name, ip, not known),
+        )
+
+        if known:
+            return
+
+        cur.execute(
+            f"SELECT COALESCE(notify_new_login, TRUE) FROM {SCHEMA}.users WHERE id = %s",
+            (uid,),
+        )
+        row = cur.fetchone()
+        if not row or not row[0]:
+            return
+
+        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        if push_url:
+            _fire_and_forget_http(push_url, json.dumps({
+                "action": "send",
+                "recipient_id": uid,
+                "sender_name": "Безопасность Nova",
+                "message": f"Новый вход: {name}. Это вы?",
+            }).encode("utf-8"), timeout=5.0)
+    except Exception:
+        pass
+
+
 def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
     """Шлёт владельцу уведомление в Telegram, если это включено в панели."""
     try:
@@ -420,6 +506,7 @@ def handler(event: dict, context) -> dict:
         existing = cur.fetchone()
         if existing:
             cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE phone = %s", (int(time.time()), phone))
+            track_login(cur, int(existing[0]), event)
             conn.close()
             return ok({"user": serialize_user(existing), "existed": True})
 
@@ -430,6 +517,7 @@ def handler(event: dict, context) -> dict:
             (phone, name, int(time.time()), int(time.time()))
         )
         new_id = cur.fetchone()[0]
+        track_login(cur, int(new_id), event)
         _grant_xp(cur, new_id, "registered")
         _award_badge(cur, new_id, "newcomer")
         cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id=%s", (new_id,))
@@ -1513,6 +1601,45 @@ def handler(event: dict, context) -> dict:
             )
             conn.close()
             return ok({"in_list": True})
+
+    # ── Оповещения о новых входах ─────────────────────────────────────────────
+    if action == "login_alerts_get":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        cur.execute(
+            f"SELECT COALESCE(notify_new_login, TRUE) FROM {SCHEMA}.users WHERE id = %s",
+            (int(user_id),),
+        )
+        row = cur.fetchone()
+        cur.execute(
+            f"SELECT device_name, ip_addr, is_new, created_at FROM {SCHEMA}.login_events "
+            f"WHERE user_id = %s ORDER BY created_at DESC LIMIT 20",
+            (int(user_id),),
+        )
+        events = [{
+            "device": r[0] or "Устройство", "ip": r[1] or "",
+            "is_new": bool(r[2]), "ts": int(r[3]),
+        } for r in cur.fetchall()]
+        cur.execute(
+            f"SELECT COUNT(DISTINCT device_key) FROM {SCHEMA}.login_events WHERE user_id = %s",
+            (int(user_id),),
+        )
+        devices = int(cur.fetchone()[0] or 0)
+        conn.close()
+        return ok({
+            "enabled": bool(row[0]) if row else True,
+            "events": events, "devices_count": devices,
+        })
+
+    if action == "login_alerts_set":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET notify_new_login = %s WHERE id = %s",
+            (bool(body.get("enabled")), int(user_id)),
+        )
+        conn.close()
+        return ok({"success": True})
 
     # ── User Sessions ─────────────────────────────────────────────────────────
     if action == "sessions_list":
