@@ -21,7 +21,16 @@ export default function EnableNotificationsBanner({ userId }: { userId: number }
     if (Notification.permission !== "default") return;
     const until = Number(localStorage.getItem(DISMISS_KEY) || 0);
     if (until && Date.now() < until) return;
-    const t = setTimeout(() => setShow(true), 2500);
+
+    // Два окна сразу перекрывают друг друга — ждём, пока человек
+    // разберётся с предложением установить приложение
+    const installSeen = localStorage.getItem("nova_install_prompt_v1");
+    const delay = installSeen ? 2500 : 12000;
+
+    const t = setTimeout(() => {
+      if (document.querySelector("[data-install-prompt]")) return;
+      setShow(true);
+    }, delay);
     return () => clearTimeout(t);
   }, []);
 

@@ -80,7 +80,7 @@ export default function InstallPrompt() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
+    <div data-install-prompt className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
       <div className="w-full max-w-md bg-[#15151f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 pb-8 shadow-2xl animate-slide-up">
         <div className="flex justify-center mb-4">
           <div className="w-16 h-16 rounded-3xl grad-primary flex items-center justify-center shadow-lg shadow-violet-500/40">

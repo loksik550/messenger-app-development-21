@@ -290,8 +290,16 @@ let currentLang: Lang = (() => {
     const saved = localStorage.getItem(STORAGE_KEY) as Lang | null;
     if (saved === "ru" || saved === "en") return saved;
   } catch { /* ignore */ }
-  // По умолчанию — английский (если пользователь не выбрал другой язык вручную)
-  return "en";
+  // По умолчанию русский — основная аудитория приложения.
+  // Английский включается сам, если устройство не русскоязычное.
+  try {
+    const sys = (navigator.languages?.[0] || navigator.language || "").toLowerCase();
+    if (sys && !sys.startsWith("ru") && !sys.startsWith("be") && !sys.startsWith("uk")
+        && !sys.startsWith("kk") && !sys.startsWith("ky")) {
+      return "en";
+    }
+  } catch { /* ignore */ }
+  return "ru";
 })();
 
 const listeners = new Set<() => void>();
