@@ -149,6 +149,20 @@ def handler(event: dict, context) -> dict:
 
             stats = {}
 
+            # Сообщения не удаляем — они нужны собеседникам.
+            # Переводим их на системный аккаунт-заглушку и стираем текст.
+            for tbl in ("messages", "group_messages"):
+                try:
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.{tbl} SET text = '[удалено]', sender_id = 0 "
+                        f"WHERE sender_id = %s",
+                        (user_id,),
+                    )
+                    stats[f"{tbl}.anonymized"] = cur.rowcount
+                except Exception:
+                    conn.rollback()
+                    cur.execute("BEGIN")
+
             for table, col in USER_DATA_TABLES:
                 try:
                     cur.execute(
@@ -166,25 +180,18 @@ def handler(event: dict, context) -> dict:
                     conn.rollback()
                     cur.execute("BEGIN")
 
+            # Личные чаты этого человека закрываются вместе с ним,
+            # поэтому сообщения внутри них тоже убираем — иначе они повиснут.
             try:
                 cur.execute(
-                    f"UPDATE {SCHEMA}.messages SET text = '[удалено]', sender_id = 0 "
-                    f"WHERE sender_id = %s",
-                    (user_id,),
+                    f"DELETE FROM {SCHEMA}.messages WHERE chat_id IN "
+                    f"(SELECT id FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s)",
+                    (user_id, user_id),
                 )
-                stats["messages.anonymized"] = cur.rowcount
+                stats["messages.in_chats"] = cur.rowcount
             except Exception:
-                pass
-
-            try:
-                cur.execute(
-                    f"UPDATE {SCHEMA}.group_messages SET text = '[удалено]', sender_id = 0 "
-                    f"WHERE sender_id = %s",
-                    (user_id,),
-                )
-                stats["group_messages.anonymized"] = cur.rowcount
-            except Exception:
-                pass
+                conn.rollback()
+                cur.execute("BEGIN")
 
             try:
                 cur.execute(
@@ -193,7 +200,8 @@ def handler(event: dict, context) -> dict:
                 )
                 stats["chats"] = cur.rowcount
             except Exception:
-                pass
+                conn.rollback()
+                cur.execute("BEGIN")
 
             cur.execute(
                 f"DELETE FROM {SCHEMA}.users WHERE id = %s",

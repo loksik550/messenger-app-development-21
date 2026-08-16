@@ -2520,7 +2520,11 @@ def handler(event: dict, context) -> dict:
             except (TypeError, ValueError):
                 conn.close()
                 return err("Неверный contact_id")
-            cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE id = %s", (cid_int,))
+            cur.execute(
+                f"SELECT id, name FROM {SCHEMA}.users "
+                f"WHERE id = %s AND COALESCE(is_service, FALSE) = FALSE",
+                (cid_int,),
+            )
             found = cur.fetchone()
         else:
             phone = (body.get("phone") or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
@@ -2531,7 +2535,11 @@ def handler(event: dict, context) -> dict:
             if not phone:
                 conn.close()
                 return err("Укажите phone или contact_id")
-            cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE phone = %s", (phone,))
+            cur.execute(
+                f"SELECT id, name FROM {SCHEMA}.users "
+                f"WHERE phone = %s AND COALESCE(is_service, FALSE) = FALSE",
+                (phone,),
+            )
             found = cur.fetchone()
             if not found:
                 # Пользователя ещё нет в Nova — запоминаем номер как "отложенный контакт".

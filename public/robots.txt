@@ -12,3 +12,10 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+# Служебные страницы — не для поиска и не для пользователей
+User-agent: *
+Disallow: /dev
+Disallow: /shots
+Disallow: /banner
+Disallow: /store-assets

@@ -15,6 +15,22 @@ import {
 
 const MAX_RINGTONE_SIZE = 10 * 1024 * 1024;
 
+/** Переключатель. Вынесен наружу, чтобы не пересоздавался при обновлениях. */
+function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`w-12 h-6 rounded-full transition-all duration-300 relative flex-shrink-0 ${on ? "grad-primary" : "bg-white/10"}`}
+    >
+      <div
+        className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-300"
+        style={{ left: on ? "calc(100% - 22px)" : "2px" }}
+      />
+    </button>
+  );
+}
+
 export function SettingsPanel({
   onLogout,
   onBack,
@@ -46,42 +62,43 @@ export function SettingsPanel({
   const [msgPreview, setMsgPreview] = useState(() => readBool("nova_sec_msg_preview", false));
 
   // Оповещения о входе с нового устройства — хранятся на сервере
-  const [loginAlerts, setLoginAlerts] = useState(true);
+  const [loginAlerts, setLoginAlerts] = useState(() => readBool("nova_sec_login_alerts", true));
   const [loginEvents, setLoginEvents] = useState<
     { device: string; ip: string; is_new: boolean; ts: number }[]
   >([]);
   const [devicesCount, setDevicesCount] = useState(0);
   const [showLogins, setShowLogins] = useState(false);
 
-  // Пока идёт сохранение, не перетираем выбор ответом с сервера
-  const savingAlerts = useRef(false);
+  // Выбор пользователя главнее ответа сервера: если человек уже трогал
+  // переключатель, ответ с сервера его больше не перебивает.
+  const touchedAlerts = useRef(false);
   const userId = currentUser?.id;
 
   useEffect(() => {
     if (!userId) return;
     api("login_alerts_get", {}, userId)
       .then((d) => {
-        if (savingAlerts.current) return;
-        if (typeof d.enabled === "boolean") setLoginAlerts(d.enabled);
         if (Array.isArray(d.events)) setLoginEvents(d.events);
         if (typeof d.devices_count === "number") setDevicesCount(d.devices_count);
+        if (touchedAlerts.current) return;
+        if (typeof d.enabled === "boolean") {
+          setLoginAlerts(d.enabled);
+          writeBool("nova_sec_login_alerts", d.enabled);
+        }
       })
       .catch(() => { /* ignore */ });
   }, [userId]);
 
-  const toggleLoginAlerts = async () => {
-    if (!userId) return;
-    const next = !loginAlerts;
-    setLoginAlerts(next);
-    savingAlerts.current = true;
-    try {
-      const r = await api("login_alerts_set", { enabled: next }, userId);
-      if (r?.error) setLoginAlerts(!next);
-    } catch {
-      setLoginAlerts(!next);
-    } finally {
-      savingAlerts.current = false;
-    }
+  const toggleLoginAlerts = () => {
+    touchedAlerts.current = true;
+    setLoginAlerts((prev) => {
+      const next = !prev;
+      writeBool("nova_sec_login_alerts", next);
+      if (userId) {
+        api("login_alerts_set", { enabled: next }, userId).catch(() => { /* ignore */ });
+      }
+      return next;
+    });
   };
 
   const [ringtone, setRingtone] = useState<RingtoneId>(() => getRingtoneId());
@@ -241,12 +258,6 @@ export function SettingsPanel({
       setPinFlow(null);
     }
   };
-
-  const Toggle = ({ on, onToggle }: { on: boolean; onToggle: () => void }) => (
-    <button onClick={onToggle} className={`w-12 h-6 rounded-full transition-all duration-300 relative ${on ? "grad-primary" : "bg-white/10"}`}>
-      <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-300" style={{ left: on ? "calc(100% - 22px)" : "2px" }} />
-    </button>
-  );
 
   const exportBackup = async () => {
     if (!currentUser) return;
