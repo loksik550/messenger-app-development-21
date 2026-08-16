@@ -97,7 +97,7 @@ function ChatsScreen() {
       </div>
 
       <div className="flex gap-3 mb-6">
-        {["Все", "Личные", "Группы", "Непрочитанные"].map((t, i) => (
+        {["Все", "Непрочитанные", "Избранное", "Личные", "Группы"].map((t, i) => (
           <div
             key={t}
             className={`px-6 py-3 rounded-2xl text-[26px] ${
@@ -138,7 +138,7 @@ function ChatsScreen() {
         ))}
       </div>
 
-      <div className="text-slate-500 text-[24px] tracking-wide mb-3 px-1">ЗАКРЕПЛЁННЫЕ</div>
+      <div className="text-slate-500 text-[24px] tracking-wide mb-3 px-1">Закреплённые</div>
 
       <div className="space-y-2.5">
         {CHATS.map((c, i) => (
@@ -255,9 +255,10 @@ function ProfileScreen() {
 
       <div className="space-y-4">
         {[
-          { i: "Crown", t: "Premium", s: "Больше возможностей", c: "from-amber-500 to-orange-600" },
-          { i: "Bot", t: "Мои боты", s: "Автоматизация задач", c: "from-sky-500 to-blue-600" },
-          { i: "LifeBuoy", t: "Поддержка", s: "Помощь и вопросы", c: "from-pink-500 to-rose-600" },
+          { i: "Crown", t: "Оформить Nova Pro", s: "Больше возможностей", c: "from-amber-500 to-orange-600" },
+          { i: "Bot", t: "Мои боты", s: "Создавай ботов для автоматизации", c: "from-sky-500 to-blue-600" },
+          { i: "LifeBuoy", t: "Поддержка Nova", s: "Помощь, баги, идеи", c: "from-pink-500 to-rose-600" },
+          { i: "ShieldCheck", t: "Безопасность и приватность", s: "PIN, кто видит, сессии", c: "from-emerald-500 to-teal-600" },
         ].map((r) => (
           <div key={r.t} className="flex items-center gap-5 bg-white/[0.04] border border-white/8 rounded-[26px] px-7 py-6">
             <div className={`w-[72px] h-[72px] rounded-[22px] bg-gradient-to-br ${r.c} flex items-center justify-center shrink-0`}>
@@ -283,9 +284,9 @@ function ProfileScreen() {
 
 function SecurityScreen() {
   const rows = [
-    { i: "Lock", t: "Сквозное шифрование", s: "Для всех чатов", on: true },
-    { i: "KeyRound", t: "Двухфакторная защита", s: "PIN-код при входе", on: true },
-    { i: "Fingerprint", t: "Биометрия", s: "Вход по отпечатку или лицу", on: true },
+    { i: "Lock", t: "Сквозное шифрование", s: "E2E для всех чатов", on: true },
+    { i: "KeyRound", t: "Двухфакторная защита", s: "PIN установлен", on: true },
+    { i: "Fingerprint", t: "Биометрия", s: "Вход по Face ID / Touch ID", on: true },
     { i: "Bell", t: "Уведомления", s: "Показывать оповещения", on: true },
     { i: "Eye", t: "Предпросмотр сообщений", s: "Текст в уведомлениях", on: true },
     { i: "ShieldAlert", t: "Оповещать о входах", s: "Новое устройство в аккаунте", on: true },
@@ -297,7 +298,7 @@ function SecurityScreen() {
         <Icon name="ChevronLeft" size={40} className="text-white" />
         <div>
           <div className="text-white text-[38px] font-bold">Безопасность</div>
-          <div className="text-slate-500 text-[25px] mt-0.5">Защита вашего аккаунта</div>
+          <div className="text-slate-500 text-[25px] mt-0.5">Управление защитой аккаунта</div>
         </div>
       </div>
 
@@ -312,8 +313,8 @@ function SecurityScreen() {
           </div>
         </div>
         <div className="text-slate-400 text-[26px] leading-relaxed mt-6">
-          Сообщения шифруются на вашем устройстве. Прочитать их можете
-          только вы и собеседник.
+          Nova использует сквозное шифрование (E2E). Ваши сообщения не могут
+          быть прочитаны третьими лицами.
         </div>
       </div>
 
@@ -372,7 +373,7 @@ function CallsScreen() {
 
       <div className="bg-violet-500/10 border border-violet-500/25 rounded-full px-6 py-3 self-center mt-4 mb-8 flex items-center gap-2.5">
         <Icon name="Lock" size={24} className="text-violet-300" />
-        <span className="text-violet-300 text-[24px]">Сообщения защищены шифрованием</span>
+        <span className="text-violet-300 text-[24px]">Сквозное шифрование</span>
       </div>
 
       <div className="space-y-4 flex-1">
@@ -490,7 +491,7 @@ function TabBar({ active }: { active: string }) {
   const tabs = [
     { k: "chats", i: "MessageCircle", l: "Чаты" },
     { k: "contacts", i: "Users", l: "Контакты" },
-    { k: "calls", i: "Phone", l: "Звонки" },
+    { k: "search", i: "Search", l: "Поиск" },
     { k: "profile", i: "User", l: "Профиль" },
     { k: "security", i: "Shield", l: "Защита" },
   ];

@@ -13,6 +13,7 @@ import Privacy from "./pages/Privacy";
 import Security from "./pages/Security";
 import DevPanel from "@/pages/DevPanel";
 import Shots from "./pages/Shots";
+import Banner from "./pages/Banner";
 import StoreAssets from "./pages/StoreAssets";
 import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
@@ -70,6 +71,7 @@ const App = () => (
           <Route path="/security" element={<Security />} />
           <Route path="/dev" element={<DevPanel />} />
           <Route path="/shots" element={<Shots />} />
+          <Route path="/banner" element={<Banner />} />
           <Route path="/store-assets" element={<StoreAssets />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/terms-of-service" element={<Terms />} />

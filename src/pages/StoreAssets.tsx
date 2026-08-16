@@ -29,6 +29,27 @@ const SHOTS = [
   },
 ];
 
+const BANNERS = [
+  {
+    file: "nova-banner-main.png",
+    title: "Обложка карточки",
+    size: "1024×500",
+    desc: "Основная — с телефоном и описанием",
+  },
+  {
+    file: "nova-banner-alt.png",
+    title: "Обложка, вариант 2",
+    size: "1024×500",
+    desc: "Запасная — по центру, без телефона",
+  },
+  {
+    file: "nova-cover-square.png",
+    title: "Квадратная обложка",
+    size: "512×512",
+    desc: "Для витрин и подборок",
+  },
+];
+
 export default function StoreAssets() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -48,11 +69,11 @@ export default function StoreAssets() {
     setBusy(true);
     setMsg("");
     try {
-      for (const s of SHOTS) {
+      for (const s of [...SHOTS, ...BANNERS]) {
         downloadOne(s.file);
         await new Promise((r) => setTimeout(r, 600));
       }
-      setMsg("Все четыре скачаны — проверьте папку «Загрузки»");
+      setMsg("Все файлы скачаны — проверьте папку «Загрузки»");
       setTimeout(() => setMsg(""), 6000);
     } finally {
       setBusy(false);
@@ -85,6 +106,8 @@ export default function StoreAssets() {
                 <li>· Убрана полоса прокрутки и обрезанные строки</li>
                 <li>· Экраны заполнены — нет пустых областей</li>
                 <li>· Показана настоящая работа приложения</li>
+                <li>· Надписи сверены с приложением слово в слово</li>
+                <li>· Убрана вкладка «Звонки», которой нет — теперь «Поиск»</li>
               </ul>
             </div>
           </div>
@@ -96,7 +119,7 @@ export default function StoreAssets() {
           className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-purple-600 font-semibold mb-3 disabled:opacity-50 flex items-center justify-center gap-2"
         >
           <Icon name="Download" size={18} />
-          {busy ? "Скачиваю..." : "Скачать все четыре"}
+          {busy ? "Скачиваю..." : "Скачать всё (7 файлов)"}
         </button>
 
         {msg && (
@@ -133,12 +156,48 @@ export default function StoreAssets() {
           ))}
         </div>
 
+        <h2 className="text-lg font-bold mt-10 mb-1">Обложки для карточки</h2>
+        <p className="text-slate-400 text-sm mb-4">
+          Баннер показывается вверху страницы приложения в магазине
+        </p>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          {BANNERS.map((b) => (
+            <div
+              key={b.file}
+              className={`bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden ${
+                b.file === "nova-cover-square.png" ? "md:col-span-2 md:max-w-sm" : ""
+              }`}
+            >
+              <a href={`/store/${b.file}`} target="_blank" rel="noreferrer">
+                <img src={`/store/${b.file}`} alt={b.title} className="w-full block border-b border-white/8" />
+              </a>
+              <div className="p-4 flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold">
+                    {b.title}
+                    <span className="text-slate-500 font-normal ml-2 text-xs">{b.size}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">{b.desc}</div>
+                </div>
+                <button
+                  onClick={() => downloadOne(b.file)}
+                  className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center gap-1.5 hover:bg-white/10 transition shrink-0"
+                >
+                  <Icon name="Download" size={13} />
+                  Скачать
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
         <div className="mt-8 bg-white/[0.03] border border-white/10 rounded-2xl p-4">
           <div className="flex items-start gap-3">
             <Icon name="Info" size={17} className="text-sky-400 mt-0.5 shrink-0" />
             <div className="text-sm text-slate-400 leading-relaxed">
               <div className="font-semibold text-white mb-1">Прямые ссылки</div>
-              {SHOTS.map((s) => (
+              {[...SHOTS, ...BANNERS].map((s) => (
                 <div key={s.file} className="text-xs mt-1 break-all">
                   <a
                     href={`/store/${s.file}`}
