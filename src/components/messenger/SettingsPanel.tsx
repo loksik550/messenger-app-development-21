@@ -53,22 +53,34 @@ export function SettingsPanel({
   const [devicesCount, setDevicesCount] = useState(0);
   const [showLogins, setShowLogins] = useState(false);
 
+  // Пока идёт сохранение, не перетираем выбор ответом с сервера
+  const savingAlerts = useRef(false);
+  const userId = currentUser?.id;
+
   useEffect(() => {
-    if (!currentUser) return;
-    api("login_alerts_get", {}, currentUser.id)
+    if (!userId) return;
+    api("login_alerts_get", {}, userId)
       .then((d) => {
+        if (savingAlerts.current) return;
         if (typeof d.enabled === "boolean") setLoginAlerts(d.enabled);
         if (Array.isArray(d.events)) setLoginEvents(d.events);
         if (typeof d.devices_count === "number") setDevicesCount(d.devices_count);
       })
       .catch(() => { /* ignore */ });
-  }, [currentUser]);
+  }, [userId]);
 
   const toggleLoginAlerts = async () => {
+    if (!userId) return;
     const next = !loginAlerts;
     setLoginAlerts(next);
-    if (currentUser) {
-      api("login_alerts_set", { enabled: next }, currentUser.id).catch(() => { /* ignore */ });
+    savingAlerts.current = true;
+    try {
+      const r = await api("login_alerts_set", { enabled: next }, userId);
+      if (r?.error) setLoginAlerts(!next);
+    } catch {
+      setLoginAlerts(!next);
+    } finally {
+      savingAlerts.current = false;
     }
   };
 

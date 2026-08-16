@@ -43,6 +43,12 @@ const BANNERS = [
     desc: "Запасная — по центру, без телефона",
   },
   {
+    file: "nova-icon-512.png",
+    title: "Иконка приложения",
+    size: "512×512",
+    desc: "Квадратная 1:1, вес 316 КБ — под требования",
+  },
+  {
     file: "nova-cover-square.png",
     title: "Квадратная обложка",
     size: "512×512",
@@ -119,7 +125,7 @@ export default function StoreAssets() {
           className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-purple-600 font-semibold mb-3 disabled:opacity-50 flex items-center justify-center gap-2"
         >
           <Icon name="Download" size={18} />
-          {busy ? "Скачиваю..." : "Скачать всё (7 файлов)"}
+          {busy ? "Скачиваю..." : "Скачать всё (8 файлов)"}
         </button>
 
         {msg && (
