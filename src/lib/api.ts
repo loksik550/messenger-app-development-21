@@ -525,11 +525,6 @@ export interface GroupMessage {
   reactions?: Reaction[];
 }
 
-export interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export const AVATAR_GRADS = [

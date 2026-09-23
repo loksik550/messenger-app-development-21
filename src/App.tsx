@@ -8,7 +8,6 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { native } from "@/lib/native";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
-import Download from "./pages/Download";
 import Privacy from "./pages/Privacy";
 import Security from "./pages/Security";
 import DevPanel from "@/pages/DevPanel";
@@ -62,9 +61,6 @@ const App = () => (
         <NativeShell />
         <Routes>
           <Route path="/" element={<Index />} />
-          <Route path="/download" element={<Download />} />
-          <Route path="/install" element={<Download />} />
-          <Route path="/app" element={<Download />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/privacy-policy" element={<Privacy />} />
           <Route path="/politika-konfidencialnosti" element={<Privacy />} />

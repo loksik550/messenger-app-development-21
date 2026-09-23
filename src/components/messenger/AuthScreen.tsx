@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Icon from "@/components/ui/icon";
-import { api, type User, type BeforeInstallPromptEvent } from "@/lib/api";
+import { api, type User } from "@/lib/api";
 import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
 
 export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
@@ -15,22 +15,6 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
-  const [showInstall, setShowInstall] = useState(false);
-
-  useEffect(() => {
-    const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); setShowInstall(true); };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
-
-  const handleInstall = async () => {
-    if (!installPrompt) return;
-    (installPrompt as BeforeInstallPromptEvent).prompt();
-    const { outcome } = await (installPrompt as BeforeInstallPromptEvent).userChoice;
-    if (outcome === "accepted") setShowInstall(false);
-  };
-
   const formatPhone = (val: string) => {
     const digits = val.replace(/\D/g, "").slice(0, 11);
     if (!digits) return "";
@@ -131,38 +115,6 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
       <div className="mesh-bg" />
       <div className="absolute top-[-10%] right-[-10%] w-80 h-80 rounded-full bg-violet-600/20 blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 rounded-full bg-sky-600/15 blur-3xl pointer-events-none" />
-
-      {/* Install banner Android */}
-      {showInstall && (
-        <div className="fixed bottom-6 left-4 right-4 z-50 glass rounded-2xl p-4 flex items-center gap-3 border border-violet-500/30 shadow-2xl animate-fade-in">
-          <div className="w-12 h-12 grad-primary rounded-xl flex items-center justify-center flex-shrink-0">
-            <Icon name="Zap" size={22} className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm">Установить Nova</p>
-            <p className="text-xs text-muted-foreground">Добавить на главный экран</p>
-          </div>
-          <button onClick={handleInstall} className="px-4 py-2 grad-primary rounded-xl text-white text-sm font-bold flex-shrink-0">
-            Установить
-          </button>
-          <button onClick={() => setShowInstall(false)} className="p-1 text-muted-foreground hover:text-foreground">
-            <Icon name="X" size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* iOS install hint */}
-      {!showInstall && /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches && (
-        <div className="fixed bottom-6 left-4 right-4 z-50 glass rounded-2xl p-4 flex items-center gap-3 border border-white/10 animate-fade-in">
-          <div className="w-10 h-10 grad-primary rounded-xl flex items-center justify-center flex-shrink-0">
-            <Icon name="Zap" size={18} className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm">Установить Nova</p>
-            <p className="text-xs text-muted-foreground">Нажмите <span className="text-violet-400">⬆ Поделиться</span> → «На экран Домой»</p>
-          </div>
-        </div>
-      )}
 
       <div className={`w-full max-w-sm mx-4 animate-scale-in ${shake ? "animate-[shake_0.4s_ease]" : ""}`}>
         {/* Logo */}

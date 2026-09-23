@@ -9,8 +9,6 @@ import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger
 import { AuthScreen } from "@/components/messenger/AuthScreen";
 import { ContactsPanel } from "@/components/messenger/ContactsPanel";
 import { CallScreen } from "@/components/messenger/CallScreen";
-import InstallPrompt from "@/components/messenger/InstallPrompt";
-import InstallWelcome from "@/components/messenger/InstallWelcome";
 import EnableNotificationsBanner from "@/components/messenger/EnableNotificationsBanner";
 import { toast } from "@/hooks/use-toast";
 import NotificationsBell, { type UserNotif } from "@/components/messenger/NotificationsBell";
@@ -635,7 +633,6 @@ export default function Index() {
   if (!currentUser) return (
     <>
       <AuthScreen onDone={login} />
-      <InstallWelcome />
     </>
   );
 
@@ -925,7 +922,6 @@ export default function Index() {
         onDismiss={(id) => setToasts(prev => prev.filter(t => t.id !== id))}
       />
 
-      <InstallPrompt />
 
       {/* Coming soon */}
       <ComingSoon open={showComingSoon} onClose={() => setShowComingSoon(false)} />
