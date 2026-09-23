@@ -201,6 +201,30 @@ def audit(cur, admin, action, details="", ip=""):
     )
 
 
+def _rate_limit(cur, key: str, max_per_minute: int) -> bool:
+    """True если лимит ОК (можно выполнять), False — превышен."""
+    now = int(time.time())
+    window = now - (now % 60)
+    try:
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.rate_limits (key, window_start, counter)
+                VALUES (%s, %s, 1)
+                ON CONFLICT (key) DO UPDATE SET
+                    window_start = CASE WHEN {SCHEMA}.rate_limits.window_start = EXCLUDED.window_start
+                                        THEN {SCHEMA}.rate_limits.window_start
+                                        ELSE EXCLUDED.window_start END,
+                    counter = CASE WHEN {SCHEMA}.rate_limits.window_start = EXCLUDED.window_start
+                                   THEN {SCHEMA}.rate_limits.counter + 1
+                                   ELSE 1 END
+                RETURNING counter""",
+            (key, window),
+        )
+        cnt = (cur.fetchone() or [0])[0]
+        return cnt <= max_per_minute
+    except Exception:
+        return True
+
+
 def auth_admin(cur, event):
     token = (event.get("headers") or {}).get("X-Dev-Token") or ""
     if not token:
@@ -261,6 +285,12 @@ def handler(event: dict, context) -> dict:
             name = (body.get("name") or "").strip()
             code = (body.get("invite_code") or "").strip().upper()
 
+            # Защита от перебора кодов-приглашений
+            if not _rate_limit(cur, f"devreg:ip:{ip}", 5):
+                conn.commit()
+                return err("Слишком много попыток. Подождите минуту.", 429)
+            conn.commit()
+
             if "@" not in email or "." not in email.split("@")[-1]:
                 return err("Укажите корректный адрес почты")
             if len(password) < 8:
@@ -312,6 +342,14 @@ def handler(event: dict, context) -> dict:
         if action == "login":
             email = (body.get("email") or "").strip().lower()
             password = body.get("password") or ""
+
+            # Защита от подбора пароля: не больше 5 попыток в минуту
+            # с одного адреса и не больше 5 на одну почту.
+            if not _rate_limit(cur, f"devlogin:ip:{ip}", 5) or \
+               not _rate_limit(cur, f"devlogin:mail:{email}", 5):
+                conn.commit()
+                return err("Слишком много попыток входа. Подождите минуту.", 429)
+            conn.commit()
 
             cur.execute(
                 f"SELECT id, email, name, role, password_hash, disabled, title, avatar_url, "
