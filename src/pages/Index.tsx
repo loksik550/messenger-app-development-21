@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import ConnectionBanner from "@/components/messenger/ConnectionBanner";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import Icon from "@/components/ui/icon";
 import { api, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
@@ -719,6 +720,7 @@ export default function Index() {
 
   const handleBack = () => {
     setShowSidebar(true);
+    setTimeout(() => setSelectedChat(null), 300);
   };
 
   return (
@@ -726,6 +728,7 @@ export default function Index() {
     <div className="flex overflow-hidden relative" style={{ height: "100dvh", minHeight: "100dvh" }}>
       {/* Mesh background */}
       <div className="mesh-bg" />
+      <ConnectionBanner />
 
       {/* Подсказка о включении push-уведомлений */}
       {currentUser && <EnableNotificationsBanner userId={currentUser.id} />}
@@ -930,13 +933,14 @@ export default function Index() {
       <aside
         className={`
           flex flex-col flex-shrink-0
-          glass-strong border-r border-white/5
+          glass-strong !bg-[#0f0c1d] md:!bg-white/[0.07] border-r border-white/5
           transition-transform duration-300 ease-in-out
           md:w-80 lg:w-96
           absolute inset-y-0 left-0 z-20 w-full
           md:relative md:translate-x-0 md:z-auto
-          ${showSidebar ? "translate-x-0" : "-translate-x-full"}
+          ${showSidebar ? "translate-x-0" : "-translate-x-full invisible pointer-events-none md:visible md:pointer-events-auto"}
         `}
+        aria-hidden={!showSidebar ? true : undefined}
       >
         {/* Sidebar Header */}
         <div className="flex items-center justify-between px-4 pb-3" style={{ paddingTop: "calc(1.25rem + env(safe-area-inset-top))" }}>
@@ -1215,7 +1219,7 @@ export default function Index() {
         flex-1 flex flex-col overflow-hidden
         transition-transform duration-300 ease-in-out
         absolute inset-0 md:relative
-        ${showSidebar && !selectedChat && !selectedGroup ? "translate-x-full md:translate-x-0" : "translate-x-0"}
+        ${showSidebar && !selectedChat && !selectedGroup ? "translate-x-full invisible pointer-events-none md:translate-x-0 md:visible md:pointer-events-auto" : "translate-x-0"}
       `}>
         {selectedGroup ? (
           <GroupChatWindow

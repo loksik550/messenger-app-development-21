@@ -857,6 +857,18 @@ def handler(event: dict, context) -> dict:
         now_ts = int(time.time())
         cid = int(chat_id)
         uid_int = int(user_id) if user_id else 0
+        try:
+            page_limit = int(body.get("limit") or 0)
+        except (TypeError, ValueError):
+            page_limit = 0
+        page_limit = max(0, min(page_limit, 100))
+        try:
+            before_id = int(body.get("before_id") or 0)
+        except (TypeError, ValueError):
+            before_id = 0
+        paged = page_limit > 0 and (int(since or 0) == 0 or before_id > 0)
+        if before_id:
+            since = 0
 
         # ОДНИМ запросом: soft-remove истёкших + читаем cleared_at + получаем все сообщения
         # с реакциями (JSON), reply_to (LEFT JOIN) и removed_ids
@@ -896,10 +908,16 @@ def handler(event: dict, context) -> dict:
                   AND m.created_at > GREATEST(%s, (SELECT ts FROM cleared))
                   AND m.removed_at IS NULL
                   AND COALESCE(m.kind, 'text') <> 'bot_callback'
-                ORDER BY m.created_at ASC LIMIT 100""",
-            (now_ts, cid, now_ts, uid_int, cid, cid, int(since))
+                  {"AND m.id < %s" if before_id else ""}
+                ORDER BY {"m.created_at DESC, m.id DESC" if paged else "m.created_at ASC, m.id ASC"}
+                LIMIT %s""",
+            (now_ts, cid, now_ts, uid_int, cid, cid, int(since), *((before_id,) if before_id else ()), page_limit + 1 if paged else 200)
         )
         rows = cur.fetchall()
+        has_more = False
+        if paged:
+            has_more = len(rows) > page_limit
+            rows = list(reversed(rows[:page_limit]))
 
         # ids удалённых (одним отдельным запросом — нужен для соответствия фронту)
         cur.execute(
@@ -936,7 +954,7 @@ def handler(event: dict, context) -> dict:
             "expires_at": int(r[18]) if r[18] else None,
             "reactions": r[23] or [],
         } for r in rows]
-        return ok({"messages": messages, "removed_ids": removed_ids, "now": int(time.time())})
+        return ok({"messages": messages, "removed_ids": removed_ids, "now": int(time.time()), "has_more": has_more})
 
     # ── scheduled_messages ────────────────────────────────────────────────────
     if action == "schedule_message":
@@ -1870,6 +1888,19 @@ def handler(event: dict, context) -> dict:
         payload_str = json.dumps(payload, ensure_ascii=False) if isinstance(payload, (dict, list)) else None
 
         now = int(time.time())
+        try:
+            client_id = int(body.get("client_id") or 0) or None
+        except (TypeError, ValueError):
+            client_id = None
+        if client_id:
+            cur.execute(
+                f"SELECT id, created_at FROM {SCHEMA}.messages WHERE sender_id = %s AND client_id = %s",
+                (int(user_id), client_id)
+            )
+            _dup = cur.fetchone()
+            if _dup:
+                conn.close()
+                return ok({"id": _dup[0], "created_at": _dup[1], "duplicate": True})
         # Исчезающие сообщения
         cur.execute(f"SELECT disappearing_seconds FROM {SCHEMA}.chats WHERE id=%s", (int(chat_id),))
         rd = cur.fetchone()
@@ -1878,15 +1909,15 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"""INSERT INTO {SCHEMA}.messages
                 (chat_id, sender_id, text, image_url, media_type, media_url, file_name, file_size, duration, created_at,
-                 reply_to_id, forwarded_from_user_id, forwarded_from_name, kind, payload_json, expires_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                 reply_to_id, forwarded_from_user_id, forwarded_from_name, kind, payload_json, expires_at, client_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (int(chat_id), int(user_id), text,
              media_url if media_type == "image" else None,
              media_type or None, media_url or None,
              file_name, file_size, duration, now,
              int(reply_to_id) if reply_to_id else None,
              int(forwarded_from_user_id) if forwarded_from_user_id else None,
-             forwarded_from_name, kind, payload_str, expires_at)
+             forwarded_from_name, kind, payload_str, expires_at, client_id)
         )
         msg_id = cur.fetchone()[0]
         cur.execute(

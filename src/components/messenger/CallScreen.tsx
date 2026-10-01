@@ -262,7 +262,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
             sent = (r as { bytesSent?: number }).bytesSent || 0;
           }
         });
-        logDiag("audio_stats", { recv: bytes, sent });
+        void sent;
         // ТОЛЬКО индикатор качества. Никакого ICE-restart — он рвал соединение
         // в момент установки медиа (в логах после restart сразу шёл disconnected).
         if (bytes > lastAudioBytesRef.current) {
@@ -320,6 +320,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     if (endedRef.current) return;
     try {
       const data = await api("get_call_signals", { call_id: callId, since_id: sinceRef.current }, currentUser.id);
+      if (data.ended) { endCall("remote_hangup"); return; }
       if (!data.signals) return;
       for (const sig of data.signals) {
         const sid = sig.id || 0;
@@ -343,7 +344,7 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     if (pollRef.current) return;
     sinceRef.current = 0;
     pollOnce();
-    pollRef.current = setInterval(pollOnce, 1000);
+    pollRef.current = setInterval(pollOnce, 700);
   };
 
   // Звонящий: создаёт PC, шлёт offer

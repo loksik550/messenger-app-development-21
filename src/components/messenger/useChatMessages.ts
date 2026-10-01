@@ -2,6 +2,17 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { api, type Chat, type Message, type Reaction, type User } from "@/lib/api";
 import { playMessageSound } from "@/lib/sounds";
 import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
+import { getPending, subscribeOutbox, flush as flushOutbox, type OutboxItem } from "@/lib/outbox";
+
+const PAGE = 50;
+
+function pendingToMessage(i: OutboxItem): Message {
+  return {
+    id: i.localId, text: i.text, out: true, created_at: i.createdAt, reactions: [],
+    time: new Date(i.createdAt * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+    pending: !i.failed, failed: !!i.failed,
+  };
+}
 
 // Загрузка сообщений чата, поллинг обновлений и индикатор набора текста.
 // Логика перенесена из ChatComponents.tsx без изменений.
@@ -9,21 +20,10 @@ export function useChatMessages(chat: Chat, currentUser: User) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [lastSince, setLastSince] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
-  const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
-    const data = await api("get_messages", { chat_id: chat.id, since }, currentUser.id);
-    let changed = false;
-
-    // Удаляем у себя то, что удалили на сервере (для получателя)
-    if (Array.isArray(data.removed_ids) && data.removed_ids.length > 0) {
-      const removedSet = new Set<number>(data.removed_ids);
-      setMessages(prev => prev.some(m => removedSet.has(m.id)) ? prev.filter(m => !removedSet.has(m.id)) : prev);
-      changed = true;
-    }
-
-    if (data.messages && data.messages.length > 0) {
-      changed = true;
-      const mapped: Message[] = data.messages.map((m: {
+  const mapMsg = useCallback((m: {
         id: number; text: string; created_at: number; sender_id: number; sender_name?: string; read_at?: number;
         image_url?: string; media_type?: string; media_url?: string;
         file_name?: string; file_size?: number; duration?: number;
@@ -33,7 +33,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
         forwarded_from_name?: string | null;
         edited_at?: number | null;
         kind?: "text" | "missed_call" | "system";
-      }) => ({
+      }): Message => ({
         id: m.id,
         text: m.text,
         time: new Date(m.created_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
@@ -54,9 +54,25 @@ export function useChatMessages(chat: Chat, currentUser: User) {
         forwarded_from_user_id: m.forwarded_from_user_id || null,
         forwarded_from_name: m.forwarded_from_name || null,
         edited_at: m.edited_at || null,
-      }));
+      }), [currentUser.id]);
+
+  const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
+    const data = await api("get_messages", since === 0 ? { chat_id: chat.id, since, limit: PAGE } : { chat_id: chat.id, since }, currentUser.id);
+    if (since === 0) setHasMore(!!data.has_more);
+    let changed = false;
+
+    // Удаляем у себя то, что удалили на сервере (для получателя)
+    if (Array.isArray(data.removed_ids) && data.removed_ids.length > 0) {
+      const removedSet = new Set<number>(data.removed_ids);
+      setMessages(prev => prev.some(m => removedSet.has(m.id)) ? prev.filter(m => !removedSet.has(m.id)) : prev);
+      changed = true;
+    }
+
+    if (data.messages && data.messages.length > 0) {
+      changed = true;
+      const mapped: Message[] = data.messages.map(mapMsg);
       if (since === 0) {
-        setMessages(mapped);
+        setMessages([...mapped, ...getPending(chat.id).map(pendingToMessage)]);
       } else {
         const hasIncoming = mapped.some(m => !m.out);
         if (hasIncoming) playMessageSound();
@@ -86,14 +102,67 @@ export function useChatMessages(chat: Chat, currentUser: User) {
       api("mark_read", { chat_id: chat.id }, currentUser.id);
     }
     return changed;
-  }, [chat.id, currentUser.id]);
+  }, [chat.id, currentUser.id, mapMsg]);
+
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder) return;
+    const firstId = messages.find(m => m.id > 0)?.id;
+    if (!firstId) return;
+    setLoadingOlder(true);
+    try {
+      const data = await api("get_messages", { chat_id: chat.id, limit: PAGE, before_id: firstId }, currentUser.id);
+      const older: Message[] = (data.messages || []).map(mapMsg);
+      setHasMore(!!data.has_more);
+      setMessages(prev => {
+        const ids = new Set(prev.map(m => m.id));
+        return [...older.filter(m => !ids.has(m.id)), ...prev];
+      });
+    } catch { /* сеть */ } finally {
+      setLoadingOlder(false);
+    }
+  }, [chat.id, currentUser.id, loadingOlder, mapMsg, messages]);
+
+  useEffect(() => {
+    return subscribeOutbox(e => {
+      if (e.type === "sent") {
+        if (e.item.chatId !== chat.id) return;
+        setMessages(prev => {
+          if (prev.some(m => m.id === e.item.id)) return prev.filter(m => m.id !== e.item.localId);
+          return prev.map(m => m.id === e.item.localId
+            ? { ...m, id: e.item.id, created_at: e.item.created_at, pending: false, failed: false }
+            : m);
+        });
+        return;
+      }
+      const pend = new Map(getPending(chat.id).map(i => [i.localId, i]));
+      setMessages(prev => {
+        let changed = false;
+        const next = prev.map(m => {
+          const p = pend.get(m.id);
+          if (!p) return m;
+          pend.delete(m.id);
+          if (m.failed === !!p.failed && m.pending === !p.failed) return m;
+          changed = true;
+          return { ...m, pending: !p.failed, failed: !!p.failed };
+        });
+        if (pend.size) {
+          changed = true;
+          next.push(...Array.from(pend.values()).map(pendingToMessage));
+        }
+        return changed ? next : prev;
+      });
+    });
+  }, [chat.id]);
+
+  useEffect(() => { flushOutbox(); }, [chat.id]);
 
   const lastSinceRef = useRef(0);
   lastSinceRef.current = lastSince;
 
   useEffect(() => {
-    setMessages([]);
+    setMessages(getPending(chat.id).map(pendingToMessage));
     setLastSince(0);
+    setHasMore(false);
     loadMessages(0);
   }, [chat.id]);
 
@@ -109,7 +178,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
     return changed;
   }, [chat.id, currentUser.id], 4000, 8000);
 
-  return { messages, setMessages, isTyping, lastSince, setLastSince, loadMessages };
+  return { messages, setMessages, isTyping, lastSince, setLastSince, loadMessages, hasMore, loadingOlder, loadOlder };
 }
 
 export default useChatMessages;

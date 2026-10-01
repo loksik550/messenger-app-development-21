@@ -36,6 +36,11 @@ export interface MessageListProps {
   onCtxMenu: (s: CtxMenuState) => void;
   onHeartBurst: (id: number | null) => void;
   onOpenFundraiser?: (id: number) => void;
+  onRetry?: (id: number) => void;
+  onDiscard?: (id: number) => void;
+  hasMore?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
 }
 
 export default function MessageList({
@@ -43,6 +48,7 @@ export default function MessageList({
   highlightId, heartBurst, messagesScrollRef, endRef,
   onScroll, onBackgroundClick, onReply, onScrollToMessage,
   onStartHold, onCancelHold, onAddReaction, onCtxMenu, onHeartBurst, onOpenFundraiser,
+  onRetry, onDiscard, hasMore, loadingOlder, onLoadOlder,
 }: MessageListProps) {
   return (
     <div
@@ -52,6 +58,17 @@ export default function MessageList({
       style={wallpaperById(wallpaper) ? { background: wallpaperById(wallpaper) } : undefined}
       onClick={onBackgroundClick}
     >
+      {hasMore && (
+        <div className="flex justify-center py-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); onLoadOlder?.(); }}
+            disabled={loadingOlder}
+            className="px-3 py-1 glass rounded-full text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+          >
+            {loadingOlder ? "Загрузка..." : "Показать ранние сообщения"}
+          </button>
+        </div>
+      )}
       {(() => {
         const mediaGallery: MediaItem[] = messages
           .filter(m => (m.media_type === "image" || m.media_type === "video") && (m.media_url || m.image_url))
@@ -239,11 +256,22 @@ export default function MessageList({
                     )}
                     {msg.expires_at && <ExpiringIndicator expiresAt={msg.expires_at} out={msg.out} />}
                     <span className={`text-[10px] ${msg.out ? "text-white/70" : "text-muted-foreground"}`}>{msg.time}</span>
-                    {msg.out && (
+                    {msg.out && msg.failed ? (
+                      <Icon name="CircleAlert" size={12} className="text-red-300" />
+                    ) : msg.out && msg.pending ? (
+                      <Icon name="Clock" size={12} className="text-white/60" />
+                    ) : msg.out && (
                       <Icon name={msg.read ? "CheckCheck" : "Check"} size={12} className={msg.read ? "text-sky-300" : "text-white/60"} />
                     )}
                   </div>
                 </div>
+                {msg.out && msg.failed && (
+                  <div className="flex justify-end gap-3 mt-1 text-[11px]">
+                    <span className="text-red-300">Не отправлено</span>
+                    <button onClick={(e) => { e.stopPropagation(); onRetry?.(msg.id); }} className="text-violet-300 font-semibold">Повторить</button>
+                    <button onClick={(e) => { e.stopPropagation(); onDiscard?.(msg.id); }} className="text-muted-foreground">Удалить</button>
+                  </div>
+                )}
                 {(msg.reactions || []).filter(r => r.emoji !== "__removed__").length > 0 && (
                   <ReactionBar
                     reactions={msg.reactions || []}

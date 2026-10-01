@@ -302,6 +302,44 @@ let currentLang: Lang = (() => {
   return "ru";
 })();
 
+const KB_LOCALE: Record<Lang, string> = { ru: "ru-RU", en: "en-US" };
+
+function applyKeyboardLang(root: ParentNode = document) {
+  const loc = KB_LOCALE[currentLang] || currentLang;
+  root.querySelectorAll?.("textarea, input:not([type]), input[type=text], input[type=search]").forEach(el => {
+    if (el.getAttribute("lang") !== loc) el.setAttribute("lang", loc);
+  });
+}
+
+function syncKeyboardLang() {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = KB_LOCALE[currentLang] || currentLang;
+  applyKeyboardLang();
+  const active = document.activeElement as HTMLElement | null;
+  if (active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT")) {
+    active.blur();
+    setTimeout(() => active.focus(), 60);
+  }
+}
+
+if (typeof document !== "undefined") {
+  document.documentElement.lang = KB_LOCALE[currentLang] || currentLang;
+  const start = () => {
+    applyKeyboardLang();
+    new MutationObserver(muts => {
+      for (const m of muts) m.addedNodes.forEach(n => { if (n.nodeType === 1) applyKeyboardLang(n as Element); });
+    }).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("focusin", e => {
+      const el = e.target as HTMLElement;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) {
+        const loc = KB_LOCALE[currentLang] || currentLang;
+        if (el.getAttribute("lang") !== loc) el.setAttribute("lang", loc);
+      }
+    }, true);
+  };
+  if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
+}
+
 const listeners = new Set<() => void>();
 
 export function getLang(): Lang {
@@ -312,7 +350,7 @@ export function setLang(lang: Lang) {
   if (currentLang === lang) return;
   currentLang = lang;
   try { localStorage.setItem(STORAGE_KEY, lang); } catch { /* ignore */ }
-  document.documentElement.lang = lang;
+  syncKeyboardLang();
   listeners.forEach(l => l());
 }
 

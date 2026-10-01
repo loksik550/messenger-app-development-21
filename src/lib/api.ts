@@ -1,3 +1,5 @@
+import { reportNetworkError, reportNetworkOk } from "@/lib/connection";
+
 export const CHAT_API = "https://functions.poehali.dev/b97ade88-cc88-4702-a461-4c386efd5ca3";
 export const CHAT_POLL_API = "https://functions.poehali.dev/3fc067b7-d1b3-4aed-8ad9-98df81040f0a";
 export const PUSH_API = "https://functions.poehali.dev/c9d141ca-3552-433f-a968-ac1e92da00af";
@@ -105,11 +107,18 @@ async function fetchWithRetry(url: string, init: RequestInit, timeoutMs = 15000,
 
 export async function api(action: string, body: Record<string, unknown> = {}, userId?: number) {
   const url = POLL_ACTIONS.has(action) ? CHAT_POLL_API : CHAT_API;
-  const res = await fetchWithRetry(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": String(userId) } : {}) },
-    body: JSON.stringify({ action, ...body }),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithRetry(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": String(userId) } : {}) },
+      body: JSON.stringify({ action, ...body }),
+    });
+  } catch (e) {
+    reportNetworkError();
+    throw e;
+  }
+  reportNetworkOk();
   try {
     return await res.json();
   } catch {
@@ -308,6 +317,8 @@ export interface Message {
   forwarded_from_name?: string | null;
   edited_at?: number | null;
   expires_at?: number | null;
+  pending?: boolean;
+  failed?: boolean;
 }
 
 export interface Chat {

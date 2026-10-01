@@ -11,6 +11,7 @@ import {
   TYPING_THROTTLE_MS,
 } from "@/components/messenger/chatConstants";
 import { useChatMessages } from "@/components/messenger/useChatMessages";
+import { enqueue, retry as retryOutbox, removeFromOutbox } from "@/lib/outbox";
 import { useChatMedia } from "@/components/messenger/useChatMedia";
 import {
   ConfirmDialog, EncryptionBadge, UnknownContactHint, PinnedBar, ScrollDownButton,
@@ -38,7 +39,7 @@ export function ChatWindow({
   onOpenStickersStore?: () => void;
 }) {
   useEdgeSwipeBack(onBack);
-  const { messages, setMessages, isTyping, setLastSince } = useChatMessages(chat, currentUser);
+  const { messages, setMessages, isTyping, setLastSince, hasMore, loadingOlder, loadOlder } = useChatMessages(chat, currentUser);
   const [input, setInput] = useState("");
   const [showAttach, setShowAttach] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -213,16 +214,9 @@ export function ChatWindow({
       const replyPreview = replyTo ? { id: replyTo.id, sender_name: replyTo.sender_name || (replyTo.out ? "Вы" : chat.name), text: replyTo.text, media_type: replyTo.media_type } : null;
       setReplyTo(null);
 
-      const data = await api("send_message", {
-        chat_id: chat.id,
-        text,
-        reply_to_id: replyId,
-      }, currentUser.id);
-      if (data.id) {
-        const timeStr = new Date(data.created_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
-        setMessages(prev => prev.some(m => m.id === data.id) ? prev : [...prev, { id: data.id, text, time: timeStr, out: true, created_at: data.created_at, reactions: [], reply_to: replyPreview }]);
-        setLastSince(data.created_at);
-      }
+      const item = enqueue({ chatId: chat.id, userId: currentUser.id, text, replyToId: replyId });
+      const timeStr = new Date(item.createdAt * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
+      setMessages(prev => prev.some(m => m.id === item.localId) ? prev : [...prev, { id: item.localId, text, time: timeStr, out: true, created_at: item.createdAt, reactions: [], reply_to: replyPreview, pending: true }]);
     } finally {
       // небольшой кулдаун, чтобы успел отработать second tap/keydown
       setTimeout(() => { sendingRef.current = false; }, 250);
@@ -501,6 +495,16 @@ export function ChatWindow({
         onCtxMenu={setCtxMenu}
         onHeartBurst={(id) => setHeartBurst(id)}
         onOpenFundraiser={onOpenFundraiser}
+        onRetry={(id) => { setMessages(prev => prev.map(m => m.id === id ? { ...m, failed: false, pending: true } : m)); retryOutbox(id); }}
+        onDiscard={(id) => { removeFromOutbox(id); setMessages(prev => prev.filter(m => m.id !== id)); }}
+        hasMore={hasMore}
+        loadingOlder={loadingOlder}
+        onLoadOlder={async () => {
+          const el = messagesScrollRef.current;
+          const prevH = el?.scrollHeight || 0;
+          await loadOlder();
+          requestAnimationFrame(() => { if (el) el.scrollTop += el.scrollHeight - prevH; });
+        }}
       />
 
       {showScrollDown && (

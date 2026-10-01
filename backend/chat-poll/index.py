@@ -74,24 +74,43 @@ def handler(event: dict, context) -> dict:
     # ── get_call_signals ─────────────────────────────────────────────────────
     if action == "get_call_signals":
         call_id = (body.get("call_id") or params.get("call_id") or "").strip()
-        since = int(body.get("since") or params.get("since") or 0)
         if not call_id:
             conn.close()
             return err("Укажите call_id")
-        cur.execute(
-            f"""SELECT id, from_user_id, type, payload, created_at
-                FROM {SCHEMA}.call_signals
-                WHERE call_id = %s AND to_user_id = %s AND created_at > %s
-                ORDER BY id ASC LIMIT 20""",
-            (call_id, int(user_id), since),
-        )
+        since_id_raw = body.get("since_id")
+        if since_id_raw is None:
+            since_id_raw = params.get("since_id")
+        if since_id_raw is not None:
+            cur.execute(
+                f"""SELECT id, from_user_id, type, payload, created_at
+                    FROM {SCHEMA}.call_signals
+                    WHERE call_id = %s AND to_user_id = %s AND id > %s AND type <> 'diag'
+                    ORDER BY id ASC LIMIT 50""",
+                (call_id, int(user_id), int(since_id_raw)),
+            )
+        else:
+            since = int(body.get("since") or params.get("since") or 0)
+            cur.execute(
+                f"""SELECT id, from_user_id, type, payload, created_at
+                    FROM {SCHEMA}.call_signals
+                    WHERE call_id = %s AND to_user_id = %s AND created_at > %s AND type <> 'diag'
+                    ORDER BY id ASC LIMIT 50""",
+                (call_id, int(user_id), since),
+            )
         rows = cur.fetchall()
+        cur.execute(
+            f"""SELECT 1 FROM {SCHEMA}.call_signals
+                WHERE call_id = %s AND to_user_id = %s
+                  AND type IN ('hangup','decline','end','cancel') LIMIT 1""",
+            (call_id, int(user_id)),
+        )
+        ended = cur.fetchone() is not None
         conn.close()
         signals = [
             {"id": r[0], "from_user_id": r[1], "type": r[2], "payload": json.loads(r[3]) if r[3] else None, "created_at": r[4]}
             for r in rows
         ]
-        return ok({"signals": signals})
+        return ok({"signals": signals, "ended": ended})
 
     # ── poll_incoming_call ───────────────────────────────────────────────────
     if action == "poll_incoming_call":
