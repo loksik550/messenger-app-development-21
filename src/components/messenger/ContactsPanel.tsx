@@ -224,7 +224,7 @@ export function ContactsPanel({
 
   const startImport = () => {
     const nav = navigator as Navigator & { contacts?: ContactsManager };
-    if (nav.contacts && typeof nav.contacts.select === "function") {
+    if (native.phoneContacts.supported || (nav.contacts && typeof nav.contacts.select === "function")) {
       syncPhoneContacts();
     } else {
       // На iOS / десктопе — показываем подсказку и предлагаем .vcf
