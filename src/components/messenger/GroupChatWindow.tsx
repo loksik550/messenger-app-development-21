@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useDraft } from "@/lib/drafts";
+import { track } from "@/lib/track";
+import { enqueue, getPending, subscribeOutbox, flush as flushOutbox, retry as retryOutbox, removeFromOutbox, type OutboxItem } from "@/lib/outbox";
 import { api, uploadMedia, type User, type Group, type GroupMessage, type GroupMember } from "@/lib/api";
 import VideoCircleRecorder from "@/components/messenger/VideoCircleRecorder";
 import GroupProfilePanel from "@/components/messenger/GroupProfilePanel";
@@ -34,6 +37,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const [showVideoCircle, setShowVideoCircle] = useState(false);
   const [replyTo, setReplyTo] = useState<GroupMessage | null>(null);
   const [editing, setEditing] = useState<GroupMessage | null>(null);
+  useDraft(`g${group.id}`, input, setInput, !!editing);
   const [forwardMsg, setForwardMsg] = useState<GroupMessage | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ msgId: number; out: boolean } | null>(null);
   const [pinned, setPinned] = useState<{ id: number; text: string; sender_name: string; media_type?: string } | null>(null);
@@ -67,6 +71,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     };
   }, []);
 
+  const pendingGroupMsgRef = useRef<(i: OutboxItem) => GroupMessage>(() => ({} as GroupMessage));
   const toTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
 
   const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
@@ -75,7 +80,8 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     const msgs: GroupMessage[] = d.messages.map((m: GroupMessage) => ({ ...m, time: toTime(m.created_at) }));
     let changed = false;
     if (since === 0) {
-      setMessages(msgs);
+      const pendingIds = new Set(msgs.map(m => m.id));
+      setMessages([...msgs, ...getPending(group.id, "group").map(pendingGroupMsgRef.current).filter(m => !pendingIds.has(m.id))]);
       if (msgs.length) setLastSince(msgs[msgs.length - 1].created_at);
     } else if (msgs.length) {
       setMessages(prev => {
@@ -161,16 +167,50 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     setInput("");
     const replyId = replyTo?.id;
     setReplyTo(null);
-    const d = await api("send_group_message", { group_id: group.id, text, reply_to_id: replyId }, currentUser.id);
-    if (d.id) {
-      setMessages(prev => [...prev, {
-        id: d.id, sender_id: currentUser.id, sender_name: currentUser.name,
-        sender_avatar: currentUser.avatar_url, text, created_at: d.created_at,
-        time: toTime(d.created_at), out: true, kind: "text",
-      }]);
-      setLastSince(d.created_at);
-    }
+    const item = enqueue({ chatId: group.id, kind: "group", userId: currentUser.id, text, replyToId: replyId });
+    track(navigator.onLine ? "msg_group" : "msg_offline");
+    setMessages(prev => prev.some(m => m.id === item.localId) ? prev : [...prev, pendingGroupMsg(item)]);
   };
+
+  const pendingGroupMsg = (i: OutboxItem): GroupMessage => ({
+    id: i.localId, sender_id: currentUser.id, sender_name: currentUser.name,
+    sender_avatar: currentUser.avatar_url, text: i.text, created_at: i.createdAt,
+    time: toTime(i.createdAt), out: true, kind: "text", reply_to_id: i.replyToId ?? null,
+    pending: !i.failed, failed: !!i.failed,
+  });
+
+  useEffect(() => {
+    return subscribeOutbox(e => {
+      if (e.type === "sent") {
+        if (e.item.chatId !== group.id || e.item.kind !== "group") return;
+        setMessages(prev => {
+          if (prev.some(m => m.id === e.item.id)) return prev.filter(m => m.id !== e.item.localId);
+          return prev.map(m => m.id === e.item.localId
+            ? { ...m, id: e.item.id, created_at: e.item.created_at, time: toTime(e.item.created_at), pending: false, failed: false }
+            : m);
+        });
+        return;
+      }
+      const pend = new Map(getPending(group.id, "group").map(i => [i.localId, i]));
+      setMessages(prev => {
+        let changed = false;
+        const next = prev.map(m => {
+          const p = pend.get(m.id);
+          if (!p) return m;
+          pend.delete(m.id);
+          if (m.failed === !!p.failed && m.pending === !p.failed) return m;
+          changed = true;
+          return { ...m, pending: !p.failed, failed: !!p.failed };
+        });
+        if (pend.size) { changed = true; next.push(...Array.from(pend.values()).map(pendingGroupMsg)); }
+        return changed ? next : prev;
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group.id]);
+
+  pendingGroupMsgRef.current = pendingGroupMsg;
+  useEffect(() => { flushOutbox(); }, [group.id]);
 
   const reactToMessage = async (msgId: number, emoji: string) => {
     setCtxMenu(null);
@@ -379,6 +419,8 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         onUnpin={unpinMessage}
         onOpenContext={setCtxMenu}
         onReact={reactToMessage}
+        onRetry={(id) => { setMessages(prev => prev.map(m => m.id === id ? { ...m, failed: false, pending: true } : m)); retryOutbox(id); }}
+        onDiscard={(id) => { removeFromOutbox(id); setMessages(prev => prev.filter(m => m.id !== id)); }}
       />
 
       {/* Context menu */}

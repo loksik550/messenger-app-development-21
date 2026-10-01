@@ -16,6 +16,7 @@ export function ContextMenu({
   onEdit,
   onPin,
   isPinned,
+  onFavorite,
 }: {
   ctxMenu: { msgId: number; out: boolean };
   messages: Message[];
@@ -27,6 +28,7 @@ export function ContextMenu({
   onEdit: (msgId: number) => void;
   onPin: (msgId: number) => void;
   isPinned: boolean;
+  onFavorite?: (msgId: number) => void;
 }) {
   const msg = messages.find(m => m.id === ctxMenu.msgId);
   const canEdit = ctxMenu.out && msg && (!msg.media_type || msg.media_type === "image") && msg.text && !msg.text.startsWith("📷") && !msg.text.startsWith("🎥") && !msg.text.startsWith("🎵") && !msg.text.startsWith("📎");
@@ -95,6 +97,12 @@ export function ContextMenu({
           <Icon name={isPinned ? "PinOff" : "Pin"} size={16} className="text-muted-foreground" />
           {isPinned ? "Открепить" : "Закрепить"}
         </button>
+        {onFavorite && ctxMenu.msgId > 0 && (
+          <button onClick={() => onFavorite(ctxMenu.msgId)} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/8 transition-colors text-sm">
+            <Icon name="Star" size={16} className="text-amber-400" />
+            В избранное
+          </button>
+        )}
         <button
           onClick={() => { if (msg?.text) navigator.clipboard.writeText(msg.text); onClose(); }}
           className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/8 transition-colors text-sm"

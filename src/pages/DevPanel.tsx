@@ -4,6 +4,7 @@ import { devApi, getDevToken, clearDevToken, setPasswordAsker, type DevAdmin } f
 import { APP_VERSION } from "@/lib/version";
 import DevAuth from "@/components/devpanel/DevAuth";
 import DevDashboard, { Loading } from "@/components/devpanel/DevDashboard";
+import DevUsage from "@/components/devpanel/DevUsage";
 import DevUsers from "@/components/devpanel/DevUsers";
 import DevLogs from "@/components/devpanel/DevLogs";
 import DevSupport from "@/components/devpanel/DevSupport";
@@ -31,11 +32,13 @@ type Section =
   | "support" | "broadcast" | "plans" | "promo" | "payments"
   | "moderation" | "logs" | "services" | "team" | "settings"
   | "growth"
+  | "usage"
   | "autorules";
 
 const NAV: { key: Section; label: string; icon: string; perm: string; hint: string; keywords: string }[] = [
   { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard", hint: "Главные цифры и что требует внимания", keywords: "статистика главная обзор цифры" },
   { key: "users", label: "Пользователи", icon: "Users", perm: "users", hint: "Найти человека, заблокировать, продлить Premium", keywords: "люди аккаунты бан блокировка кошелёк баланс удалить" },
+  { key: "usage", label: "Статистика использования", icon: "BarChart3", perm: "dashboard", hint: "Сколько людей заходит каждый день и что популярно", keywords: "dau mau активные функции популярность звонки статистика аналитика" },
   { key: "growth", label: "Рост и удержание", icon: "TrendingUp", perm: "dashboard", hint: "Где теряются люди и кто возвращается", keywords: "воронка удержание конверсия рост retention отток" },
   { key: "channels", label: "Каналы и группы", icon: "Radio", perm: "channels", hint: "Список сообществ, переименовать или удалить", keywords: "чаты сообщества группы каналы" },
   { key: "verification", label: "Верификация", icon: "BadgeCheck", perm: "reports", hint: "Заявки на синюю галочку", keywords: "галочка подтверждение заявки" },
@@ -411,6 +414,7 @@ export default function DevPanel() {
           {activeSection === "payments" && <DevPayments can={can} />}
           {activeSection === "broadcast" && <DevBroadcast can={can} />}
           {activeSection === "growth" && <DevGrowth onNavigate={go} />}
+          {activeSection === "usage" && <DevUsage />}
           {activeSection === "autorules" && <DevAutoRules can={can} />}
           {activeSection === "moderation" && <DevModeration can={can} />}
           {activeSection === "logs" && <DevLogs />}

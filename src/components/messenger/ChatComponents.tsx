@@ -1,3 +1,4 @@
+import Icon from "@/components/ui/icon";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api, type Chat, type Message, type User } from "@/lib/api";
 import { ChatHeader, ContextMenu, ChatInput } from "@/components/messenger/ChatWindowParts";
@@ -12,6 +13,8 @@ import {
 } from "@/components/messenger/chatConstants";
 import { useChatMessages } from "@/components/messenger/useChatMessages";
 import { enqueue, retry as retryOutbox, removeFromOutbox } from "@/lib/outbox";
+import { track } from "@/lib/track";
+import { useDraft } from "@/lib/drafts";
 import { useChatMedia } from "@/components/messenger/useChatMedia";
 import {
   ConfirmDialog, EncryptionBadge, UnknownContactHint, PinnedBar, ScrollDownButton,
@@ -49,11 +52,13 @@ export function ChatWindow({
   const [confirm, setConfirm] = useState<null | { title: string; text: string; danger?: boolean; action: () => void | Promise<void>; }>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
+  useDraft(`c${chat.id}`, input, setInput, !!editing);
   const [forwardMsgId, setForwardMsgId] = useState<number | null>(null);
   const [pinnedMsg, setPinnedMsg] = useState<{ id: number; sender_name: string; text: string; media_type?: string } | null>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [newCount, setNewCount] = useState(0);
+  const [favToast, setFavToast] = useState("");
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   // Подсказка о незнакомце: показываем если собеседник не в контактах
   const [isUnknown, setIsUnknown] = useState(false);
@@ -215,6 +220,7 @@ export function ChatWindow({
       setReplyTo(null);
 
       const item = enqueue({ chatId: chat.id, userId: currentUser.id, text, replyToId: replyId });
+      track(navigator.onLine ? "msg_text" : "msg_offline");
       const timeStr = new Date(item.createdAt * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
       setMessages(prev => prev.some(m => m.id === item.localId) ? prev : [...prev, { id: item.localId, text, time: timeStr, out: true, created_at: item.createdAt, reactions: [], reply_to: replyPreview, pending: true }]);
     } finally {
@@ -243,6 +249,7 @@ export function ChatWindow({
   };
 
   const startHold = (msgId: number, out: boolean) => {
+    if (msgId < 0) return;
     holdTimer.current = setTimeout(() => setCtxMenu({ msgId, out }), 500);
   };
   const cancelHold = () => { if (holdTimer.current) clearTimeout(holdTimer.current); };
@@ -461,7 +468,20 @@ export function ChatWindow({
           onEdit={handleEdit}
           onPin={handlePinToggle}
           isPinned={pinnedMsg?.id === ctxMenu.msgId}
+          onFavorite={async (id) => {
+            setCtxMenu(null);
+            const r = await api("toggle_favorite_message", { message_id: id, only_add: true }, currentUser.id).catch(() => null);
+            track("favorite_add");
+            setFavToast(r && !r.error ? "Добавлено в избранное" : "Не удалось добавить");
+            setTimeout(() => setFavToast(""), 1800);
+          }}
         />
+      )}
+
+      {favToast && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-28 z-[210] px-4 py-2 rounded-full glass-strong text-sm flex items-center gap-2 animate-fade-in pointer-events-none">
+          <Icon name="Star" size={14} className="text-amber-400" /> {favToast}
+        </div>
       )}
 
       {/* Pinned message bar */}
@@ -492,7 +512,7 @@ export function ChatWindow({
         onStartHold={startHold}
         onCancelHold={cancelHold}
         onAddReaction={addReaction}
-        onCtxMenu={setCtxMenu}
+        onCtxMenu={(c) => { if (c.msgId > 0) setCtxMenu(c); }}
         onHeartBurst={(id) => setHeartBurst(id)}
         onOpenFundraiser={onOpenFundraiser}
         onRetry={(id) => { setMessages(prev => prev.map(m => m.id === id ? { ...m, failed: false, pending: true } : m)); retryOutbox(id); }}

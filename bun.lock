@@ -5,6 +5,7 @@
     "": {
       "name": "vite_react_shadcn_ts",
       "dependencies": {
+        "@capacitor-community/contacts": "6.1.0",
         "@capacitor/android": "6.1.2",
         "@capacitor/app": "6.0.1",
         "@capacitor/browser": "6.0.4",
@@ -291,6 +292,8 @@
     "@babel/traverse": ["@babel/traverse@7.29.0", "", { "dependencies": { "@babel/code-frame": "^7.29.0", "@babel/generator": "^7.29.0", "@babel/helper-globals": "^7.28.0", "@babel/parser": "^7.29.0", "@babel/template": "^7.28.6", "@babel/types": "^7.29.0", "debug": "^4.3.1" } }, "sha512-4HPiQr0X7+waHfyXPZpWPfWL/J7dcN1mx9gL6WdQVMbPnF3+ZhSMs8tCxN7oHddJE9fhNE7+lxdnlyemKfJRuA=="],
 
     "@babel/types": ["@babel/types@7.29.0", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A=="],
+
+    "@capacitor-community/contacts": ["@capacitor-community/contacts@6.1.0", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-iSRFNSmr+rCFITAIp7sdzSCi5tEy5JniKl06o4DbElkd4ErEJ1M/ZJdjyBSc/zmgXly/OdaSxJDYv62rSpzVXw=="],
 
     "@capacitor/android": ["@capacitor/android@6.1.2", "", { "peerDependencies": { "@capacitor/core": "^6.1.0" } }, "sha512-Yh0gQDY1bgRrL25J6ecIlvvs2kF8iNSwIPXjyw6Yz9mnwYxBazF5KZbjpKtGPnJgicJhFkYGsqOkEtxrve0EoQ=="],
 

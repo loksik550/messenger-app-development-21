@@ -125,7 +125,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
   useEffect(() => {
     return subscribeOutbox(e => {
       if (e.type === "sent") {
-        if (e.item.chatId !== chat.id) return;
+        if (e.item.chatId !== chat.id || (e.item.kind || "chat") !== "chat") return;
         setMessages(prev => {
           if (prev.some(m => m.id === e.item.id)) return prev.filter(m => m.id !== e.item.localId);
           return prev.map(m => m.id === e.item.localId

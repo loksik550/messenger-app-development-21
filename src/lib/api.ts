@@ -119,6 +119,10 @@ export async function api(action: string, body: Record<string, unknown> = {}, us
     throw e;
   }
   reportNetworkOk();
+  if (res.status >= 500) {
+    try { await res.text(); } catch { /* ignore */ }
+    return { error: "bad_response", status: res.status };
+  }
   try {
     return await res.json();
   } catch {
@@ -534,6 +538,8 @@ export interface GroupMessage {
   time?: string;
   read?: boolean;
   reactions?: Reaction[];
+  pending?: boolean;
+  failed?: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

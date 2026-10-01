@@ -458,6 +458,57 @@ def handler(event: dict, context) -> dict:
             audit(cur, admin, "logout", "Выход из панели", ip)
             return ok({"success": True})
 
+        # ── Статистика использования ──────────────────────────────────────
+        if action == "usage_stats":
+            days = max(7, min(int(body.get("days") or 30), 90))
+            cur.execute(
+                f"""SELECT d::date, COALESCE(a.cnt, 0)
+                    FROM generate_series(CURRENT_DATE - (%s - 1), CURRENT_DATE, interval '1 day') d
+                    LEFT JOIN (SELECT day, COUNT(*) cnt FROM {SCHEMA}.daily_active
+                               WHERE day > CURRENT_DATE - %s GROUP BY day) a ON a.day = d::date
+                    ORDER BY d""",
+                (days, days)
+            )
+            dau = [{"day": r[0].isoformat(), "users": int(r[1])} for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT COUNT(DISTINCT user_id) FROM {SCHEMA}.daily_active WHERE day > CURRENT_DATE - 7"
+            )
+            wau = int(cur.fetchone()[0] or 0)
+            cur.execute(
+                f"SELECT COUNT(DISTINCT user_id) FROM {SCHEMA}.daily_active WHERE day > CURRENT_DATE - 30"
+            )
+            mau = int(cur.fetchone()[0] or 0)
+            since = int(time.time()) - days * 86400
+            cur.execute(
+                f"""SELECT feature, COUNT(*), COUNT(DISTINCT user_id)
+                    FROM {SCHEMA}.feature_events WHERE created_at > %s
+                    GROUP BY feature ORDER BY COUNT(*) DESC LIMIT 40""",
+                (since,)
+            )
+            features = [{"feature": r[0], "uses": int(r[1]), "users": int(r[2])} for r in cur.fetchall()]
+            cur.execute(
+                f"""SELECT COUNT(*),
+                           COUNT(*) FILTER (WHERE status = 'answered'),
+                           COUNT(*) FILTER (WHERE status = 'missed'),
+                           COALESCE(SUM(duration), 0),
+                           COUNT(*) FILTER (WHERE is_video)
+                    FROM {SCHEMA}.call_log WHERE started_at > %s""",
+                (since,)
+            )
+            c = cur.fetchone()
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.referrals WHERE created_at > %s", (since,)
+            )
+            refs = int(cur.fetchone()[0] or 0)
+            return ok({
+                "days": days, "dau": dau, "wau": wau, "mau": mau,
+                "dau_today": dau[-1]["users"] if dau else 0,
+                "features": features,
+                "calls": {"total": int(c[0] or 0), "answered": int(c[1] or 0), "missed": int(c[2] or 0),
+                          "minutes": round(int(c[3] or 0) / 60), "video": int(c[4] or 0)},
+                "referrals": refs,
+            })
+
         # ── Дашборд ───────────────────────────────────────────────────────
         if action == "dashboard":
             now = int(time.time())

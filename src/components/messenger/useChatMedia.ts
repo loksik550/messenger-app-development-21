@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { track } from "@/lib/track";
 import { api, uploadMedia, type Chat, type Message, type User } from "@/lib/api";
 
 // Отправка файлов и запись голосовых сообщений.
@@ -39,6 +40,7 @@ export function useChatMedia({
     try {
       const result = await uploadMedia(file, currentUser.id);
       const finalMediaType = extra?.mediaTypeOverride || result.media_type;
+      track(finalMediaType === "audio" ? "msg_voice" : finalMediaType === "image" ? "msg_photo" : finalMediaType === "video" ? "msg_video" : "msg_file");
       setUploadLabel(labelMap[finalMediaType] || "Загружаем...");
       const data = await api("send_message", {
         chat_id: chat.id,

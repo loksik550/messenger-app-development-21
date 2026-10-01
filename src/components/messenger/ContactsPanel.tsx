@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from "react";
+import { native } from "@/lib/native";
+import { track } from "@/lib/track";
 import Icon from "@/components/ui/icon";
 import { api, avatarGrad, type Contact, type User, type Chat } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
+import { Avatar } from "@/components/messenger/ChatAtoms";
 
 type PickerContact = { name?: string[]; tel?: string[] };
 type ContactsManager = {
@@ -31,6 +34,7 @@ export function ContactsPanel({
   const [search, setSearch] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<null | { added: number; total: number; not_registered: number }>(null);
+  const [foundFriends, setFoundFriends] = useState<{ id: number; name: string; phone: string; avatar_url?: string | null }[]>([]);
   const [syncError, setSyncError] = useState("");
   const [showImportHelp, setShowImportHelp] = useState(false);
   const vcfInputRef = useRef<HTMLInputElement>(null);
@@ -71,6 +75,40 @@ export function ContactsPanel({
   const syncPhoneContacts = async () => {
     setSyncError("");
     setSyncResult(null);
+    if (native.phoneContacts.supported) {
+      setSyncing(true);
+      try {
+        const { items, denied } = await native.phoneContacts.read();
+        if (denied) {
+          setSyncError("Нет доступа к контактам. Разрешите его: Настройки → Приложения → Nova → Разрешения → Контакты.");
+          return;
+        }
+        if (items.length === 0) {
+          setSyncError("В телефонной книге не нашлось номеров.");
+          return;
+        }
+        track("contacts_sync");
+        let added = 0, notReg = 0;
+        const found: { id: number; name: string; phone: string; avatar_url?: string | null }[] = [];
+        for (let i = 0; i < items.length; i += 1000) {
+          const data = await api("import_contacts", { contacts: items.slice(i, i + 1000) }, currentUser.id);
+          if (!data.ok) { setSyncError(data.error || "Не удалось синхронизировать контакты"); return; }
+          added += Number(data.added) || 0;
+          notReg += Array.isArray(data.not_registered) ? data.not_registered.length : 0;
+          if (Array.isArray(data.matched)) found.push(...data.matched);
+        }
+        setSyncResult({ added, total: items.length, not_registered: notReg });
+        setFoundFriends(found);
+        try { localStorage.setItem("nova_contacts_synced", String(Date.now())); } catch { /* ignore */ }
+        await loadContacts();
+        native.haptic.success();
+      } catch (e) {
+        setSyncError((e as Error).message || "Не удалось получить контакты");
+      } finally {
+        setSyncing(false);
+      }
+      return;
+    }
     const nav = navigator as Navigator & { contacts?: ContactsManager };
     if (!nav.contacts || typeof nav.contacts.select !== "function") {
       setShowImportHelp(true);
@@ -273,6 +311,32 @@ export function ContactsPanel({
             </button>
           </div>
         )}
+        {foundFriends.length > 0 && (
+          <div className="mt-2 rounded-2xl glass p-3 animate-fade-in">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold text-violet-300">Уже в Nova из ваших контактов: {foundFriends.length}</div>
+              <button onClick={() => setFoundFriends([])} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={12} /></button>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {foundFriends.slice(0, 30).map(f => (
+                <button
+                  key={f.id}
+                  onClick={async () => {
+                    const r = await api("get_or_create_chat", { partner_id: f.id }, currentUser.id);
+                    if (r?.chat_id) onStartChat({
+                      id: r.chat_id, name: f.name, avatar: (f.name || "?")[0].toUpperCase(),
+                      avatar_url: f.avatar_url || null, lastMsg: "", time: "", partner_id: f.id,
+                    } as Chat);
+                  }}
+                  className="flex flex-col items-center gap-1 w-16 flex-shrink-0"
+                >
+                  <Avatar label={(f.name || "?")[0].toUpperCase()} id={f.id} src={f.avatar_url || undefined} />
+                  <span className="text-[11px] truncate w-full text-center">{f.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {syncError && (
           <div className="mt-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2 animate-fade-in">
             <Icon name="AlertTriangle" size={14} className="text-amber-400 mt-0.5 flex-shrink-0" />
@@ -342,7 +406,7 @@ export function ContactsPanel({
               className="grad-primary text-white rounded-xl px-4 py-2.5 text-sm font-semibold glow-primary transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
             >
               <Icon name="RefreshCw" size={16} />
-              {syncing ? "Синхронизируем..." : "Импортировать контакты"}
+              {syncing ? "Ищем друзей..." : (native.phoneContacts.supported ? "Найти друзей из контактов" : "Импортировать контакты")}
             </button>
           </div>
         )}

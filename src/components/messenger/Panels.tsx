@@ -15,7 +15,7 @@ export { SearchPanel } from "@/components/messenger/SearchPanel";
 
 // ─── ProfilePanel ─────────────────────────────────────────────────────────────
 
-export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, chatsCount = 0, onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenBots, onOpenSupport, onOpenPrivacy, onOpenNotifications, onOpenAppearance, onOpenSavedNotes, onOpenPayments, onOpenVerification, onOpenPromo }: { onSettings: () => void; currentUser: User; onUserUpdate?: (u: User) => void; onBack?: () => void; chatsCount?: number; onOpenWallet?: () => void; onOpenPro?: () => void; onOpenProSettings?: () => void; onOpenProgress?: () => void; onOpenBots?: () => void; onOpenSupport?: () => void; onOpenPrivacy?: () => void; onOpenNotifications?: () => void; onOpenAppearance?: () => void; onOpenSavedNotes?: () => void; onOpenPayments?: () => void; onOpenVerification?: () => void; onOpenPromo?: () => void; }) {
+export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, chatsCount = 0, onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenBots, onOpenSupport, onOpenPrivacy, onOpenNotifications, onOpenAppearance, onOpenSavedNotes, onOpenPayments, onOpenVerification, onOpenPromo, onOpenCalls, onOpenFavorites, onOpenInvite }: { onSettings: () => void; currentUser: User; onUserUpdate?: (u: User) => void; onBack?: () => void; chatsCount?: number; onOpenWallet?: () => void; onOpenPro?: () => void; onOpenProSettings?: () => void; onOpenProgress?: () => void; onOpenBots?: () => void; onOpenSupport?: () => void; onOpenPrivacy?: () => void; onOpenNotifications?: () => void; onOpenAppearance?: () => void; onOpenSavedNotes?: () => void; onOpenPayments?: () => void; onOpenVerification?: () => void; onOpenPromo?: () => void; onOpenCalls?: () => void; onOpenFavorites?: () => void; onOpenInvite?: () => void; }) {
   useEdgeSwipeBack(onBack);
   const { t: tr } = useT();
   const [editing, setEditing] = useState(false);
@@ -414,6 +414,9 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
           { icon: "Edit3", label: tr("profile.editProfile"), sub: "Имя, фото, статус", action: () => { setEditName(currentUser.name); setEditing(true); window.scrollTo({ top: 0, behavior: "smooth" }); } },
           ...(onOpenProSettings ? [{ icon: "Sparkles", label: "Персонализация", sub: "Эмодзи-статус, цвет, инкогнито", action: onOpenProSettings }] : []),
           ...(onOpenProgress ? [{ icon: "Trophy", label: tr("nav.progress"), sub: `${currentUser.level ? `Уровень ${currentUser.level} · ${currentUser.xp || 0} XP` : "Уровни, бейджи, топ"}`, action: onOpenProgress }] : []),
+          ...(onOpenInvite ? [{ icon: "UserPlus", label: "Пригласить друзей", sub: "Ссылка-приглашение и Premium в подарок", action: onOpenInvite }] : []),
+          ...(onOpenCalls ? [{ icon: "Phone", label: "Звонки", sub: "Входящие, исходящие, пропущенные", action: onOpenCalls }] : []),
+          ...(onOpenFavorites ? [{ icon: "Star", label: "Избранное", sub: "Сохранённые сообщения", action: onOpenFavorites }] : []),
           ...(onOpenSavedNotes ? [{ icon: "Bookmark", label: tr("nav.saved"), sub: "Заметки, сохранёнки, идеи", action: onOpenSavedNotes }] : []),
           ...(onOpenPayments ? [{ icon: "ReceiptText", label: "Счета и платежи", sub: "Выставляй и оплачивай", action: onOpenPayments }] : []),
           ...(onOpenPromo ? [{ icon: "Gift", label: "Промокоды и бонусы", sub: "Premium бесплатно и приглашения", action: onOpenPromo }] : []),

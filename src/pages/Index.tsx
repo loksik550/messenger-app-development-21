@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import ConnectionBanner from "@/components/messenger/ConnectionBanner";
+import { getDraft, useDraftsVersion } from "@/lib/drafts";
+import { track, setTrackUser } from "@/lib/track";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import Icon from "@/components/ui/icon";
 import { api, PUSH_API, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
@@ -44,6 +46,9 @@ const PrivacyPanel = lazyWithRetry(() => import("@/components/messenger/PrivacyP
 const NotificationsPanel = lazyWithRetry(() => import("@/components/messenger/NotificationsPanel"));
 const AppearancePanel = lazyWithRetry(() => import("@/components/messenger/AppearancePanel"));
 const SavedNotesPanel = lazyWithRetry(() => import("@/components/messenger/SavedNotesPanel"));
+const CallHistoryPanel = lazyWithRetry(() => import("@/components/messenger/CallHistoryPanel"));
+const FavoritesPanel = lazyWithRetry(() => import("@/components/messenger/FavoritesPanel"));
+const InvitePanel = lazyWithRetry(() => import("@/components/messenger/InvitePanel"));
 const PaymentRequestsPanel = lazyWithRetry(() => import("@/components/messenger/PaymentRequestsPanel"));
 const AccountDeletePanel = lazyWithRetry(() => import("@/components/messenger/AccountDeletePanel"));
 const PrivacyPolicyPanel = lazyWithRetry(() => import("@/components/messenger/PrivacyPolicyPanel"));
@@ -98,6 +103,11 @@ export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const currentUserRef = useRef<User | null>(null);
   currentUserRef.current = currentUser;
+  useDraftsVersion();
+  useEffect(() => {
+    setTrackUser(currentUser?.id ?? null);
+    if (currentUser?.id) track("app_open");
+  }, [currentUser?.id]);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [maintenance, setMaintenance] = useState<{ title: string; text: string } | null>(null);
   // PIN-блокировка: если код установлен — требуем ввод при запуске
@@ -196,6 +206,51 @@ export default function Index() {
       window.history.replaceState({}, "", url.toString());
     }
   }, []);
+
+  // Ссылка-приглашение ?ref=CODE — запоминаем до входа
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const ref = (url.searchParams.get("ref") || "").trim();
+    if (ref && /^[A-Za-z0-9_-]{3,32}$/.test(ref)) {
+      try { localStorage.setItem("nova_ref", ref.toUpperCase()); } catch { /* ignore */ }
+      url.searchParams.delete("ref");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+  const [refToast, setRefToast] = useState("");
+  const [deepLinkTick, setDeepLinkTick] = useState(0);
+  useEffect(() => native.app.onUrlOpen((raw) => {
+    try {
+      const u = new URL(raw);
+      const ref = (u.searchParams.get("ref") || "").trim();
+      if (ref && /^[A-Za-z0-9_-]{3,32}$/.test(ref)) {
+        localStorage.setItem("nova_ref", ref.toUpperCase());
+        setDeepLinkTick(t => t + 1);
+      }
+      const join = u.searchParams.get("join");
+      if (join) setPendingJoin(join);
+    } catch { /* ignore */ }
+  }), []);
+  useEffect(() => {
+    if (!currentUser) return;
+    let code = "";
+    try { code = localStorage.getItem("nova_ref") || ""; } catch { /* ignore */ }
+    if (!code) return;
+    try { localStorage.removeItem("nova_ref"); } catch { /* ignore */ }
+    api("referral_apply", { code, auto: true }, currentUser.id)
+      .then(r => {
+        if (r?.success) {
+          track("invite_applied");
+          setRefToast(`Подарок от друга: Premium на ${r.granted_days} дн.`);
+          setTimeout(() => setRefToast(""), 5000);
+          api("refresh_me", {}, currentUser.id).then(me => {
+            if (me?.user) setCurrentUser(prev => prev ? { ...prev, ...me.user } : prev);
+          }).catch(() => null);
+        }
+      })
+      .catch(() => null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, deepLinkTick]);
 
   // Открытие по пушу звонка с заблокированного экрана: ?call_id=...
   const [pendingCallId, setPendingCallId] = useState<string | null>(null);
@@ -297,6 +352,9 @@ export default function Index() {
     showSavedNotes, setShowSavedNotes,
     showPayments, setShowPayments,
     showPremium, setShowPremium,
+    showCalls, setShowCalls,
+    showFavorites, setShowFavorites,
+    showInvite, setShowInvite,
     fundraiserView, setFundraiserView,
   } = overlays;
   const openOverlay = overlays.open;
@@ -589,6 +647,13 @@ export default function Index() {
   const startCall = (contact: Contact) => {
     const callId = `${currentUser!.id}_${contact.id}_${Date.now()}`;
     setActiveCall({ userId: contact.id, name: contact.name, callId, incoming: false });
+  };
+
+  const startCallTo = (userId: number, name: string, video: boolean) => {
+    if (!currentUser || activeCall) return;
+    track(video ? "call_video" : "call_audio");
+    const callId = `${video ? "video_" : ""}${currentUser.id}_${userId}_${Date.now()}`;
+    setActiveCall({ userId, name, callId, incoming: false });
   };
 
   // Polling входящих звонков. Работает и в фоне — если вкладка не активна,
@@ -911,6 +976,38 @@ export default function Index() {
         />
       )}
 
+      {showCalls && currentUser && (
+        <CallHistoryPanel
+          currentUser={currentUser}
+          onClose={() => setShowCalls(false)}
+          onCall={(uid, name) => { setShowCalls(false); startCallTo(uid, name, false); }}
+          onVideoCall={(uid, name) => { setShowCalls(false); startCallTo(uid, name, true); }}
+          onOpenChat={(uid) => { setShowCalls(false); handleStartChat(uid); }}
+        />
+      )}
+
+      {showFavorites && currentUser && (
+        <FavoritesPanel
+          currentUser={currentUser}
+          onClose={() => setShowFavorites(false)}
+          onOpenChat={(chatId) => {
+            const c = realChats.find(x => x.id === chatId);
+            setShowFavorites(false);
+            if (c) { setSelectedGroup(null); setSelectedChat(c); setView("chats"); setShowSidebar(false); }
+          }}
+        />
+      )}
+
+      {showInvite && currentUser && (
+        <InvitePanel currentUser={currentUser} onClose={() => setShowInvite(false)} />
+      )}
+
+      {refToast && (
+        <div className="fixed left-1/2 -translate-x-1/2 top-16 z-[300] px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-pink-500 text-white text-sm font-semibold shadow-lg animate-fade-in flex items-center gap-2">
+          <Icon name="Gift" size={16} /> {refToast}
+        </div>
+      )}
+
       {/* Счета */}
       {showPayments && currentUser && (
         <PaymentRequestsPanel
@@ -1196,7 +1293,9 @@ export default function Index() {
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <div className="text-xs text-muted-foreground truncate mt-0.5">
-                              {g.last_message || `${g.members_count ?? 0} участников`}
+                              {getDraft(`g${g.id}`) && selectedGroup?.id !== g.id
+                                ? <><span className="text-red-400">Черновик: </span>{getDraft(`g${g.id}`)}</>
+                                : (g.last_message || `${g.members_count ?? 0} участников`)}
                             </div>
                             {g.unread_count ? (
                               <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold text-white flex items-center justify-center grad-primary">
@@ -1312,10 +1411,12 @@ export default function Index() {
             onBack={handleBack}
             currentUser={currentUser}
             onCall={(partnerId, name) => {
+              track("call_audio");
               const callId = `${currentUser.id}_${partnerId}_${Date.now()}`;
               setActiveCall({ userId: partnerId, name, callId, incoming: false });
             }}
             onVideoCall={(partnerId, name) => {
+              track("call_video");
               const callId = `video_${currentUser.id}_${partnerId}_${Date.now()}`;
               setActiveCall({ userId: partnerId, name, callId, incoming: false });
             }}
@@ -1354,6 +1455,9 @@ export default function Index() {
             onOpenVerification={() => setShowVerification(true)}
             onOpenPromo={() => setShowPromo(true)}
             onOpenSavedNotes={() => openOverlay(setShowSavedNotes)}
+            onOpenCalls={() => openOverlay(setShowCalls)}
+            onOpenFavorites={() => openOverlay(setShowFavorites)}
+            onOpenInvite={() => openOverlay(setShowInvite)}
             onOpenPayments={() => openOverlay(setShowPayments)}
           />
         ) : view === "settings" ? (

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { getDraft } from "@/lib/drafts";
 import Icon from "@/components/ui/icon";
 import { avatarGrad, getCallAvatar, type Chat } from "@/lib/api";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
@@ -192,6 +193,8 @@ export function ChatList({
             <div className="flex items-center justify-between mt-0.5">
               {chat.typing ? (
                 <span className="text-xs text-violet-400 font-medium">печатает...</span>
+              ) : (chat.group ? "" : getDraft(`c${chat.id}`)) && selectedId !== chat.id ? (
+                <span className="text-xs truncate"><span className="text-red-400">Черновик: </span><span className="text-muted-foreground">{getDraft(`c${chat.id}`)}</span></span>
               ) : (
                 <span className="text-xs text-muted-foreground truncate">{chat.lastMsg}</span>
               )}

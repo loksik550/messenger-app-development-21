@@ -23,6 +23,7 @@ import { App } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { Badge } from "@capawesome/capacitor-badge";
+import { Contacts } from "@capacitor-community/contacts";
 
 const isNative = Capacitor.isNativePlatform();
 const platform = Capacitor.getPlatform(); // "android" | "ios" | "web"
@@ -332,6 +333,31 @@ const badge = {
   },
 };
 
+// ── Телефонная книга (только в приложении) ─────────────────────────────────
+const phoneContacts = {
+  supported: isNative,
+  async read(): Promise<{ items: { phone: string; name?: string }[]; denied: boolean }> {
+    if (!isNative) return { items: [], denied: false };
+    try {
+      let perm = await Contacts.checkPermissions();
+      if (perm.contacts !== "granted") perm = await Contacts.requestPermissions();
+      if (perm.contacts !== "granted") return { items: [], denied: true };
+      const res = await Contacts.getContacts({ projection: { name: true, phones: true } });
+      const items: { phone: string; name?: string }[] = [];
+      for (const c of res.contacts || []) {
+        const nm = c.name?.display || [c.name?.given, c.name?.family].filter(Boolean).join(" ") || undefined;
+        for (const p of c.phones || []) {
+          const num = (p.number || "").replace(/[^\d+]/g, "");
+          if (num.length >= 10) items.push({ phone: num, name: nm });
+        }
+      }
+      return { items, denied: false };
+    } catch {
+      return { items: [], denied: false };
+    }
+  },
+};
+
 // ── App lifecycle ───────────────────────────────────────────────────────────
 const app = {
   async exit() { if (isNative) try { await App.exitApp(); } catch { /* ignore */ } },
@@ -350,6 +376,12 @@ const app = {
     const onHide = () => { if (document.visibilityState === "hidden") cb(); };
     document.addEventListener("visibilitychange", onHide);
     return () => document.removeEventListener("visibilitychange", onHide);
+  },
+  onUrlOpen(cb: (url: string) => void) {
+    if (!isNative) return () => { /* noop */ };
+    const sub = App.addListener("appUrlOpen", e => { if (e?.url) cb(e.url); });
+    App.getLaunchUrl().then(r => { if (r?.url) cb(r.url); }).catch(() => { /* ignore */ });
+    return () => { sub.then(s => s.remove()); };
   },
   onResume(cb: () => void) {
     if (isNative) {
@@ -379,6 +411,7 @@ export const native = {
   push,
   localNotify,
   badge,
+  phoneContacts,
   app,
 };
 

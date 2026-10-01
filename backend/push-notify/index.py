@@ -419,7 +419,7 @@ def handler(event: dict, context) -> dict:
                 )
                 tok_user = {t: int(u) for u, t in cur.fetchall()}
                 totals = _unread_totals(cur, list(set(tok_user.values())))
-                per_token = {t: {"badge": totals.get(u, 0)} for t, u in tok_user.items()}
+                per_token = {t: {"badge": totals.get(u, 0), "recipient_id": u} for t, u in tok_user.items()}
                 g_body = f"{g_sender}: {message}" if (g_sender and not is_channel) else message
                 native_sent, g_stale = fcm.send_many(gtokens, f"{icon} {group_name}", g_body, {
                     "group_id": group_id, "message_id": message_id, "tag": f"group_{group_id}",

@@ -18,6 +18,8 @@ interface Props {
   onUnpin: () => void;
   onOpenContext: (ctx: { msgId: number; out: boolean }) => void;
   onReact: (msgId: number, emoji: string) => void;
+  onRetry?: (msgId: number) => void;
+  onDiscard?: (msgId: number) => void;
 }
 
 export default function GroupChatMessages({
@@ -33,6 +35,8 @@ export default function GroupChatMessages({
   onUnpin,
   onOpenContext,
   onReact,
+  onRetry,
+  onDiscard,
 }: Props) {
   return (
     <>
@@ -69,8 +73,8 @@ export default function GroupChatMessages({
                 <div
                   key={msg.id}
                   className={`flex items-end gap-2 mb-0.5 ${msg.out ? "flex-row-reverse" : "flex-row"}`}
-                  onContextMenu={e => { e.preventDefault(); onOpenContext({ msgId: msg.id, out: msg.out }); }}
-                  onMouseDown={() => { holdTimer.current = setTimeout(() => onOpenContext({ msgId: msg.id, out: msg.out }), 500); }}
+                  onContextMenu={e => { e.preventDefault(); if (msg.id > 0) onOpenContext({ msgId: msg.id, out: msg.out }); }}
+                  onMouseDown={() => { if (msg.id > 0) holdTimer.current = setTimeout(() => onOpenContext({ msgId: msg.id, out: msg.out }), 500); }}
                   onMouseUp={() => { if (holdTimer.current) clearTimeout(holdTimer.current); }}
                 >
                   {/* Avatar (incoming) */}
@@ -109,10 +113,21 @@ export default function GroupChatMessages({
                         <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-0.5 ${msg.out ? "text-white/60" : "text-muted-foreground"}`}>
                           {msg.edited_at && <span className="opacity-70">ред.</span>}
                           <span>{msg.time}</span>
-                          {msg.out && (
+                          {msg.out && msg.failed ? (
+                            <Icon name="CircleAlert" size={12} className="text-red-300" />
+                          ) : msg.out && msg.pending ? (
+                            <Icon name="Clock" size={12} className="text-white/60" />
+                          ) : msg.out && (
                             <Icon name={msg.read ? "CheckCheck" : "Check"} size={12} className={msg.read ? "text-sky-300" : "text-white/60"} />
                           )}
                         </div>
+                      </div>
+                    )}
+                    {msg.out && msg.failed && (
+                      <div className="flex justify-end gap-3 mt-1 text-[11px]">
+                        <span className="text-red-300">Не отправлено</span>
+                        <button onClick={(e) => { e.stopPropagation(); onRetry?.(msg.id); }} className="text-violet-300 font-semibold">Повторить</button>
+                        <button onClick={(e) => { e.stopPropagation(); onDiscard?.(msg.id); }} className="text-muted-foreground">Удалить</button>
                       </div>
                     )}
 

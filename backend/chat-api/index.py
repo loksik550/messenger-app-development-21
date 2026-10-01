@@ -2153,9 +2153,84 @@ def handler(event: dict, context) -> dict:
         # при выходе со страницы отматываем время назад — собеседник сразу видит офлайн
         ts = now if online_flag is not False else now - 120
         cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (ts, int(user_id)))
+        if online_flag is not False:
+            try:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.daily_active (day, user_id) VALUES (CURRENT_DATE, %s) ON CONFLICT DO NOTHING",
+                    (int(user_id),)
+                )
+            except Exception:
+                pass
         conn.commit()
         conn.close()
         return ok({"ok": True, "ts": ts})
+
+    # ── track — счётчик использования функций (для статистики владельца) ─────
+    if action == "track":
+        feats = body.get("features") or ([body.get("feature")] if body.get("feature") else [])
+        rows = []
+        for f in feats[:30]:
+            f = str(f or "").strip()[:40]
+            if f and all(ch.isalnum() or ch in "_-." for ch in f):
+                rows.append(f)
+        uid = int(user_id) if user_id and str(user_id).isdigit() else None
+        for f in rows:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.feature_events (user_id, feature, created_at) VALUES (%s, %s, %s)",
+                (uid, f, int(time.time()))
+            )
+        conn.commit()
+        conn.close()
+        return ok({"ok": True, "saved": len(rows)})
+
+    # ── call_history — журнал звонков ─────────────────────────────────────────
+    if action == "call_history":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        me = int(user_id)
+        cur.execute(
+            f"""SELECT cl.call_id, cl.caller_id, cl.callee_id, cl.is_video, cl.status,
+                       cl.started_at, cl.duration, u.id, u.name, u.avatar_url
+                FROM {SCHEMA}.call_log cl
+                JOIN {SCHEMA}.users u ON u.id = CASE WHEN cl.caller_id = %s THEN cl.callee_id ELSE cl.caller_id END
+                WHERE (cl.caller_id = %s OR cl.callee_id = %s) AND cl.status <> 'ringing'
+                ORDER BY cl.started_at DESC LIMIT 200""",
+            (me, me, me)
+        )
+        items = []
+        for r in cur.fetchall():
+            outgoing = int(r[1]) == me
+            status = r[4]
+            if status == "answered":
+                kind = "outgoing" if outgoing else "incoming"
+            elif outgoing:
+                kind = "cancelled" if status in ("cancelled", "missed") else "declined"
+            else:
+                kind = "missed" if status in ("missed", "cancelled") else "declined_by_me"
+            items.append({
+                "call_id": r[0], "kind": kind, "outgoing": outgoing, "is_video": bool(r[3]),
+                "started_at": r[5], "duration": int(r[6] or 0),
+                "partner": {"id": r[7], "name": r[8], "avatar_url": r[9]},
+            })
+        conn.close()
+        return ok({"calls": items})
+
+    if action == "call_history_clear":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        me = int(user_id)
+        cur.execute(
+            f"""UPDATE {SCHEMA}.call_log SET
+                  caller_id = CASE WHEN caller_id = %s THEN -caller_id ELSE caller_id END,
+                  callee_id = CASE WHEN callee_id = %s THEN -callee_id ELSE callee_id END
+                WHERE caller_id = %s OR callee_id = %s""",
+            (me, me, me, me)
+        )
+        conn.commit()
+        conn.close()
+        return ok({"ok": True})
 
     if action == "my_notifications":
         if not user_id:
@@ -2458,6 +2533,24 @@ def handler(event: dict, context) -> dict:
         return ok({"typing": len(rows) > 0})
 
     # ── mark_read ─────────────────────────────────────────────────────────────
+    if action == "mark_group_read":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        gid = int(body.get("group_id") or 0)
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.group_message_views (message_id, user_id, viewed_at)
+                SELECT m.id, %s, %s FROM {SCHEMA}.group_messages m
+                JOIN {SCHEMA}.group_members gm ON gm.group_id = m.group_id AND gm.user_id = %s AND gm.role <> 'removed'
+                WHERE m.group_id = %s AND m.sender_id <> %s AND m.removed_at IS NULL
+                  AND m.created_at > %s
+                ON CONFLICT DO NOTHING""",
+            (int(user_id), int(time.time()), int(user_id), gid, int(user_id), int(time.time()) - 30 * 86400)
+        )
+        conn.commit()
+        conn.close()
+        return ok({"ok": True})
+
     if action == "mark_read":
         if not user_id:
             conn.close()
@@ -2710,6 +2803,34 @@ def handler(event: dict, context) -> dict:
                 VALUES (%s, %s, %s, %s, %s, %s)""",
             (call_id, int(user_id), int(to_user_id), signal_type, json.dumps(payload) if payload else None, now)
         )
+        try:
+            if signal_type == "offer":
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.call_log (call_id, caller_id, callee_id, is_video, status, started_at)
+                        VALUES (%s, %s, %s, %s, 'ringing', %s) ON CONFLICT (call_id) DO NOTHING""",
+                    (call_id, int(user_id), int(to_user_id), call_id.startswith("video_"), now)
+                )
+            elif signal_type == "answer":
+                cur.execute(
+                    f"""UPDATE {SCHEMA}.call_log SET status = 'answered', answered_at = COALESCE(answered_at, %s)
+                        WHERE call_id = %s AND ended_at IS NULL""",
+                    (now, call_id)
+                )
+            elif signal_type in ("end", "decline", "cancel", "hangup"):
+                cur.execute(
+                    f"""UPDATE {SCHEMA}.call_log SET
+                          ended_at = %s,
+                          duration = CASE WHEN answered_at IS NOT NULL THEN GREATEST(0, %s - answered_at) ELSE 0 END,
+                          status = CASE
+                              WHEN answered_at IS NOT NULL THEN 'answered'
+                              WHEN %s = 'decline' THEN 'declined'
+                              WHEN ABS(caller_id) = %s THEN 'missed'
+                              ELSE 'declined' END
+                        WHERE call_id = %s AND ended_at IS NULL""",
+                    (now, now, signal_type, int(user_id), call_id)
+                )
+        except Exception as e:
+            print(f"[call_log] {e}")
         if signal_type == "offer":
             cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
             caller = cur.fetchone()
@@ -3036,6 +3157,18 @@ def handler(event: dict, context) -> dict:
             (int(user_id), int(msg_id))
         )
         existing = cur.fetchone()
+        if existing and body.get("only_add"):
+            conn.close()
+            return ok({"ok": True, "favorite": True, "already": True})
+        if not existing:
+            cur.execute(
+                f"""SELECT 1 FROM {SCHEMA}.messages m JOIN {SCHEMA}.chats c ON c.id = m.chat_id
+                    WHERE m.id = %s AND (c.user1_id = %s OR c.user2_id = %s)""",
+                (int(msg_id), int(user_id), int(user_id))
+            )
+            if not cur.fetchone():
+                conn.close()
+                return err("Сообщение не найдено", 404)
         if existing:
             cur.execute(
                 f"DELETE FROM {SCHEMA}.favorite_messages WHERE user_id = %s AND message_id = %s",
@@ -3448,12 +3581,25 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return err("В канал могут писать только владельцы и администраторы", 403)
         now = int(time.time())
+        try:
+            g_client_id = int(body.get("client_id") or 0) or None
+        except (TypeError, ValueError):
+            g_client_id = None
+        if g_client_id:
+            cur.execute(
+                f"SELECT id, created_at FROM {SCHEMA}.group_messages WHERE sender_id = %s AND client_id = %s",
+                (int(user_id), g_client_id)
+            )
+            _gdup = cur.fetchone()
+            if _gdup:
+                conn.close()
+                return ok({"id": _gdup[0], "created_at": _gdup[1], "duplicate": True})
         cur.execute(
             f"""INSERT INTO {SCHEMA}.group_messages
-                (group_id, sender_id, text, media_type, media_url, file_name, file_size, duration, reply_to_id, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (group_id, sender_id, text, media_type, media_url, file_name, file_size, duration, reply_to_id, created_at, client_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (int(group_id), int(user_id), text or "", media_type, media_url,
-             file_name, file_size, duration, reply_to_id, now)
+             file_name, file_size, duration, reply_to_id, now, g_client_id)
         )
         msg_id = cur.fetchone()[0]
         last_msg = text[:100] if text else ("[медиа]")
@@ -4210,6 +4356,12 @@ def handler(event: dict, context) -> dict:
         if cur.fetchone():
             conn.close()
             return err("Вы уже участвовали в программе")
+        if body.get("auto"):
+            cur.execute(f"SELECT created_at FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+            _cr = cur.fetchone()
+            if not _cr or int(_cr[0] or 0) < int(time.time()) - 3 * 86400:
+                conn.close()
+                return err("Приглашение действует только для новых пользователей")
 
         now = int(time.time())
         inviter_days = int(cfg.get("referral_inviter_days", "7") or 7)

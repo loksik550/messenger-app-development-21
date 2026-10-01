@@ -142,6 +142,41 @@ public class NovaMessagingService extends FirebaseMessagingService {
 
         if (badge > 0) b.setNumber(badge);
         if (!isCall) applyBadge(ctx, badge);
+        String me = data.get("recipient_id");
+        boolean canAct = !isCall && me != null && (data.get("chat_id") != null || data.get("group_id") != null)
+            && !tag.startsWith("missed_") && !"broadcast".equals(tag);
+        if (canAct) {
+            Intent reply = new Intent(ctx, CallActionReceiver.class);
+            reply.setAction(CallActionReceiver.ACTION_REPLY);
+            reply.putExtra("chat_id", data.get("chat_id"));
+            reply.putExtra("group_id", data.get("group_id"));
+            reply.putExtra("recipient_id", me);
+            reply.putExtra("tag", tag);
+            PendingIntent replyPi = PendingIntent.getBroadcast(
+                ctx, ("reply" + tag).hashCode(), reply,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE
+            );
+            androidx.core.app.RemoteInput ri = new androidx.core.app.RemoteInput.Builder(CallActionReceiver.KEY_REPLY)
+                .setLabel("Сообщение...")
+                .build();
+            NotificationCompat.Action replyAction = new NotificationCompat.Action.Builder(0, "Ответить", replyPi)
+                .addRemoteInput(ri)
+                .setAllowGeneratedReplies(true)
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                .setShowsUserInterface(false)
+                .build();
+
+            Intent read = new Intent(reply).setAction(CallActionReceiver.ACTION_READ);
+            PendingIntent readPi = PendingIntent.getBroadcast(
+                ctx, ("read" + tag).hashCode(), read,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+            NotificationCompat.Action readAction = new NotificationCompat.Action.Builder(0, "Прочитано", readPi)
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                .setShowsUserInterface(false)
+                .build();
+            b.addAction(replyAction).addAction(readAction);
+        }
         if (isCall) {
             String callId = data.get("call_id");
             if (callId != null) AVATAR_CACHE.put(callId, avatar);
