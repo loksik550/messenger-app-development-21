@@ -4,6 +4,8 @@ import { getDevToken } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
 
 const RUSTORE_API = "https://functions.poehali.dev/bcebea14-cbd9-4e61-9b8d-00999c5a501a";
+const LS_AUTO_PUBLISH = "nova_rustore_auto_publish";
+const LS_WHATS_NEW = "nova_rustore_whats_new";
 
 interface Version {
   version_id: number;
@@ -55,8 +57,8 @@ export default function DevRuStore() {
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [whatsNew, setWhatsNew] = useState("");
-  const [autoPublish, setAutoPublish] = useState(true);
+  const [whatsNew, setWhatsNew] = useState(() => localStorage.getItem(LS_WHATS_NEW) || "");
+  const [autoPublish, setAutoPublish] = useState(() => localStorage.getItem(LS_AUTO_PUBLISH) !== "0");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirm, setConfirm] = useState(false);
@@ -70,6 +72,15 @@ export default function DevRuStore() {
   };
 
   useEffect(load, []);
+
+  useEffect(() => {
+    localStorage.setItem(LS_AUTO_PUBLISH, autoPublish ? "1" : "0");
+  }, [autoPublish]);
+
+  useEffect(() => {
+    if (whatsNew) localStorage.setItem(LS_WHATS_NEW, whatsNew);
+    else localStorage.removeItem(LS_WHATS_NEW);
+  }, [whatsNew]);
 
   const publish = async () => {
     setConfirm(false);
