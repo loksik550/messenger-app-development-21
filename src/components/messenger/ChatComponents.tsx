@@ -107,7 +107,7 @@ export function ChatWindow({
   }, [chat.id, currentUser.id, globalWp]);
   // Незнакомец: проверяем что собеседник не в контактах
   useEffect(() => {
-    if (!chat.partner_id) { setIsUnknown(false); return; }
+    if (!chat.partner_id || chat.saved) { setIsUnknown(false); return; }
     setUnknownDismissed(false);
     api("get_contacts", {}, currentUser.id).then(r => {
       if (r?.contacts) {
@@ -409,7 +409,7 @@ export function ChatWindow({
         onChooseWallpaper={() => setShowWallpaper(true)}
       />
 
-      {showProfile && !chat.group && (
+      {showProfile && !chat.group && !chat.saved && (
         <PartnerProfilePanel
           chat={chat}
           currentUserId={currentUser.id}
@@ -441,10 +441,10 @@ export function ChatWindow({
       )}
 
       {/* Lock badge */}
-      <EncryptionBadge />
+      {!chat.saved && <EncryptionBadge />}
 
       {/* Подсказка о незнакомце */}
-      {isUnknown && !unknownDismissed && chat.partner_id && (
+      {isUnknown && !unknownDismissed && chat.partner_id && !chat.saved && (
         <UnknownContactHint
           onAddToContacts={addToContacts}
           onBlock={async () => {
@@ -468,9 +468,12 @@ export function ChatWindow({
           onEdit={handleEdit}
           onPin={handlePinToggle}
           isPinned={pinnedMsg?.id === ctxMenu.msgId}
-          onFavorite={async (id) => {
+          onFavorite={chat.saved ? undefined : async (id) => {
             setCtxMenu(null);
-            const r = await api("toggle_favorite_message", { message_id: id, only_add: true }, currentUser.id).catch(() => null);
+            const saved = await api("saved_chat", {}, currentUser.id).catch(() => null);
+            const r = saved?.chat_id
+              ? await api("forward_message", { message_id: id, target_chat_id: saved.chat_id }, currentUser.id).catch(() => null)
+              : null;
             track("favorite_add");
             setFavToast(r && !r.error ? "Добавлено в избранное" : "Не удалось добавить");
             setTimeout(() => setFavToast(""), 1800);

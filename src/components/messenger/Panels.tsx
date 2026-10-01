@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { native } from "@/lib/native";
 import Icon from "@/components/ui/icon";
 import { api, uploadMedia, type User, type IconName } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
@@ -393,15 +394,13 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
 
       <div className="glass rounded-2xl p-4 border border-violet-500/20 mx-4 mb-4">
         <p className="text-sm font-semibold mb-1">{tr("profile.invite")}</p>
-        <p className="text-xs text-muted-foreground mb-3">Поделитесь ссылкой — друг скачает Nova и вы сразу найдёте друг друга</p>
+        <p className="text-xs text-muted-foreground mb-3">Отправьте другу личную ссылку — и вы оба получите Premium в подарок</p>
         <button
-          onClick={() => {
-            const url = window.location.origin;
-            if (navigator.share) {
-              navigator.share({ title: "Nova — мессенджер", text: `Привет! Давай общаться в Nova — мессенджере. Мой номер: ${currentUser.phone}`, url });
-            } else {
-              navigator.clipboard.writeText(url).then(() => alert("Ссылка скопирована!"));
-            }
+          onClick={async () => {
+            if (onOpenInvite) { onOpenInvite(); return; }
+            const url = "https://novaa.pro/";
+            const ok = await native.share({ title: "Nova — мессенджер", text: "Привет! Давай общаться в Nova", url });
+            if (!ok) alert("Ссылка скопирована!");
           }}
           className="w-full py-3 grad-primary rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 glow-primary"
         >
@@ -414,9 +413,8 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
           { icon: "Edit3", label: tr("profile.editProfile"), sub: "Имя, фото, статус", action: () => { setEditName(currentUser.name); setEditing(true); window.scrollTo({ top: 0, behavior: "smooth" }); } },
           ...(onOpenProSettings ? [{ icon: "Sparkles", label: "Персонализация", sub: "Эмодзи-статус, цвет, инкогнито", action: onOpenProSettings }] : []),
           ...(onOpenProgress ? [{ icon: "Trophy", label: tr("nav.progress"), sub: `${currentUser.level ? `Уровень ${currentUser.level} · ${currentUser.xp || 0} XP` : "Уровни, бейджи, топ"}`, action: onOpenProgress }] : []),
-          ...(onOpenInvite ? [{ icon: "UserPlus", label: "Пригласить друзей", sub: "Ссылка-приглашение и Premium в подарок", action: onOpenInvite }] : []),
           ...(onOpenCalls ? [{ icon: "Phone", label: "Звонки", sub: "Входящие, исходящие, пропущенные", action: onOpenCalls }] : []),
-          ...(onOpenFavorites ? [{ icon: "Star", label: "Избранное", sub: "Сохранённые сообщения", action: onOpenFavorites }] : []),
+          ...(onOpenFavorites ? [{ icon: "Bookmark", label: "Избранное", sub: "Заметки, фото, видео и файлы для себя", action: onOpenFavorites }] : []),
           ...(onOpenSavedNotes ? [{ icon: "Bookmark", label: tr("nav.saved"), sub: "Заметки, сохранёнки, идеи", action: onOpenSavedNotes }] : []),
           ...(onOpenPayments ? [{ icon: "ReceiptText", label: "Счета и платежи", sub: "Выставляй и оплачивай", action: onOpenPayments }] : []),
           ...(onOpenPromo ? [{ icon: "Gift", label: "Промокоды и бонусы", sub: "Premium бесплатно и приглашения", action: onOpenPromo }] : []),

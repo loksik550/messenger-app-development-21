@@ -24,7 +24,6 @@ export function useOverlays() {
   const [showPayments, setShowPayments] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
   const [showCalls, setShowCalls] = useState(false);
-  const [showFavorites, setShowFavorites] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [fundraiserView, setFundraiserView] = useState<{ mode: "create" } | { mode: "view"; id: number } | null>(null);
 
@@ -48,7 +47,6 @@ export function useOverlays() {
     setShowPayments(false);
     setShowPremium(false);
     setShowCalls(false);
-    setShowFavorites(false);
     setShowInvite(false);
     setFundraiserView(null);
   };
@@ -79,7 +77,6 @@ export function useOverlays() {
     showPayments, setShowPayments,
     showPremium, setShowPremium,
     showCalls, setShowCalls,
-    showFavorites, setShowFavorites,
     showInvite, setShowInvite,
     fundraiserView, setFundraiserView,
     // экшены

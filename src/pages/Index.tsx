@@ -47,7 +47,6 @@ const NotificationsPanel = lazyWithRetry(() => import("@/components/messenger/No
 const AppearancePanel = lazyWithRetry(() => import("@/components/messenger/AppearancePanel"));
 const SavedNotesPanel = lazyWithRetry(() => import("@/components/messenger/SavedNotesPanel"));
 const CallHistoryPanel = lazyWithRetry(() => import("@/components/messenger/CallHistoryPanel"));
-const FavoritesPanel = lazyWithRetry(() => import("@/components/messenger/FavoritesPanel"));
 const InvitePanel = lazyWithRetry(() => import("@/components/messenger/InvitePanel"));
 const PaymentRequestsPanel = lazyWithRetry(() => import("@/components/messenger/PaymentRequestsPanel"));
 const AccountDeletePanel = lazyWithRetry(() => import("@/components/messenger/AccountDeletePanel"));
@@ -353,7 +352,6 @@ export default function Index() {
     showPayments, setShowPayments,
     showPremium, setShowPremium,
     showCalls, setShowCalls,
-    showFavorites, setShowFavorites,
     showInvite, setShowInvite,
     fundraiserView, setFundraiserView,
   } = overlays;
@@ -649,6 +647,34 @@ export default function Index() {
     setActiveCall({ userId: contact.id, name: contact.name, callId, incoming: false });
   };
 
+  const [savedInfo, setSavedInfo] = useState<{ chat_id: number; last_message?: string | null; last_message_at?: number | null } | null>(null);
+  const refreshSaved = useCallback(() => {
+    const uid = currentUserRef.current?.id;
+    if (!uid) return;
+    api("saved_chat", {}, uid).then(r => { if (r?.chat_id) setSavedInfo(r); }).catch(() => null);
+  }, []);
+  useEffect(() => { if (currentUser?.id) refreshSaved(); }, [currentUser?.id, refreshSaved]);
+
+  const openSavedChat = async () => {
+    if (!currentUser) return;
+    track("favorites_open");
+    let info = savedInfo;
+    if (!info) {
+      const r = await api("saved_chat", {}, currentUser.id).catch(() => null);
+      if (!r?.chat_id) return;
+      info = r;
+      setSavedInfo(r);
+    }
+    overlays.closeAll();
+    setSelectedGroup(null);
+    setSelectedChat({
+      id: info!.chat_id, name: "Избранное", avatar: "★", saved: true,
+      partner_id: currentUser.id, lastMsg: info!.last_message || "", time: "",
+    } as Chat);
+    setView("chats");
+    setShowSidebar(false);
+  };
+
   const startCallTo = (userId: number, name: string, video: boolean) => {
     if (!currentUser || activeCall) return;
     track(video ? "call_video" : "call_audio");
@@ -852,6 +878,7 @@ export default function Index() {
 
   const handleBack = () => {
     setShowSidebar(true);
+    if (selectedChat?.saved) refreshSaved();
     const closingId = selectedChat?.id;
     setTimeout(() => setSelectedChat(prev => (prev && prev.id === closingId ? null : prev)), 300);
   };
@@ -986,17 +1013,6 @@ export default function Index() {
         />
       )}
 
-      {showFavorites && currentUser && (
-        <FavoritesPanel
-          currentUser={currentUser}
-          onClose={() => setShowFavorites(false)}
-          onOpenChat={(chatId) => {
-            const c = realChats.find(x => x.id === chatId);
-            setShowFavorites(false);
-            if (c) { setSelectedGroup(null); setSelectedChat(c); setView("chats"); setShowSidebar(false); }
-          }}
-        />
-      )}
 
       {showInvite && currentUser && (
         <InvitePanel currentUser={currentUser} onClose={() => setShowInvite(false)} />
@@ -1213,6 +1229,31 @@ export default function Index() {
               )}
               {!showArchived && (
                 <ChatFolders folder={chatFolder} onChange={setChatFolder} chats={realChats} />
+              )}
+              {!showArchived && !searchQuery.trim() && (chatFolder === "all" || chatFolder === "favorite") && (
+                <button
+                  onClick={openSavedChat}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-colors ${selectedChat?.saved ? "bg-white/8 glass" : "hover:bg-white/4"}`}
+                >
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-sky-500 to-violet-600 flex items-center justify-center flex-shrink-0">
+                    <Icon name="Bookmark" size={20} className="text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-sm">Избранное</span>
+                      {savedInfo?.last_message_at ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          {new Date(savedInfo.last_message_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate mt-0.5">
+                      {getDraft(`c${savedInfo?.chat_id}`) && !selectedChat?.saved
+                        ? <><span className="text-red-400">Черновик: </span>{getDraft(`c${savedInfo?.chat_id}`)}</>
+                        : (savedInfo?.last_message || "Сохраняйте заметки, фото, видео и файлы")}
+                    </div>
+                  </div>
+                </button>
               )}
               <ChatList
                 chats={filterChatsByFolder(
@@ -1456,7 +1497,7 @@ export default function Index() {
             onOpenPromo={() => setShowPromo(true)}
             onOpenSavedNotes={() => openOverlay(setShowSavedNotes)}
             onOpenCalls={() => openOverlay(setShowCalls)}
-            onOpenFavorites={() => openOverlay(setShowFavorites)}
+            onOpenFavorites={openSavedChat}
             onOpenInvite={() => openOverlay(setShowInvite)}
             onOpenPayments={() => openOverlay(setShowPayments)}
           />

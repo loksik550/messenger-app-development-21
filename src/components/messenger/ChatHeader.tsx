@@ -79,7 +79,13 @@ export function ChatHeader({
         onClick={() => onOpenProfile?.()}
         onContextMenu={(e) => { e.preventDefault(); onOpenProfile?.(); }}
       >
-        <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} />
+        {chat.saved ? (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-500 to-violet-600 flex items-center justify-center flex-shrink-0">
+            <Icon name="Bookmark" size={18} className="text-white" />
+          </div>
+        ) : (
+          <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-foreground truncate">{chat.name}</span>
@@ -91,6 +97,8 @@ export function ChatHeader({
           <div className="text-xs text-muted-foreground">
             {!netOnline ? (
               <span className="text-amber-400 inline-flex items-center gap-1"><span className="w-2.5 h-2.5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />Ожидание сети...</span>
+            ) : chat.saved ? (
+              "Заметки, фото и файлы для себя"
             ) : chat.typing ? (
               <span className="text-violet-400">{t("common.typing")}</span>
             ) : chat.online ? (
@@ -103,7 +111,7 @@ export function ChatHeader({
           </div>
         </div>
       </button>
-      <div className="flex items-center gap-1">
+      {!chat.saved && <div className="flex items-center gap-1">
         <button
           onClick={() => onCall && chat.partner_id && onCall(chat.partner_id, chat.name)}
           className="p-2 rounded-xl hover:bg-white/8 transition-colors text-emerald-400 hover:text-emerald-300"
@@ -116,7 +124,7 @@ export function ChatHeader({
         >
           <Icon name="Video" size={18} />
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

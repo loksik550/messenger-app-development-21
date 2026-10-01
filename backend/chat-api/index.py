@@ -767,7 +767,7 @@ def handler(event: dict, context) -> dict:
                     SELECT c.id, c.last_message, c.last_message_at,
                            (CASE WHEN c.user1_id = %s THEN c.user2_id ELSE c.user1_id END) AS partner_id
                     FROM {SCHEMA}.chats c
-                    WHERE (c.user1_id = %s OR c.user2_id = %s)
+                    WHERE (c.user1_id = %s OR c.user2_id = %s) AND c.user1_id <> c.user2_id
                 ),
                 blocked AS (
                     SELECT blocked_id FROM {SCHEMA}.user_blocks WHERE blocker_id = %s
@@ -826,6 +826,28 @@ def handler(event: dict, context) -> dict:
         return ok({"chats": chats, "archived_count": archived_count})
 
     # ── get_or_create_chat ────────────────────────────────────────────────────
+    if action == "saved_chat":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        me = int(user_id)
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.chats (user1_id, user2_id, created_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user1_id, user2_id) DO UPDATE SET user1_id = EXCLUDED.user1_id
+                RETURNING id, last_message, last_message_at""",
+            (me, me, int(time.time()))
+        )
+        r = cur.fetchone()
+        cur.execute(
+            f"""SELECT COUNT(*) FROM {SCHEMA}.messages
+                WHERE chat_id = %s AND removed_at IS NULL""",
+            (r[0],)
+        )
+        cnt = int(cur.fetchone()[0] or 0)
+        conn.close()
+        return ok({"chat_id": r[0], "last_message": r[1], "last_message_at": r[2], "count": cnt})
+
     if action == "get_or_create_chat":
         if not user_id:
             conn.close()
@@ -1961,6 +1983,10 @@ def handler(event: dict, context) -> dict:
             (int(user_id), int(user_id), int(user_id), int(chat_id))
         )
         row = cur.fetchone()
+        if row and int(row[1]) == int(user_id):
+            cur.execute(f"UPDATE {SCHEMA}.messages SET read_at = %s WHERE id = %s", (now, int(msg_id)))
+            conn.close()
+            return ok({"id": msg_id, "created_at": now, "media_url": media_url or None, "media_type": media_type or None, "image_url": media_url if media_type == "image" else None})
         # XP получателю за входящее
         if row and kind in ("text", "sticker", "gift"):
             _grant_xp(cur, int(row[1]), "received_message")

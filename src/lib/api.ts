@@ -328,6 +328,7 @@ export interface Message {
 export interface Chat {
   id: number;
   name: string;
+  saved?: boolean;
   avatar: string;
   avatar_url?: string | null;
   lastMsg: string;
