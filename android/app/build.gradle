@@ -8,7 +8,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode ((int) (System.currentTimeMillis() / 60000L))
-        versionName "1.1.0"
+        versionName ((System.getenv("GITHUB_REF_NAME") ?: "") ==~ /v\d+(\.\d+)+/ ? System.getenv("GITHUB_REF_NAME").substring(1) : "1.1.0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps
