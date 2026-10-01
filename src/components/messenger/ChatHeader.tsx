@@ -1,4 +1,5 @@
 import Icon from "@/components/ui/icon";
+import { useOnline } from "@/lib/connection";
 import { type Chat, getCallAvatar, formatLastSeen } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import { useT } from "@/hooks/useT";
@@ -38,6 +39,7 @@ export function ChatHeader({
   onChooseWallpaper?: () => void;
 }) {
   const { t } = useT();
+  const netOnline = useOnline();
   if (showSearch) {
     return (
       <div className="flex items-center gap-2 px-3 glass-strong border-b border-white/5" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))", paddingBottom: "0.75rem" }}>
@@ -87,7 +89,9 @@ export function ChatHeader({
             {chat.group && <span className="text-[10px] bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full font-medium">{t("chat.groupBadge")}</span>}
           </div>
           <div className="text-xs text-muted-foreground">
-            {chat.typing ? (
+            {!netOnline ? (
+              <span className="text-amber-400 inline-flex items-center gap-1"><span className="w-2.5 h-2.5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />Ожидание сети...</span>
+            ) : chat.typing ? (
               <span className="text-violet-400">{t("common.typing")}</span>
             ) : chat.online ? (
               <span className="text-emerald-400">{t("partner.online")}</span>

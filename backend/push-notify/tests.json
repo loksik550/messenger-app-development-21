@@ -4,14 +4,18 @@
       "name": "Get VAPID public key",
       "method": "POST",
       "path": "/",
-      "body": {"action": "vapid_key"},
+      "body": {
+        "action": "vapid_key"
+      },
       "expectedStatus": 200
     },
     {
       "name": "Subscribe without user returns 400",
       "method": "POST",
       "path": "/",
-      "body": {"action": "subscribe"},
+      "body": {
+        "action": "subscribe"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -19,7 +23,19 @@
       "name": "send_group without group_id returns 400",
       "method": "POST",
       "path": "/",
-      "body": {"action": "send_group"},
+      "body": {
+        "action": "send_group"
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "register_native without user returns 400",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "register_native"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     }

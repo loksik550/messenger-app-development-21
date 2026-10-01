@@ -258,20 +258,39 @@ const statusBar = {
 // FCM требует google-services.json в сборке. Пока его нет, обращение к
 // PushNotifications падает на нативном уровне (JS try/catch такое не ловит и
 // приложение аварийно закрывается). Включаем только когда Firebase подключён.
-const FCM_ENABLED = false;
+const FCM_ENABLED = Object.keys(import.meta.glob("/android/app/google-services.json")).length > 0;
+
+let pushTokenCache: string | null = null;
 
 const push = {
-  async register(onToken: (token: string) => void, onMessage?: (data: unknown) => void) {
+  enabled: FCM_ENABLED,
+  get token() { return pushTokenCache; },
+  async register(onToken: (token: string) => void, onMessage?: (data: unknown) => void, onTap?: (data: Record<string, string>) => void) {
     if (!isNative || !FCM_ENABLED) return;
     try {
-      const perm = await PushNotifications.requestPermissions();
-      if (perm.receive !== "granted") return;
-      await PushNotifications.register();
-      PushNotifications.addListener("registration", t => onToken(t.value));
-      if (onMessage) {
-        PushNotifications.addListener("pushNotificationReceived", n => onMessage(n));
-        PushNotifications.addListener("pushNotificationActionPerformed", a => onMessage(a));
+      let perm = await PushNotifications.checkPermissions();
+      if (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") {
+        perm = await PushNotifications.requestPermissions();
       }
+      if (perm.receive !== "granted") return;
+      try {
+        await PushNotifications.createChannel({
+          id: "messages", name: "Сообщения", description: "Новые сообщения",
+          importance: 4, visibility: 1, sound: "default", vibration: true, lights: true, lightColor: "#8b5cf6",
+        });
+        await PushNotifications.createChannel({
+          id: "calls", name: "Звонки", description: "Входящие звонки",
+          importance: 5, visibility: 1, sound: "default", vibration: true, lights: true, lightColor: "#8b5cf6",
+        });
+      } catch { /* ignore */ }
+      await PushNotifications.removeAllListeners();
+      PushNotifications.addListener("registration", t => { pushTokenCache = t.value; onToken(t.value); });
+      if (onMessage) PushNotifications.addListener("pushNotificationReceived", n => onMessage(n));
+      PushNotifications.addListener("pushNotificationActionPerformed", a => {
+        const data = (a.notification?.data || {}) as Record<string, string>;
+        onTap?.(data);
+      });
+      await PushNotifications.register();
     } catch { /* ignore */ }
   },
 };

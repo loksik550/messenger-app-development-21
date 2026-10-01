@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import ConnectionBanner from "@/components/messenger/ConnectionBanner";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import Icon from "@/components/ui/icon";
-import { api, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
+import { api, PUSH_API, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
 import { playMessageSound } from "@/lib/sounds";
 import { native } from "@/lib/native";
 import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
@@ -214,6 +214,8 @@ export default function Index() {
   const [storiesRefresh, setStoriesRefresh] = useState(0);
   const [showSidebar, setShowSidebar] = useState(true);
   const [realChats, setRealChats] = useState<Chat[]>([]);
+  const realChatsRef = useRef<Chat[]>([]);
+  realChatsRef.current = realChats;
   const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCall, setActiveCall] = useState<{ userId: number; name: string; callId: string; incoming: boolean } | null>(null);
@@ -255,13 +257,22 @@ export default function Index() {
   useEffect(() => {
     if (!currentUser) return;
     if (!native.isNative) return;
+    const uid = currentUser.id;
     native.push.register(
-      () => { /* токен получен — доставка идёт через нативный слой */ },
-      (msg: unknown) => {
-        const m = msg as { title?: string; body?: string; notification?: { title?: string; body?: string }; data?: Record<string, string> };
-        const title = m.title || m.notification?.title || m.data?.title || "Nova";
-        const body = m.body || m.notification?.body || m.data?.message || "Новое сообщение";
-        native.localNotify.show(title, body);
+      (token) => {
+        fetch(PUSH_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-User-Id": String(uid) },
+          body: JSON.stringify({ action: "register_native", token, platform: native.platform }),
+        }).catch(() => { /* повторим при следующем запуске */ });
+      },
+      () => { /* приложение открыто — сообщение и так появится в чате */ },
+      (data) => {
+        const chatId = Number(data.chat_id || 0);
+        if (chatId) {
+          const c = realChatsRef.current.find(x => x.id === chatId);
+          if (c) { setSelectedChat(c); setView("chats"); setShowSidebar(false); }
+        }
       }
     );
   }, [currentUser]);

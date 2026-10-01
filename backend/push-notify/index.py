@@ -4,6 +4,7 @@ import time
 import threading
 import psycopg2
 from pywebpush import webpush, WebPushException
+import fcm
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
@@ -48,6 +49,24 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
+def _native_tokens(cur, user_ids):
+    if not user_ids:
+        return []
+    cur.execute(
+        f"SELECT token FROM {SCHEMA}.native_push_tokens WHERE user_id = ANY(%s)",
+        (list({int(u) for u in user_ids}),)
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
+def _drop_native(cur, tokens):
+    if tokens:
+        try:
+            cur.execute(f"DELETE FROM {SCHEMA}.native_push_tokens WHERE token = ANY(%s)", (tokens,))
+        except Exception:
+            pass
+
+
 def handler(event: dict, context) -> dict:
     """
     Push-уведомления для Nova.
@@ -72,6 +91,32 @@ def handler(event: dict, context) -> dict:
 
     conn = get_conn()
     cur = conn.cursor()
+
+    # ── register_native — токен Firebase с телефона ───────────────────────────
+    if action == "register_native":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        token = (body.get("token") or "").strip()
+        if not token:
+            conn.close()
+            return err("Нужен token")
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.native_push_tokens (user_id, token, platform, created_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, created_at = EXCLUDED.created_at""",
+            (int(user_id), token, (body.get("platform") or "android")[:20], int(time.time()))
+        )
+        conn.close()
+        return ok({"ok": True, "fcm_enabled": fcm.enabled()})
+
+    # ── unregister_native ─────────────────────────────────────────────────────
+    if action == "unregister_native":
+        token = (body.get("token") or "").strip()
+        if token:
+            cur.execute(f"DELETE FROM {SCHEMA}.native_push_tokens WHERE token = %s", (token,))
+        conn.close()
+        return ok({"ok": True})
 
     # ── subscribe — сохранить подписку ────────────────────────────────────────
     if action == "subscribe":
@@ -128,17 +173,41 @@ def handler(event: dict, context) -> dict:
             )
         subs = cur.fetchall()
 
+        call_id = body.get("call_id")
+        native_sent = 0
+        if fcm.enabled():
+            if is_call:
+                allowed = True
+            else:
+                cur.execute(
+                    f"""SELECT 1 FROM {SCHEMA}.users u
+                        LEFT JOIN {SCHEMA}.chat_settings cs ON cs.user_id = u.id AND cs.chat_id = %s
+                        WHERE u.id = %s AND COALESCE(u.notify_messages, TRUE) = TRUE
+                          AND COALESCE(cs.muted, FALSE) = FALSE""",
+                    (int(chat_id) if chat_id else 0, int(recipient_id))
+                )
+                allowed = cur.fetchone() is not None
+            if allowed:
+                ntokens = _native_tokens(cur, [recipient_id])
+                n_title = f"📞 {sender_name}" if is_call else (sender_name or title)
+                n_body = "Входящий звонок" if is_call else message
+                native_sent, n_stale = fcm.send_many(ntokens, n_title, n_body, {
+                    "chat_id": chat_id, "call_id": call_id, "is_call": "1" if is_call else "",
+                    "from_user_id": body.get("from_user_id"),
+                    "tag": f"call_{call_id}" if is_call else (body.get("tag") or f"msg_{chat_id}"),
+                }, is_call=bool(is_call))
+                _drop_native(cur, n_stale)
+
         if not subs:
             conn.close()
-            return ok({"ok": True, "sent": 0})
+            return ok({"ok": True, "sent": native_sent})
 
         vapid_private = _vapid_private()
         vapid_public = _vapid_public()
         if not vapid_private or not vapid_public:
             conn.close()
-            return err("VAPID ключи не настроены", 500)
+            return ok({"ok": True, "sent": native_sent})
 
-        call_id = body.get("call_id")
         payload = json.dumps({
             "title": f"📞 {sender_name}" if is_call else (sender_name or title),
             "body": "Входящий звонок" if is_call else message,
@@ -189,7 +258,7 @@ def handler(event: dict, context) -> dict:
                 pass
         conn.close()
 
-        return ok({"ok": True, "sent": sent})
+        return ok({"ok": True, "sent": sent + native_sent})
 
     # ── send_group — push всем участникам группы (кроме отправителя) ──────────
     if action == "send_group":
@@ -222,17 +291,38 @@ def handler(event: dict, context) -> dict:
             (int(group_id), int(sender_id) if sender_id else 0, now_ts)
         )
         subs = cur.fetchall()
+
+        icon = "📢" if is_channel else "👥"
+        native_sent = 0
+        if fcm.enabled():
+            cur.execute(
+                f"""SELECT nt.token
+                    FROM {SCHEMA}.group_members gm
+                    JOIN {SCHEMA}.native_push_tokens nt ON nt.user_id = gm.user_id
+                    JOIN {SCHEMA}.users u ON u.id = gm.user_id
+                    LEFT JOIN {SCHEMA}.group_mute gmu
+                        ON gmu.user_id = gm.user_id AND gmu.group_id = gm.group_id
+                    WHERE gm.group_id = %s
+                      AND gm.user_id <> %s
+                      AND COALESCE(u.notify_groups, TRUE) = TRUE
+                      AND (gmu.user_id IS NULL OR (gmu.muted_until <> 0 AND gmu.muted_until <= %s))""",
+                (int(group_id), int(sender_id) if sender_id else 0, now_ts)
+            )
+            gtokens = [r[0] for r in cur.fetchall()]
+            native_sent, g_stale = fcm.send_many(gtokens, f"{icon} {group_name}", message, {
+                "group_id": group_id, "message_id": message_id, "tag": f"group_{group_id}",
+            })
+            _drop_native(cur, g_stale)
         conn.close()
 
         if not subs:
-            return ok({"ok": True, "sent": 0})
+            return ok({"ok": True, "sent": native_sent})
 
         vapid_private = _vapid_private()
         vapid_public = _vapid_public()
         if not vapid_private or not vapid_public:
-            return err("VAPID ключи не настроены", 500)
+            return ok({"ok": True, "sent": native_sent})
 
-        icon = "📢" if is_channel else "👥"
         payload = json.dumps({
             "title": f"{icon} {group_name}",
             "body": message,
