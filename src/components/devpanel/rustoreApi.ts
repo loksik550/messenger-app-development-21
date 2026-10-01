@@ -27,6 +27,27 @@ export interface StoreScreen {
   orientation: string;
 }
 
+export interface SavedIcon {
+  id: number;
+  url: string;
+  created_at?: string | null;
+}
+
+export interface Version {
+  version_id: number;
+  name: string;
+  code: number;
+  status: string;
+  status_ru: string;
+  published_at?: string | null;
+  sent_at?: string | null;
+  testing?: string;
+  whats_new?: string;
+  reject_hint?: string | null;
+  note?: string;
+  note_by?: string;
+}
+
 export interface Reply {
   id: number | null;
   text: string;

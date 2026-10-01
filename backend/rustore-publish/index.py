@@ -8,6 +8,7 @@ import requests
 from rustore import PACKAGE, RuStoreError, configured, token, fresh_token, rs, page_items
 import reviews
 import screens
+import icon
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 REPO = "loksik550/messenger-app-development-21"
@@ -95,7 +96,68 @@ def list_versions(tok, size=10):
         "status_ru": STATUS_RU.get(v.get("versionStatus"), v.get("versionStatus")),
         "published_at": v.get("publishDateTime"),
         "sent_at": v.get("sendDateForModer"),
+        "testing": (v.get("testingType") or "RELEASE").upper(),
+        "whats_new": v.get("whatsNew") or "",
     } for v in items]
+
+
+REJECT_HINTS = {
+    "REJECTED_BY_MODERATOR": "RuStore не отдаёт текст замечаний через API — он приходит письмом на почту аккаунта разработчика и виден в консоли RuStore на странице версии.",
+    "REJECTED_BY_SECURITY": "Служба безопасности RuStore нашла проблему в сборке. Подробности — в письме на почту аккаунта и в консоли RuStore.",
+    "AUTO_CHECK_FAILED": "Антивирусная проверка не пропустила файл. Обычно помогает пересобрать приложение без лишних разрешений и сторонних SDK.",
+}
+
+
+def load_notes(ids):
+    ids = [int(i) for i in ids if i]
+    if not ids:
+        return {}
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT version_id, note, admin_email, updated_at FROM {SCHEMA}.rustore_version_notes "
+        f"WHERE version_id = ANY(%s)", (ids,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return {r[0]: {"note": r[1], "by": r[2], "at": r[3]} for r in rows}
+
+
+def save_note(version_id, note, admin):
+    note = (note or "").strip()[:3000]
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn.autocommit = True
+    cur = conn.cursor()
+    if note:
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.rustore_version_notes (version_id, note, admin_email, updated_at) "
+            f"VALUES (%s, %s, %s, NOW()) ON CONFLICT (version_id) DO UPDATE "
+            f"SET note = EXCLUDED.note, admin_email = EXCLUDED.admin_email, updated_at = NOW()",
+            (int(version_id), note, admin["email"]),
+        )
+    else:
+        cur.execute(f"DELETE FROM {SCHEMA}.rustore_version_notes WHERE version_id = %s", (int(version_id),))
+    conn.close()
+
+
+def enrich(versions):
+    notes = {}
+    try:
+        notes = load_notes([v["version_id"] for v in versions])
+    except Exception as e:
+        print(f"[notes] {e}")
+    for v in versions:
+        v["reject_hint"] = REJECT_HINTS.get(v["status"])
+        n = notes.get(v["version_id"])
+        v["note"] = n["note"] if n else ""
+        v["note_by"] = n["by"] if n else ""
+    return versions
+
+
+def has_release(versions):
+    return any(v["status"] in ("ACTIVE", "PARTIAL_ACTIVE", "PREVIOUS_ACTIVE", "READY_FOR_PUBLICATION")
+               and v.get("testing") == "RELEASE" for v in versions)
 
 
 def latest_release():
@@ -157,10 +219,17 @@ def do_publish(body, admin, ip):
             rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{v['version_id']}", tok)
 
     whats_new = (body.get("whats_new") or "").strip()[:5000] or "Исправления и улучшения."
-    draft = rs("POST", f"/public/v1/application/{PACKAGE}/version", tok, json={
+    try:
+        draft = rs("POST", f"/public/v1/application/{PACKAGE}/version", tok, json={
         "whatsNew": whats_new,
-        "publishType": "INSTANTLY" if body.get("auto_publish", True) else "MANUAL",
-    })
+            "publishType": "INSTANTLY" if body.get("auto_publish", True) else "MANUAL",
+        })
+    except RuStoreError as e:
+        if "active version" in str(e).lower():
+            raise RuStoreError("У приложения ещё нет одобренной релизной версии в RuStore, а через API можно отправлять "
+                               "только обновления. Первую публичную версию нужно один раз загрузить вручную в консоли "
+                               "RuStore — после этого кнопка в панели будет отправлять обновления сама.")
+        raise
     version_id = draft.get("body")
     if isinstance(version_id, dict):
         version_id = version_id.get("versionId")
@@ -175,12 +244,14 @@ def do_publish(body, admin, ip):
        files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=60)
 
     shots = screens.push_to_draft(tok, version_id)
+    icon_sent = icon.push_to_draft(tok, version_id)
 
     rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/commit", tok)
 
     audit(admin, "rustore_publish",
-          f"Отправлена {rel['tag']} в RuStore (версия {version_id}, скриншотов: {shots or 'прежние'})", ip)
-    return ok({"ok": True, "tag": rel["tag"], "version_id": version_id, "screens": shots})
+          f"Отправлена {rel['tag']} в RuStore (версия {version_id}, скриншотов: {shots or 'прежние'}, "
+          f"иконка: {'новая' if icon_sent else 'прежняя'})", ip)
+    return ok({"ok": True, "tag": rel["tag"], "version_id": version_id, "screens": shots, "icon": icon_sent})
 
 
 def handler(event: dict, context) -> dict:
@@ -225,18 +296,20 @@ def handler(event: dict, context) -> dict:
             except RuStoreError as e:
                 rel = {"error": str(e)}
             saved = screens.public_list()
+            saved_icon = icon.public()
             if not configured():
                 return ok({"configured": False, "release": rel, "versions": [], "rating": None,
-                           "screens": saved, "store_screens": []})
+                           "screens": saved, "store_screens": [], "icon": saved_icon, "has_release": False})
             tok = token()
-            versions = list_versions(tok)
+            versions = enrich(list_versions(tok))
             rating = None
             try:
                 rating = reviews.rating(tok)
             except RuStoreError as e:
                 rating = {"error": str(e)}
             return ok({"configured": True, "release": rel, "versions": versions, "rating": rating,
-                       "screens": saved, "store_screens": store_screens(tok, versions)})
+                       "screens": saved, "store_screens": store_screens(tok, versions),
+                       "icon": saved_icon, "has_release": has_release(versions)})
 
         if action == "publish":
             return do_publish(body, admin, ip)
@@ -253,6 +326,23 @@ def handler(event: dict, context) -> dict:
             screens.remove(int(sid))
             audit(admin, "rustore_screens", f"Удалён скриншот #{sid}", ip)
             return ok({"ok": True, "screens": screens.public_list()})
+
+        if action == "icon_set":
+            saved_icon = icon.save(body.get("data") or "")
+            audit(admin, "rustore_icon", "Загружена новая иконка", ip)
+            return ok({"ok": True, "icon": saved_icon})
+
+        if action == "icon_delete":
+            icon.remove()
+            audit(admin, "rustore_icon", "Удалена новая иконка", ip)
+            return ok({"ok": True, "icon": None})
+
+        if action == "version_note":
+            vid = body.get("version_id")
+            if not vid:
+                return err("Не указана версия")
+            save_note(vid, body.get("note"), admin)
+            return ok({"ok": True})
 
         if action == "screens_reorder":
             ids = body.get("ids") or []
