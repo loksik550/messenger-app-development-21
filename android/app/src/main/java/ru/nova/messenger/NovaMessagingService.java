@@ -40,7 +40,21 @@ public class NovaMessagingService extends FirebaseMessagingService {
 
     public static final String CH_MESSAGES = "messages";
     public static final String CH_CALLS = "calls";
+    public static final String CH_CALLS_SILENT = "calls_fullscreen";
     public static final int NOTIF_ID = 1;
+
+    private static final java.util.Map<String, Bitmap> AVATAR_CACHE =
+        java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, Bitmap>() {
+            @Override protected boolean removeEldestEntry(Map.Entry<String, Bitmap> e) { return size() > 5; }
+        });
+
+    static Bitmap cachedAvatar(String callId) {
+        return callId == null ? null : AVATAR_CACHE.get(callId);
+    }
+
+    static Bitmap letterAvatarFor(String name, String seed) {
+        return letterAvatar(name == null ? "N" : name, seed == null ? "nova" : seed);
+    }
 
     private static final int[][] GRADIENTS = {
         {0xFF8B5CF6, 0xFF6366F1}, {0xFF3B82F6, 0xFF06B6D4}, {0xFFEC4899, 0xFFF43F5E},
@@ -65,9 +79,11 @@ public class NovaMessagingService extends FirebaseMessagingService {
                 NotificationManagerCompat.from(getApplicationContext()).cancel(nz(data.get("tag"), "nova"), NOTIF_ID);
             } catch (Exception ignored) {
             }
+            String t = data.get("tag");
+            if (t != null && t.startsWith("call_")) IncomingCallActivity.finishIfShowing(t.substring(5));
             return;
         }
-        if (MainActivity.isInForeground && !"1".equals(data.get("is_call"))) return;
+        if (MainActivity.isInForeground) return;
 
         try {
             show(data);
@@ -127,8 +143,78 @@ public class NovaMessagingService extends FirebaseMessagingService {
         if (badge > 0) b.setNumber(badge);
         if (!isCall) applyBadge(ctx, badge);
         if (isCall) {
-            b.setTimeoutAfter(45000);
-            b.setFullScreenIntent(pi, true);
+            String callId = data.get("call_id");
+            if (callId != null) AVATAR_CACHE.put(callId, avatar);
+            String callerName = senderName.replaceFirst("^📞\\s*", "");
+
+            Intent full = new Intent(ctx, IncomingCallActivity.class);
+            full.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+            full.putExtra("call_id", callId);
+            full.putExtra("from_user_id", data.get("from_user_id"));
+            full.putExtra("recipient_id", data.get("recipient_id"));
+            full.putExtra("sender_name", callerName);
+            PendingIntent fullPi = PendingIntent.getActivity(
+                ctx, ("full" + tag).hashCode(), full,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+
+            Intent mainAccept = new Intent(ctx, MainActivity.class);
+            mainAccept.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            mainAccept.putExtra("nova_push_tap", "1");
+            mainAccept.putExtra("call_id", callId);
+            mainAccept.putExtra("from_user_id", data.get("from_user_id"));
+            mainAccept.putExtra("is_call", "1");
+            mainAccept.putExtra("call_accept", "1");
+            PendingIntent acceptPi = PendingIntent.getActivity(
+                ctx, ("accept" + tag).hashCode(), mainAccept,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+
+            Intent decline = new Intent(ctx, CallActionReceiver.class);
+            decline.setAction(CallActionReceiver.ACTION_DECLINE);
+            decline.putExtra("call_id", callId);
+            decline.putExtra("from_user_id", data.get("from_user_id"));
+            decline.putExtra("recipient_id", data.get("recipient_id"));
+            PendingIntent declinePi = PendingIntent.getBroadcast(
+                ctx, ("decline" + tag).hashCode(), decline,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+
+            boolean isVideo = callId != null && callId.startsWith("video_");
+            b.setContentTitle(callerName)
+                .setContentText(isVideo ? "Входящий видеозвонок" : "Входящий звонок")
+                .setStyle(null)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(fullPi)
+                .setFullScreenIntent(fullPi, true)
+                .setTimeoutAfter(45000)
+                .addAction(0, "Отклонить", declinePi)
+                .addAction(0, "Принять", acceptPi);
+            b.setDefaults(0);
+            b.setSound(null);
+            b.setVibrate(null);
+            b.setOnlyAlertOnce(true);
+
+            boolean locked = false;
+            try {
+                android.app.KeyguardManager km = (android.app.KeyguardManager) ctx.getSystemService(Context.KEYGUARD_SERVICE);
+                android.os.PowerManager pm = (android.os.PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+                locked = (km != null && km.isKeyguardLocked()) || (pm != null && !pm.isInteractive());
+            } catch (Exception ignored) {
+            }
+            if (MainActivity.isInForeground) return;
+            boolean fullScreen = locked && canFullScreen(ctx);
+            if (fullScreen) b.setChannelId(CH_CALLS_SILENT);
+            try {
+                NotificationManagerCompat.from(ctx).notify(tag, NOTIF_ID, b.build());
+            } catch (SecurityException ignored) {
+            }
+            if (fullScreen) {
+                try { ctx.startActivity(full); } catch (Exception ignored) { }
+            }
+            return;
         }
 
         try {
@@ -167,6 +253,21 @@ public class NovaMessagingService extends FirebaseMessagingService {
             );
             nm.createNotificationChannel(ch);
         }
+        if (nm.getNotificationChannel(CH_CALLS_SILENT) == null) {
+            NotificationChannel ch = new NotificationChannel(CH_CALLS_SILENT, "Звонки на заблокированном экране", NotificationManager.IMPORTANCE_HIGH);
+            ch.setDescription("Полноэкранный входящий звонок. Звук и вибрация идут с экрана звонка.");
+            ch.setSound(null, null);
+            ch.enableVibration(false);
+            ch.setShowBadge(false);
+            ch.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+            nm.createNotificationChannel(ch);
+        }
+    }
+
+    static boolean canFullScreen(Context ctx) {
+        if (Build.VERSION.SDK_INT < 34) return true;
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        return nm != null && nm.canUseFullScreenIntent();
     }
 
     static void applyBadge(Context ctx, int count) {

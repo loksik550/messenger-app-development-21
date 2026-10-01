@@ -50,7 +50,7 @@ public class MainActivity extends BridgeActivity {
         if (!"1".equals(ex.getString("nova_push_tap"))) return;
         try {
             JSONObject o = new JSONObject();
-            for (String k : new String[]{"chat_id", "group_id", "call_id", "is_call", "from_user_id"}) {
+            for (String k : new String[]{"chat_id", "group_id", "call_id", "is_call", "from_user_id", "call_accept"}) {
                 String v = ex.getString(k);
                 if (v != null) o.put(k, v);
             }

@@ -11,10 +11,11 @@ interface CallScreenProps {
   remoteName: string;
   callId: string;
   isIncoming: boolean;
+  autoAccept?: boolean;
   onClose: () => void;
 }
 
-export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIncoming, onClose }: CallScreenProps) {
+export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIncoming, autoAccept, onClose }: CallScreenProps) {
   const isVideo = callId.startsWith("video_");
   const [state, setState] = useState<CallState>(isIncoming ? "ringing" : "calling");
   const [muted, setMuted] = useState(false);
@@ -80,10 +81,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     } catch { /* ignore */ }
   };
 
-  const endCall = (reason: "hangup" | "remote_hangup") => {
+  const endCall = (reason: "hangup" | "decline" | "remote_hangup") => {
     if (endedRef.current) return;
     endedRef.current = true;
-    if (reason === "hangup") sendSignal("hangup").catch(() => { /* ignore */ });
+    if (reason !== "remote_hangup") sendSignal(reason).catch(() => { /* ignore */ });
     // Мгновенно останавливаем таймер длительности, чтобы секунды замерли
     // сразу при сбросе собеседником, а не через задержку cleanup().
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -414,8 +415,15 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, speaker]);
 
+  useEffect(() => {
+    if (!isIncoming || !autoAccept) return;
+    const t = setTimeout(() => { if (!endedRef.current) acceptCall(); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAccept]);
+
   const hangup = () => endCall("hangup");
-  const reject = () => endCall("hangup");
+  const reject = () => endCall("decline");
 
   const fmtDuration = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;

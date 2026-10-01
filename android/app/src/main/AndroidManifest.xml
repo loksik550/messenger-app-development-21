@@ -33,6 +33,19 @@
 
         </activity>
 
+        <activity
+            android:name="ru.nova.messenger.IncomingCallActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:taskAffinity="ru.nova.messenger.call"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
+
+        <receiver
+            android:name="ru.nova.messenger.CallActionReceiver"
+            android:exported="false" />
+
         <service
             android:name="ru.nova.messenger.NovaMessagingService"
             android:exported="false">

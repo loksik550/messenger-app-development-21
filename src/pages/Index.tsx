@@ -96,6 +96,8 @@ const LAZY_FALLBACK = (
 
 export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const currentUserRef = useRef<User | null>(null);
+  currentUserRef.current = currentUser;
   const [sessionChecked, setSessionChecked] = useState(false);
   const [maintenance, setMaintenance] = useState<{ title: string; text: string } | null>(null);
   // PIN-блокировка: если код установлен — требуем ввод при запуске
@@ -218,7 +220,7 @@ export default function Index() {
   realChatsRef.current = realChats;
   const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeCall, setActiveCall] = useState<{ userId: number; name: string; callId: string; incoming: boolean } | null>(null);
+  const [activeCall, setActiveCall] = useState<{ userId: number; name: string; callId: string; incoming: boolean; autoAccept?: boolean } | null>(null);
   const unreadRef = useRef<Map<number, number> | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archivedCount, setArchivedCount] = useState(0);
@@ -231,6 +233,23 @@ export default function Index() {
   const tryOpenFromPush = useCallback(() => {
     const d = pendingOpenRef.current;
     if (!d) return;
+    if (d.is_call === "1" && d.call_id) {
+      pendingOpenRef.current = null;
+      const uid = currentUserRef.current?.id;
+      if (!uid) return;
+      const callId = d.call_id;
+      const accept = d.call_accept === "1";
+      api("poll_incoming_call", { since: Math.floor(Date.now() / 1000) - 90 }, uid)
+        .then((data) => {
+          if (data.call && data.call.call_id === callId) {
+            setActiveCall(prev => prev && prev.callId === callId
+              ? { ...prev, autoAccept: prev.autoAccept || accept }
+              : { userId: data.call.from_user_id, name: data.call.from_name, callId, incoming: true, autoAccept: accept });
+          }
+        })
+        .catch(() => { /* звонок уже завершён */ });
+      return;
+    }
     const chatId = Number(d.chat_id || 0);
     const groupId = Number(d.group_id || 0);
     if (chatId) {
@@ -586,7 +605,10 @@ export default function Index() {
           setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
         } else {
           // Приложение свёрнуто — уведомляем звонком-уведомлением
-          native.localNotify.show(`📞 ${data.call.from_name}`, "Входящий звонок");
+          // (на Android с Firebase звонок уже показан полноэкранно/уведомлением)
+          if (!(native.isNative && native.push.enabled)) {
+            native.localNotify.show(`📞 ${data.call.from_name}`, "Входящий звонок");
+          }
         }
       }
     }, 3000);
@@ -940,6 +962,7 @@ export default function Index() {
           remoteName={activeCall.name}
           callId={activeCall.callId}
           isIncoming={activeCall.incoming}
+          autoAccept={activeCall.autoAccept}
           onClose={() => setActiveCall(null)}
         />
       )}

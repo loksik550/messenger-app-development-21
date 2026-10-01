@@ -120,6 +120,11 @@ def handler(event: dict, context) -> dict:
                 FROM {SCHEMA}.call_signals cs
                 JOIN {SCHEMA}.users u ON u.id = cs.from_user_id
                 WHERE cs.to_user_id = %s AND cs.type = 'offer' AND cs.created_at > %s
+                  AND NOT EXISTS (
+                      SELECT 1 FROM {SCHEMA}.call_signals e
+                      WHERE e.call_id = cs.call_id
+                        AND e.type IN ('hangup','decline','end','cancel')
+                  )
                 ORDER BY cs.created_at DESC LIMIT 1""",
             (int(user_id), since),
         )

@@ -284,6 +284,7 @@ def handler(event: dict, context) -> dict:
                     native_sent, n_stale = fcm.send_many(ntokens, n_title, n_body, {
                         "chat_id": chat_id, "call_id": call_id,
                         "from_user_id": sender_uid,
+                        "recipient_id": int(recipient_id),
                         "sender_name": sender_name or title,
                         "avatar": avatar,
                         "badge": badge,
