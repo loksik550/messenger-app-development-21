@@ -159,6 +159,25 @@ def handler(event: dict, context) -> dict:
     action = body.get("action") or ""
     ip = ((event.get("requestContext") or {}).get("identity") or {}).get("sourceIp") or ""
 
+    if action == "health":
+        have = bool(os.environ.get("RUSTORE_KEY_ID") and os.environ.get("RUSTORE_PRIVATE_KEY"))
+        if not have:
+            return ok({"configured": False, "auth": False, "message": "Ключи не заданы"})
+        kid = (os.environ.get("RUSTORE_KEY_ID") or "").strip()
+        pk = "".join((os.environ.get("RUSTORE_PRIVATE_KEY") or "").split())
+        diag = {
+            "key_id_len": len(kid),
+            "key_id_digits_only": kid.isdigit(),
+            "key_id_looks_like_private_key": kid.startswith("MII") or len(kid) > 40,
+            "private_key_len": len(pk),
+            "private_key_starts_ok": pk.startswith("MII") or "BEGIN" in pk,
+        }
+        try:
+            rustore_token()
+            return ok({"configured": True, "auth": True, **diag})
+        except RuStoreError as e:
+            return ok({"configured": True, "auth": False, "message": str(e), **diag})
+
     admin = auth_admin(event)
     if not admin:
         return err("Требуется вход", 401)
