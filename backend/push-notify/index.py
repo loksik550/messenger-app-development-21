@@ -84,6 +84,16 @@ def handler(event: dict, context) -> dict:
     action = body.get("action") or params.get("action", "")
     user_id = event.get("headers", {}).get("X-User-Id") or params.get("user_id")
 
+    # ── fcm_status — проверка ключа Firebase ──────────────────────────────────
+    if action == "fcm_status":
+        if not fcm.enabled():
+            return ok({"enabled": False, "reason": "ключ не задан или повреждён", "diag": fcm.diagnose()})
+        try:
+            tok, project = fcm._token()
+            return ok({"enabled": bool(tok), "project_id": project})
+        except Exception as e:
+            return ok({"enabled": False, "reason": str(e)[:200]})
+
     # ── vapid_key — публичный ключ для фронтенда ──────────────────────────────
     if action == "vapid_key":
         return ok({"public_key": _vapid_public()})

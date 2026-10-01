@@ -13,14 +13,49 @@ _cache = {"creds": None, "project": None}
 _lock = threading.Lock()
 
 
-def _service_info():
-    raw = (os.environ.get("FIREBASE_SERVICE_ACCOUNT") or "").strip()
+def _parse(raw: str):
+    raw = (raw or "").strip().lstrip("\ufeff")
     if not raw:
         return None
+    if raw[:1] in ("'", '"') and raw[-1:] == raw[:1]:
+        raw = raw[1:-1].strip()
+    if "{" in raw and "}" in raw:
+        raw = raw[raw.index("{"):raw.rindex("}") + 1]
+    for candidate in (raw, raw.replace("\\n", "\n"), raw.replace("\n", "\\n")):
+        try:
+            data = json.loads(candidate, strict=False)
+            if isinstance(data, str):
+                data = json.loads(data, strict=False)
+            if isinstance(data, dict):
+                pk = data.get("private_key")
+                if isinstance(pk, str) and "\\n" in pk:
+                    data["private_key"] = pk.replace("\\n", "\n")
+                return data
+        except Exception:
+            continue
     try:
-        return json.loads(raw)
+        import base64
+        return _parse(base64.b64decode(raw).decode("utf-8"))
     except Exception:
         return None
+
+
+def _service_info():
+    return _parse(os.environ.get("FIREBASE_SERVICE_ACCOUNT") or "")
+
+
+def diagnose() -> dict:
+    raw = (os.environ.get("FIREBASE_SERVICE_ACCOUNT") or "")
+    s = raw.strip()
+    info = _parse(raw)
+    return {
+        "length": len(s),
+        "starts_with_brace": s.startswith("{"),
+        "ends_with_brace": s.endswith("}"),
+        "parsed": info is not None,
+        "has_keys": sorted(k for k in (info or {}).keys() if k in ("type", "project_id", "private_key", "client_email")),
+        "type": (info or {}).get("type"),
+    }
 
 
 def enabled() -> bool:
