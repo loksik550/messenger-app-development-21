@@ -425,7 +425,7 @@ export function ProfilePanel({ onSettings, currentUser, onUserUpdate, onBack, ch
           ...(onOpenAppearance ? [{ icon: "Palette", label: tr("nav.appearance"), sub: "Темы, обои, шрифт", action: onOpenAppearance }] : []),
         ].map((item, i) => (
           <button
-            key={item.icon}
+            key={`${item.icon}-${item.label}`}
             onClick={item.action}
             className={`w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/8 transition-all animate-fade-in stagger-${Math.min(i + 1, 5)}`}
           >
