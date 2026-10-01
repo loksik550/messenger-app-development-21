@@ -5,6 +5,7 @@ import { APP_VERSION } from "@/lib/version";
 import DevAuth from "@/components/devpanel/DevAuth";
 import DevDashboard, { Loading } from "@/components/devpanel/DevDashboard";
 import DevUsage from "@/components/devpanel/DevUsage";
+import DevRuStore from "@/components/devpanel/DevRuStore";
 import DevUsers from "@/components/devpanel/DevUsers";
 import DevLogs from "@/components/devpanel/DevLogs";
 import DevSupport from "@/components/devpanel/DevSupport";
@@ -33,6 +34,7 @@ type Section =
   | "moderation" | "logs" | "services" | "team" | "settings"
   | "growth"
   | "usage"
+  | "rustore"
   | "autorules";
 
 const NAV: { key: Section; label: string; icon: string; perm: string; hint: string; keywords: string }[] = [
@@ -51,6 +53,7 @@ const NAV: { key: Section; label: string; icon: string; perm: string; hint: stri
   { key: "moderation", label: "Автомодерация", icon: "ShieldCheck", perm: "settings", hint: "Стоп-слова и защита от спама", keywords: "фильтр мат стоп-слова антиспам блокировка" },
   { key: "autorules", label: "Автоправила", icon: "Bot", perm: "dashboard", hint: "Само блокирует спамеров и нарушителей", keywords: "автобан автоматически правила модерация спам жалобы" },
   { key: "logs", label: "Логи и события", icon: "ScrollText", perm: "logs", hint: "Кто из команды что сделал", keywords: "история действия журнал аудит" },
+  { key: "rustore", label: "Публикация в RuStore", icon: "Send", perm: "services", hint: "Отправить новую сборку на проверку в один клик", keywords: "rustore рустор публикация релиз сборка aab модерация обновление" },
   { key: "services", label: "Серверы и доступ", icon: "Server", perm: "services", hint: "Работают ли база, хранилище и звонки", keywords: "статус сервисы база хранилище приглашения" },
   { key: "team", label: "Команда", icon: "UserCog", perm: "team", hint: "Администраторы и их права", keywords: "админы роли доступ сотрудники" },
   { key: "settings", label: "Настройки", icon: "Settings", perm: "dashboard", hint: "Оформление панели, пароль и техработы", keywords: "оформление пароль почта профиль техработы обслуживание" },
@@ -419,6 +422,7 @@ export default function DevPanel() {
           {activeSection === "moderation" && <DevModeration can={can} />}
           {activeSection === "logs" && <DevLogs />}
           {activeSection === "services" && <DevServices />}
+          {activeSection === "rustore" && <DevRuStore />}
           {activeSection === "team" && <DevTeam myId={admin.id} can={can} />}
           {activeSection === "settings" && (
             <DevSettings

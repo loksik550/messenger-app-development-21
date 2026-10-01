@@ -1,0 +1,6 @@
+{
+  "tests": [
+    {"name": "CORS preflight", "method": "OPTIONS", "path": "/", "expectedStatus": 200},
+    {"name": "Без входа — отказ", "method": "POST", "path": "/", "body": {"action": "status"}, "expectedStatus": 401}
+  ]
+}
