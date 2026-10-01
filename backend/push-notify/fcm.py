@@ -99,6 +99,7 @@ def send_one(token: str, title: str, body: str, data: dict, is_call: bool = Fals
                 "notification_priority": "PRIORITY_MAX" if is_call else "PRIORITY_HIGH",
                 "tag": str_data.get("tag", ""),
                 "color": "#8b5cf6",
+                "icon": "ic_stat_nova",
             },
         },
     }

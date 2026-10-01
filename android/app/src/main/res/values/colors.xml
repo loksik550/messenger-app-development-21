@@ -5,4 +5,5 @@
     <color name="colorAccent">#3b82f6</color>
     <color name="colorSplashBg">#0a0814</color>
     <color name="ic_launcher_background">#2B105D</color>
+    <color name="nova_notification">#8B5CF6</color>
 </resources>

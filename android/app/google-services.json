@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "334928798640",
+    "project_id": "nova-2bf04",
+    "storage_bucket": "nova-2bf04.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:334928798640:android:ed53340275ddbda8d82c75",
+        "android_client_info": {
+          "package_name": "ru.nova.messenger"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBHifzM6JIDtoHCVgVI5eFVgMFIB0YT6iU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
