@@ -212,6 +212,13 @@ def handler(event: dict, context) -> dict:
                 return err(f"Версия {busy[0]['name']} уже на проверке ({busy[0]['status_ru']}). "
                            f"Дождитесь решения RuStore, затем отправляйте новую.", 409)
 
+            tag_name = (rel.get("tag") or "").lstrip("v")
+            same = next((v for v in versions if str(v.get("name") or "") == tag_name
+                         and v["status"] not in ("DRAFT", "DELETED_DRAFT")), None)
+            if same and not body.get("force"):
+                return err(f"Версия {tag_name} уже отправлялась в RuStore ({same['status_ru']}). "
+                           f"Соберите новый релиз в GitHub и отправьте его.", 409)
+
             for v in versions:
                 if v["status"] == "DRAFT":
                     rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{v['version_id']}", token)
