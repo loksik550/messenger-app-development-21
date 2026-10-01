@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS t_p67547116_messenger_app_develo.rustore_screens (
+    id SERIAL PRIMARY KEY,
+    url TEXT NOT NULL,
+    s3_key TEXT NOT NULL,
+    orientation VARCHAR(16) NOT NULL DEFAULT 'PORTRAIT',
+    ordinal INTEGER NOT NULL DEFAULT 0,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    mime VARCHAR(32) NOT NULL DEFAULT 'image/png',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

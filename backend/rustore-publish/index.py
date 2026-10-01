@@ -1,18 +1,16 @@
 import os
 import json
 import time
-import base64
-import datetime
 
 import psycopg2
 import requests
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+
+from rustore import PACKAGE, RuStoreError, configured, token, fresh_token, rs, page_items
+import reviews
+import screens
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
-PACKAGE = "ru.nova.messenger"
 REPO = "loksik550/messenger-app-development-21"
-API = "https://public-api.rustore.ru"
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -20,9 +18,14 @@ CORS = {
     "Access-Control-Allow-Headers": "Content-Type, X-Dev-Token",
 }
 
+PUBLISH_ROLES = ("owner", "admin", "developer")
+REVIEW_ROLES = ("owner", "admin", "moderator", "developer")
+
 STATUS_RU = {
     "ACTIVE": "Опубликована",
     "PARTIAL_ACTIVE": "Опубликована для части пользователей",
+    "ALPHA_ACTIVE": "Закрытый тест (альфа)",
+    "BETA_ACTIVE": "Открытый тест (бета)",
     "READY_FOR_PUBLICATION": "Одобрена, ждёт публикации",
     "PREVIOUS_ACTIVE": "Предыдущая версия",
     "ARCHIVED": "В архиве",
@@ -46,8 +49,9 @@ def err(msg, code=400):
 
 
 def auth_admin(event):
-    token = (event.get("headers") or {}).get("X-Dev-Token") or ""
-    if not token:
+    headers = event.get("headers") or {}
+    token_ = headers.get("X-Dev-Token") or headers.get("x-dev-token") or ""
+    if not token_:
         return None
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     conn.autocommit = True
@@ -56,7 +60,7 @@ def auth_admin(event):
         f"SELECT a.id, a.email, a.role FROM {SCHEMA}.dev_sessions s "
         f"JOIN {SCHEMA}.dev_admins a ON a.id = s.admin_id "
         f"WHERE s.token = %s AND s.expires_at > %s AND a.disabled = false",
-        (token, int(time.time())),
+        (token_, int(time.time())),
     )
     row = cur.fetchone()
     conn.close()
@@ -65,7 +69,7 @@ def auth_admin(event):
     return {"id": row[0], "email": row[1], "role": row[2]}
 
 
-def audit(admin, details, ip):
+def audit(admin, action, details, ip):
     try:
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         conn.autocommit = True
@@ -73,56 +77,16 @@ def audit(admin, details, ip):
         cur.execute(
             f"INSERT INTO {SCHEMA}.dev_audit (admin_id, admin_email, action, details, ip_addr) "
             f"VALUES (%s, %s, %s, %s, %s)",
-            (admin["id"], admin["email"], "rustore_publish", details[:500], ip),
+            (admin["id"], admin["email"], action, details[:500], ip),
         )
         conn.close()
     except Exception as e:
         print(f"[audit] {e}")
 
 
-class RuStoreError(Exception):
-    pass
-
-
-def rustore_token() -> str:
-    key_id = (os.environ.get("RUSTORE_KEY_ID") or "").strip()
-    raw = (os.environ.get("RUSTORE_PRIVATE_KEY") or "").strip()
-    if not key_id or not raw:
-        raise RuStoreError("Не заданы ключи RuStore — добавьте RUSTORE_KEY_ID и RUSTORE_PRIVATE_KEY")
-    raw = raw.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
-    raw = "".join(raw.split())
-    try:
-        key = serialization.load_der_private_key(base64.b64decode(raw), password=None)
-    except Exception:
-        raise RuStoreError("Приватный ключ RuStore не читается — скопируйте его заново целиком")
-    ts = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds")
-    sig = key.sign((key_id + ts).encode(), padding.PKCS1v15(), hashes.SHA512())
-    r = requests.post(
-        f"{API}/public/auth/",
-        json={"keyId": key_id, "timestamp": ts, "signature": base64.b64encode(sig).decode()},
-        timeout=15,
-    )
-    data = r.json() if r.content else {}
-    jwe = ((data or {}).get("body") or {}).get("jwe")
-    if not jwe:
-        raise RuStoreError(f"RuStore не принял ключ: {(data or {}).get('message') or r.status_code}")
-    return jwe
-
-
-def rs(method, path, token, **kw):
-    r = requests.request(method, f"{API}{path}", headers={"Public-Token": token}, timeout=kw.pop("timeout", 30), **kw)
-    try:
-        data = r.json()
-    except Exception:
-        data = {"code": "error", "message": r.text[:300]}
-    if r.status_code >= 400 or (data.get("code") not in (None, "OK")):
-        raise RuStoreError(data.get("message") or f"Ошибка RuStore ({r.status_code})")
-    return data
-
-
-def list_versions(token, size=10):
-    d = rs("GET", f"/public/v1/application/{PACKAGE}/version?page=0&size={size}&filterTestingType=ALL", token)
-    items = ((d.get("body") or {}).get("content")) or []
+def list_versions(tok, size=10):
+    d = rs("GET", f"/public/v1/application/{PACKAGE}/version?page=0&size={size}&filterTestingType=ALL", tok)
+    items = page_items(d.get("body"))
     return [{
         "version_id": v.get("versionId"),
         "name": v.get("versionName"),
@@ -150,30 +114,96 @@ def latest_release():
     }
 
 
+def store_screens(tok, versions):
+    active = next((v for v in versions if v["status"] in ("ACTIVE", "PARTIAL_ACTIVE")), None) \
+        or next((v for v in versions if v["status"] in ("ALPHA_ACTIVE", "BETA_ACTIVE")), None)
+    if not active:
+        return []
+    try:
+        return screens.current_in_store(tok, active["version_id"])
+    except RuStoreError as e:
+        print(f"[screens] store: {e}")
+        return []
+
+
+def do_publish(body, admin, ip):
+    if not configured():
+        return err("Сначала добавьте ключи RuStore")
+    rel = latest_release()
+    if not rel.get("aab_url"):
+        return err(f"В релизе {rel.get('tag')} нет файла .aab — дождитесь окончания сборки")
+    tok = token()
+
+    versions = list_versions(tok, 20)
+    busy = [v for v in versions if v["status"] in ("MODERATION", "TAKEN_FOR_MODERATION", "AUTO_CHECK")]
+    if busy and not body.get("force"):
+        return err(f"Версия {busy[0]['name']} уже на проверке ({busy[0]['status_ru']}). "
+                   f"Дождитесь решения RuStore, затем отправляйте новую.", 409)
+
+    tag_name = (rel.get("tag") or "").lstrip("v")
+    same = next((v for v in versions if str(v.get("name") or "") == tag_name
+                 and v["status"] not in ("DRAFT", "DELETED_DRAFT")), None)
+    if same and not body.get("force"):
+        return err(f"Версия {tag_name} уже отправлялась в RuStore ({same['status_ru']}). "
+                   f"Соберите новый релиз в GitHub и отправьте его.", 409)
+
+    saved = screens.list_saved()
+    if 0 < len(saved) < screens.MIN_SCREENS:
+        return err(f"В панели загружено {len(saved)} скриншота, а RuStore нужно минимум {screens.MIN_SCREENS}. "
+                   f"Добавьте ещё или удалите все — тогда останутся прежние.")
+
+    for v in versions:
+        if v["status"] == "DRAFT":
+            rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{v['version_id']}", tok)
+
+    whats_new = (body.get("whats_new") or "").strip()[:5000] or "Исправления и улучшения."
+    draft = rs("POST", f"/public/v1/application/{PACKAGE}/version", tok, json={
+        "whatsNew": whats_new,
+        "publishType": "INSTANTLY" if body.get("auto_publish", True) else "MANUAL",
+    })
+    version_id = draft.get("body")
+    if isinstance(version_id, dict):
+        version_id = version_id.get("versionId")
+    if not version_id:
+        raise RuStoreError("RuStore не создал черновик версии")
+
+    file_resp = requests.get(rel["aab_url"], timeout=25)
+    if file_resp.status_code != 200 or len(file_resp.content) < 100000:
+        raise RuStoreError("Не удалось скачать .aab из GitHub")
+
+    rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
+       files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=60)
+
+    shots = screens.push_to_draft(tok, version_id)
+
+    rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/commit", tok)
+
+    audit(admin, "rustore_publish",
+          f"Отправлена {rel['tag']} в RuStore (версия {version_id}, скриншотов: {shots or 'прежние'})", ip)
+    return ok({"ok": True, "tag": rel["tag"], "version_id": version_id, "screens": shots})
+
+
 def handler(event: dict, context) -> dict:
-    """Отправка последней сборки Nova из GitHub в RuStore на модерацию и просмотр статуса версий."""
+    """RuStore для Nova: отправка сборки на модерацию, рейтинг, отзывы с ответами и скриншоты карточки."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
-    body = json.loads(event.get("body") or "{}")
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except Exception:
+        return err("Неверный формат запроса")
+    if not isinstance(body, dict):
+        return err("Неверный формат запроса")
     action = body.get("action") or ""
     ip = ((event.get("requestContext") or {}).get("identity") or {}).get("sourceIp") or ""
 
     if action == "health":
-        have = bool(os.environ.get("RUSTORE_KEY_ID") and os.environ.get("RUSTORE_PRIVATE_KEY"))
-        if not have:
+        if not configured():
             return ok({"configured": False, "auth": False, "message": "Ключи не заданы"})
         kid = (os.environ.get("RUSTORE_KEY_ID") or "").strip()
-        pk = "".join((os.environ.get("RUSTORE_PRIVATE_KEY") or "").split())
-        diag = {
-            "key_id_len": len(kid),
-            "key_id_digits_only": kid.isdigit(),
-            "key_id_looks_like_private_key": kid.startswith("MII") or len(kid) > 40,
-            "private_key_len": len(pk),
-            "private_key_starts_ok": pk.startswith("MII") or "BEGIN" in pk,
-        }
+        diag = {"key_id_len": len(kid), "key_id_digits_only": kid.isdigit()}
         try:
-            rustore_token()
+            fresh_token()
             return ok({"configured": True, "auth": True, **diag})
         except RuStoreError as e:
             return ok({"configured": True, "auth": False, "message": str(e), **diag})
@@ -181,10 +211,11 @@ def handler(event: dict, context) -> dict:
     admin = auth_admin(event)
     if not admin:
         return err("Требуется вход", 401)
-    if admin["role"] not in ("owner", "admin", "developer"):
-        return err("Недостаточно прав для публикации", 403)
 
-    configured = bool(os.environ.get("RUSTORE_KEY_ID") and os.environ.get("RUSTORE_PRIVATE_KEY"))
+    is_review = action.startswith("reviews") or action.startswith("reply")
+    allowed = REVIEW_ROLES if is_review else PUBLISH_ROLES
+    if admin["role"] not in allowed:
+        return err("Недостаточно прав для этого раздела", 403)
 
     try:
         if action == "status":
@@ -193,59 +224,85 @@ def handler(event: dict, context) -> dict:
                 rel = latest_release()
             except RuStoreError as e:
                 rel = {"error": str(e)}
-            if not configured:
-                return ok({"configured": False, "release": rel, "versions": []})
-            token = rustore_token()
-            return ok({"configured": True, "release": rel, "versions": list_versions(token)})
+            saved = screens.public_list()
+            if not configured():
+                return ok({"configured": False, "release": rel, "versions": [], "rating": None,
+                           "screens": saved, "store_screens": []})
+            tok = token()
+            versions = list_versions(tok)
+            rating = None
+            try:
+                rating = reviews.rating(tok)
+            except RuStoreError as e:
+                rating = {"error": str(e)}
+            return ok({"configured": True, "release": rel, "versions": versions, "rating": rating,
+                       "screens": saved, "store_screens": store_screens(tok, versions)})
 
         if action == "publish":
-            if not configured:
-                return err("Сначала добавьте ключи RuStore")
-            rel = latest_release()
-            if not rel.get("aab_url"):
-                return err(f"В релизе {rel.get('tag')} нет файла .aab — дождитесь окончания сборки")
-            token = rustore_token()
+            return do_publish(body, admin, ip)
 
-            versions = list_versions(token, 20)
-            busy = [v for v in versions if v["status"] in ("MODERATION", "TAKEN_FOR_MODERATION", "AUTO_CHECK")]
-            if busy and not body.get("force"):
-                return err(f"Версия {busy[0]['name']} уже на проверке ({busy[0]['status_ru']}). "
-                           f"Дождитесь решения RuStore, затем отправляйте новую.", 409)
+        if action == "screens_add":
+            new_id = screens.add(body.get("data") or "")
+            audit(admin, "rustore_screens", f"Добавлен скриншот #{new_id}", ip)
+            return ok({"ok": True, "id": new_id, "screens": screens.public_list()})
 
-            tag_name = (rel.get("tag") or "").lstrip("v")
-            same = next((v for v in versions if str(v.get("name") or "") == tag_name
-                         and v["status"] not in ("DRAFT", "DELETED_DRAFT")), None)
-            if same and not body.get("force"):
-                return err(f"Версия {tag_name} уже отправлялась в RuStore ({same['status_ru']}). "
-                           f"Соберите новый релиз в GitHub и отправьте его.", 409)
+        if action == "screens_delete":
+            sid = body.get("id")
+            if sid is None:
+                return err("Не указан скриншот")
+            screens.remove(int(sid))
+            audit(admin, "rustore_screens", f"Удалён скриншот #{sid}", ip)
+            return ok({"ok": True, "screens": screens.public_list()})
 
-            for v in versions:
-                if v["status"] == "DRAFT":
-                    rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{v['version_id']}", token)
+        if action == "screens_reorder":
+            ids = body.get("ids") or []
+            if not isinstance(ids, list):
+                return err("Неверный порядок")
+            screens.reorder(ids)
+            return ok({"ok": True, "screens": screens.public_list()})
 
-            whats_new = (body.get("whats_new") or "").strip()[:5000] or "Исправления и улучшения."
-            draft = rs("POST", f"/public/v1/application/{PACKAGE}/version", token, json={
-                "whatsNew": whats_new,
-                "publishType": "INSTANTLY" if body.get("auto_publish", True) else "MANUAL",
-            })
-            version_id = draft.get("body")
-            if isinstance(version_id, dict):
-                version_id = version_id.get("versionId")
-            if not version_id:
-                raise RuStoreError("RuStore не создал черновик версии")
+        if not configured():
+            return err("Сначала добавьте ключи RuStore")
 
-            file_resp = requests.get(rel["aab_url"], timeout=25)
-            if file_resp.status_code != 200 or len(file_resp.content) < 100000:
-                raise RuStoreError("Не удалось скачать .aab из GitHub")
+        if action == "reviews":
+            tok = token()
+            data = reviews.list_reviews(tok, body.get("page") or 0, body.get("size") or 50)
+            rating = None
+            if not body.get("page"):
+                try:
+                    rating = reviews.rating(tok)
+                except RuStoreError as e:
+                    rating = {"error": str(e)}
+            return ok({**data, "rating": rating})
 
-            rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", token,
-               files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=60)
-            rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/commit", token)
+        if action == "reply":
+            cid = body.get("comment_id")
+            if not cid:
+                return err("Не указан отзыв")
+            new_id = reviews.reply(token(), cid, body.get("text"))
+            audit(admin, "rustore_reply", f"Ответ на отзыв {cid}", ip)
+            return ok({"ok": True, "id": new_id})
 
-            audit(admin, f"Отправлена {rel['tag']} в RuStore (версия {version_id})", ip)
-            return ok({"ok": True, "tag": rel["tag"], "version_id": version_id})
+        if action == "reply_edit":
+            fid = body.get("feedback_id")
+            if not fid:
+                return err("Не указан ответ")
+            new_id = reviews.edit_reply(token(), fid, body.get("text"))
+            audit(admin, "rustore_reply", f"Изменён ответ {fid}", ip)
+            return ok({"ok": True, "id": new_id})
+
+        if action == "reply_delete":
+            fid = body.get("feedback_id")
+            if not fid:
+                return err("Не указан ответ")
+            reviews.delete_reply(token(), fid)
+            audit(admin, "rustore_reply", f"Удалён ответ {fid}", ip)
+            return ok({"ok": True})
 
         return err("Неизвестное действие", 404)
     except RuStoreError as e:
         print(f"[rustore] {action}: {e}")
         return err(str(e), 502)
+    except (ValueError, TypeError) as e:
+        print(f"[rustore] {action} bad input: {e}")
+        return err("Неверные данные запроса")

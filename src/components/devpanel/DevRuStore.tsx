@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { getDevToken } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
+import { rustoreCall, fmtDate, type Rating, type Screen, type StoreScreen } from "./rustoreApi";
+import RuStoreRating from "./RuStoreRating";
+import RuStoreScreens from "./RuStoreScreens";
 
-const RUSTORE_API = "https://functions.poehali.dev/bcebea14-cbd9-4e61-9b8d-00999c5a501a";
 const LS_AUTO_PUBLISH = "nova_rustore_auto_publish";
 const LS_WHATS_NEW = "nova_rustore_whats_new";
 
@@ -21,22 +22,18 @@ interface StatusData {
   configured: boolean;
   release: { tag?: string; published_at?: string; aab_name?: string | null; aab_size?: number; error?: string } | null;
   versions: Version[];
+  rating?: Rating | null;
+  screens?: Screen[];
+  store_screens?: StoreScreen[];
 }
 
-async function call<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-  const res = await fetch(RUSTORE_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Dev-Token": getDevToken() },
-    body: JSON.stringify({ action, ...payload }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error || "Ошибка запроса");
-  return data as T;
-}
+const call = rustoreCall;
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   PARTIAL_ACTIVE: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  ALPHA_ACTIVE: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  BETA_ACTIVE: "bg-violet-500/15 text-violet-300 border-violet-500/30",
   READY_FOR_PUBLICATION: "bg-sky-500/15 text-sky-300 border-sky-500/30",
   MODERATION: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   TAKEN_FOR_MODERATION: "bg-amber-500/15 text-amber-300 border-amber-500/30",
@@ -46,14 +43,7 @@ const STATUS_COLOR: Record<string, string> = {
   AUTO_CHECK_FAILED: "bg-red-500/15 text-red-300 border-red-500/30",
 };
 
-function fmtDate(s?: string | null) {
-  if (!s) return "";
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("ru", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-export default function DevRuStore() {
+export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => void }) {
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -87,8 +77,9 @@ export default function DevRuStore() {
     setSending(true);
     setResult(null);
     try {
-      const r = await call<{ tag: string; version_id: number }>("publish", { whats_new: whatsNew, auto_publish: autoPublish });
-      setResult({ ok: true, text: `Версия ${r.tag} отправлена в RuStore на проверку. Обычно модерация занимает до 3 рабочих дней.` });
+      const r = await call<{ tag: string; version_id: number; screens: number }>("publish", { whats_new: whatsNew, auto_publish: autoPublish });
+      const shots = r.screens ? ` Скриншоты обновлены (${r.screens} шт.).` : "";
+      setResult({ ok: true, text: `Версия ${r.tag} отправлена в RuStore на проверку.${shots} Обычно модерация занимает до 3 рабочих дней.` });
       setWhatsNew("");
       load();
     } catch (e) {
@@ -103,7 +94,9 @@ export default function DevRuStore() {
   if (!data) return null;
 
   const rel = data.release;
-  const already = data.versions.some((v) => v.name && rel?.tag && `v${v.name}` === rel.tag && v.status !== "DELETED_DRAFT" && v.status !== "DRAFT");
+  const screens = data.screens || [];
+  const screensBad = screens.length > 0 && screens.length < 3;
+  const already = data.versions.some((v) => v.name && rel?.tag && String(v.name) === rel.tag.replace(/^v/, "") && v.status !== "DELETED_DRAFT" && v.status !== "DRAFT");
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -113,6 +106,8 @@ export default function DevRuStore() {
           <div>Ключи RuStore ещё не добавлены. Добавьте ID ключа и приватный ключ в настройках проекта — после этого кнопка заработает.</div>
         </div>
       )}
+
+      <RuStoreRating rating={data.rating} onOpenReviews={onOpenReviews} />
 
       <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-5">
         <div className="flex items-start gap-4 mb-4">
@@ -153,12 +148,16 @@ export default function DevRuStore() {
           Опубликовать сразу после одобрения модератором
         </label>
 
+        {screensBad && (
+          <div className="mt-3 text-xs text-amber-300">Загружено {screens.length} скриншота из минимум 3 — добавьте ещё ниже или удалите все.</div>
+        )}
+
         {already && (
           <div className="mt-3 text-xs text-amber-300">Похоже, {rel?.tag} уже отправлялась в RuStore. Соберите новый релиз в GitHub перед отправкой.</div>
         )}
 
         <button
-          disabled={!data.configured || sending || !rel?.aab_name}
+          disabled={!data.configured || sending || !rel?.aab_name || screensBad}
           onClick={() => setConfirm(true)}
           className="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -176,6 +175,12 @@ export default function DevRuStore() {
           </div>
         )}
       </div>
+
+      <RuStoreScreens
+        screens={screens}
+        storeScreens={data.store_screens || []}
+        onChange={(next) => setData((d) => (d ? { ...d, screens: next } : d))}
+      />
 
       {data.versions.length > 0 && (
         <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-5">
