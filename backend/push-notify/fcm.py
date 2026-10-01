@@ -84,23 +84,16 @@ def send_one(token: str, title: str, body: str, data: dict, is_call: bool = Fals
     str_data = {k: str(v) for k, v in (data or {}).items() if v is not None}
     str_data.setdefault("title", title)
     str_data.setdefault("body", body)
+    str_data["is_call"] = "1" if is_call else ""
+    if str_data.get("cancel") == "1":
+        str_data.pop("title", None)
+        str_data.pop("body", None)
     message = {
         "token": token,
-        "notification": {"title": title, "body": body},
         "data": str_data,
         "android": {
             "priority": "HIGH",
             "ttl": "30s" if is_call else "86400s",
-            "notification": {
-                "channel_id": "calls" if is_call else "messages",
-                "sound": "default",
-                "default_vibrate_timings": True,
-                "visibility": "PUBLIC",
-                "notification_priority": "PRIORITY_MAX" if is_call else "PRIORITY_HIGH",
-                "tag": str_data.get("tag", ""),
-                "color": "#8b5cf6",
-                "icon": "ic_stat_nova",
-            },
         },
     }
     req = urllib.request.Request(
@@ -127,14 +120,17 @@ def send_one(token: str, title: str, body: str, data: dict, is_call: bool = Fals
         return "error"
 
 
-def send_many(tokens, title, body, data, is_call=False):
-    """Параллельная отправка. Возвращает (sent, stale_tokens)."""
+def send_many(tokens, title, body, data, is_call=False, per_token_data=None):
+    """Параллельная отправка. per_token_data: {token: {...}} — доп. поля для конкретного токена."""
     if not tokens or not enabled():
         return 0, []
     results = {}
 
     def _one(t):
-        results[t] = send_one(t, title, body, data, is_call)
+        d = dict(data or {})
+        if per_token_data and t in per_token_data:
+            d.update(per_token_data[t])
+        results[t] = send_one(t, title, body, d, is_call)
 
     threads = [threading.Thread(target=_one, args=(t,), daemon=True) for t in tokens]
     for th in threads:

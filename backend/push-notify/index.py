@@ -59,6 +59,68 @@ def _native_tokens(cur, user_ids):
     return [r[0] for r in cur.fetchall()]
 
 
+def _tokens_by_user(cur, user_ids):
+    if not user_ids:
+        return {}
+    cur.execute(
+        f"SELECT user_id, token FROM {SCHEMA}.native_push_tokens WHERE user_id = ANY(%s)",
+        (list({int(u) for u in user_ids}),)
+    )
+    out = {}
+    for uid, tok in cur.fetchall():
+        out.setdefault(int(uid), []).append(tok)
+    return out
+
+
+def _unread_totals(cur, user_ids):
+    """Сколько всего непрочитанных у каждого пользователя (личные + группы), без заглушённых."""
+    ids = list({int(u) for u in user_ids})
+    if not ids:
+        return {}
+    totals = {u: 0 for u in ids}
+    try:
+        cur.execute(
+            f"""SELECT x.uid, COUNT(*)::int
+                FROM (
+                    SELECT c.id AS chat_id, c.user1_id AS uid FROM {SCHEMA}.chats c WHERE c.user1_id = ANY(%s)
+                    UNION ALL
+                    SELECT c.id AS chat_id, c.user2_id AS uid FROM {SCHEMA}.chats c WHERE c.user2_id = ANY(%s)
+                ) x
+                JOIN {SCHEMA}.messages m ON m.chat_id = x.chat_id
+                LEFT JOIN {SCHEMA}.chat_settings cs ON cs.chat_id = x.chat_id AND cs.user_id = x.uid
+                WHERE m.sender_id <> x.uid AND m.read_at IS NULL AND m.removed_at IS NULL
+                  AND m.created_at > COALESCE(cs.cleared_at, 0)
+                  AND COALESCE(cs.muted, FALSE) = FALSE
+                GROUP BY x.uid""",
+            (ids, ids)
+        )
+        for uid, n in cur.fetchall():
+            totals[int(uid)] = totals.get(int(uid), 0) + int(n or 0)
+    except Exception as e:
+        print(f"[badge] chats: {e}")
+    try:
+        now_ts = int(time.time())
+        cur.execute(
+            f"""SELECT gm.user_id, COUNT(*)::int
+                FROM {SCHEMA}.group_members gm
+                JOIN {SCHEMA}.group_messages m ON m.group_id = gm.group_id
+                LEFT JOIN {SCHEMA}.group_mute gmu ON gmu.user_id = gm.user_id AND gmu.group_id = gm.group_id
+                WHERE gm.user_id = ANY(%s) AND gm.role <> 'removed'
+                  AND m.removed_at IS NULL AND m.sender_id <> gm.user_id
+                  AND m.created_at > COALESCE(gm.cleared_at, 0)
+                  AND (gmu.user_id IS NULL OR (gmu.muted_until <> 0 AND gmu.muted_until <= %s))
+                  AND NOT EXISTS (SELECT 1 FROM {SCHEMA}.group_message_views v
+                                  WHERE v.message_id = m.id AND v.user_id = gm.user_id)
+                GROUP BY gm.user_id""",
+            (ids, now_ts)
+        )
+        for uid, n in cur.fetchall():
+            totals[int(uid)] = totals.get(int(uid), 0) + int(n or 0)
+    except Exception as e:
+        print(f"[badge] groups: {e}")
+    return totals
+
+
 def _drop_native(cur, tokens):
     if tokens:
         try:
@@ -125,6 +187,16 @@ def handler(event: dict, context) -> dict:
         token = (body.get("token") or "").strip()
         if token:
             cur.execute(f"DELETE FROM {SCHEMA}.native_push_tokens WHERE token = %s", (token,))
+        conn.close()
+        return ok({"ok": True})
+
+    # ── cancel_call — снять уведомление о входящем звонке ─────────────────────
+    if action == "cancel_call":
+        recipient_id = body.get("recipient_id")
+        call_id = body.get("call_id")
+        if recipient_id and call_id and fcm.enabled():
+            ntokens = _native_tokens(cur, [recipient_id])
+            fcm.send_many(ntokens, "", "", {"cancel": "1", "tag": f"call_{call_id}"})
         conn.close()
         return ok({"ok": True})
 
@@ -199,13 +271,26 @@ def handler(event: dict, context) -> dict:
                 allowed = cur.fetchone() is not None
             if allowed:
                 ntokens = _native_tokens(cur, [recipient_id])
-                n_title = f"📞 {sender_name}" if is_call else (sender_name or title)
-                n_body = "Входящий звонок" if is_call else message
-                native_sent, n_stale = fcm.send_many(ntokens, n_title, n_body, {
-                    "chat_id": chat_id, "call_id": call_id, "is_call": "1" if is_call else "",
-                    "from_user_id": body.get("from_user_id"),
-                    "tag": f"call_{call_id}" if is_call else (body.get("tag") or f"msg_{chat_id}"),
-                }, is_call=bool(is_call))
+                if ntokens:
+                    n_title = f"📞 {sender_name}" if is_call else (sender_name or title)
+                    n_body = "Входящий звонок" if is_call else message
+                    avatar = body.get("avatar_url") or ""
+                    sender_uid = body.get("from_user_id") or body.get("sender_id")
+                    if not avatar and sender_uid:
+                        cur.execute(f"SELECT avatar_url FROM {SCHEMA}.users WHERE id = %s", (int(sender_uid),))
+                        ar = cur.fetchone()
+                        avatar = (ar[0] if ar else "") or ""
+                    badge = _unread_totals(cur, [recipient_id]).get(int(recipient_id), 0)
+                    native_sent, n_stale = fcm.send_many(ntokens, n_title, n_body, {
+                        "chat_id": chat_id, "call_id": call_id,
+                        "from_user_id": sender_uid,
+                        "sender_name": sender_name or title,
+                        "avatar": avatar,
+                        "badge": badge,
+                        "tag": f"call_{call_id}" if is_call else (body.get("tag") or f"msg_{chat_id}"),
+                    }, is_call=bool(is_call))
+                else:
+                    n_stale = []
                 _drop_native(cur, n_stale)
 
         if not subs:
@@ -319,9 +404,26 @@ def handler(event: dict, context) -> dict:
                 (int(group_id), int(sender_id) if sender_id else 0, now_ts)
             )
             gtokens = [r[0] for r in cur.fetchall()]
-            native_sent, g_stale = fcm.send_many(gtokens, f"{icon} {group_name}", message, {
-                "group_id": group_id, "message_id": message_id, "tag": f"group_{group_id}",
-            })
+            g_stale = []
+            if gtokens:
+                cur.execute(
+                    f"SELECT g.avatar_url, u.name FROM {SCHEMA}.groups g LEFT JOIN {SCHEMA}.users u ON u.id = %s WHERE g.id = %s",
+                    (int(sender_id) if sender_id else 0, int(group_id))
+                )
+                gr = cur.fetchone()
+                g_avatar = (gr[0] if gr else "") or ""
+                g_sender = (gr[1] if gr else "") or ""
+                cur.execute(
+                    f"SELECT user_id, token FROM {SCHEMA}.native_push_tokens WHERE token = ANY(%s)", (gtokens,)
+                )
+                tok_user = {t: int(u) for u, t in cur.fetchall()}
+                totals = _unread_totals(cur, list(set(tok_user.values())))
+                per_token = {t: {"badge": totals.get(u, 0)} for t, u in tok_user.items()}
+                g_body = f"{g_sender}: {message}" if (g_sender and not is_channel) else message
+                native_sent, g_stale = fcm.send_many(gtokens, f"{icon} {group_name}", g_body, {
+                    "group_id": group_id, "message_id": message_id, "tag": f"group_{group_id}",
+                    "sender_name": group_name, "avatar": g_avatar,
+                }, per_token_data=per_token)
             _drop_native(cur, g_stale)
         conn.close()
 

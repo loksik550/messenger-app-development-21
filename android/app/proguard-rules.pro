@@ -73,3 +73,10 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
+
+# Nova: уведомления и счётчик на иконке
+-keep class ru.nova.messenger.** { *; }
+-keep class me.leolin.shortcutbadger.** { *; }
+-keep class io.capawesome.capacitorjs.plugins.badge.** { *; }
+-keep class com.capacitorjs.plugins.pushnotifications.** { *; }
+-dontwarn me.leolin.shortcutbadger.**

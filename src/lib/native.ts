@@ -22,6 +22,7 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 import { App } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { LocalNotifications } from "@capacitor/local-notifications";
+import { Badge } from "@capawesome/capacitor-badge";
 
 const isNative = Capacitor.isNativePlatform();
 const platform = Capacitor.getPlatform(); // "android" | "ios" | "web"
@@ -313,6 +314,24 @@ const localNotify = {
   },
 };
 
+// ── Счётчик на иконке приложения ────────────────────────────────────────────
+let lastBadge = -1;
+const badge = {
+  async set(count: number) {
+    const n = Math.max(0, Math.floor(count || 0));
+    if (n === lastBadge) return;
+    lastBadge = n;
+    try {
+      if (isNative) {
+        if (n > 0) await Badge.set({ count: n }); else await Badge.clear();
+        return;
+      }
+      const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+      if (n > 0) await nav.setAppBadge?.(n); else await nav.clearAppBadge?.();
+    } catch { /* ignore */ }
+  },
+};
+
 // ── App lifecycle ───────────────────────────────────────────────────────────
 const app = {
   async exit() { if (isNative) try { await App.exitApp(); } catch { /* ignore */ } },
@@ -359,6 +378,7 @@ export const native = {
   statusBar,
   push,
   localNotify,
+  badge,
   app,
 };
 

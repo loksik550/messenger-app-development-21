@@ -1996,6 +1996,7 @@ def handler(event: dict, context) -> dict:
                     "sender_name": sender_name,
                     "message": _preview,
                     "chat_id": int(chat_id),
+                    "from_user_id": int(user_id),
                 }).encode("utf-8")
                 _fire_and_forget_http(push_url, push_body, timeout=5.0)
 
@@ -2742,6 +2743,8 @@ def handler(event: dict, context) -> dict:
             already = cur.fetchone()
             missed_recipient_id = None
             missed_caller_name = None
+            miss_chat_id = 0
+            caller_id = 0
             if not answered and not already:
                 # Определяем from/to и chat
                 cur.execute(
@@ -2780,6 +2783,13 @@ def handler(event: dict, context) -> dict:
                     missed_caller_name = cn[0] if cn else "Кто-то"
                     missed_recipient_id = int(callee_id)
             conn.close()
+            _push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+            if _push_url:
+                _fire_and_forget_http(_push_url, json.dumps({
+                    "action": "cancel_call",
+                    "recipient_id": int(to_user_id),
+                    "call_id": call_id,
+                }).encode("utf-8"))
             # Push «Пропущенный звонок» — если получатель не отвечал и звонящий повесил трубку
             if missed_recipient_id and missed_caller_name:
                 push_url = os.environ.get("PUSH_NOTIFY_URL", "")
@@ -2791,6 +2801,8 @@ def handler(event: dict, context) -> dict:
                             "sender_name": missed_caller_name,
                             "message": f"📵 Пропущенный звонок от {missed_caller_name}",
                             "tag": f"missed_{call_id}",
+                            "chat_id": int(miss_chat_id),
+                            "from_user_id": int(caller_id),
                         }).encode("utf-8")
                         req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
                         urllib.request.urlopen(req, timeout=5)

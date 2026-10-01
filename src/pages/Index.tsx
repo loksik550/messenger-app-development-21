@@ -225,6 +225,37 @@ export default function Index() {
   const [chatFolder, setChatFolder] = useChatFolder();
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const groupsRef = useRef<Group[]>([]);
+  groupsRef.current = groups;
+  const pendingOpenRef = useRef<Record<string, string> | null>(null);
+  const tryOpenFromPush = useCallback(() => {
+    const d = pendingOpenRef.current;
+    if (!d) return;
+    const chatId = Number(d.chat_id || 0);
+    const groupId = Number(d.group_id || 0);
+    if (chatId) {
+      const c = realChatsRef.current.find(x => x.id === chatId);
+      if (!c) return;
+      pendingOpenRef.current = null;
+      setSelectedGroup(null); setSelectedChat(c); setView("chats"); setShowSidebar(false);
+    } else if (groupId) {
+      const g = groupsRef.current.find(x => x.id === groupId);
+      if (!g) return;
+      pendingOpenRef.current = null;
+      setSelectedChat(null); setSelectedGroup(g); setView("chats"); setShowSidebar(false);
+    } else {
+      pendingOpenRef.current = null;
+    }
+  }, []);
+  useEffect(() => { tryOpenFromPush(); }, [realChats, groups, tryOpenFromPush]);
+  const badgeLoadedRef = useRef(false);
+  useEffect(() => {
+    if (realChats.length || groups.length) badgeLoadedRef.current = true;
+    if (!badgeLoadedRef.current) return;
+    const total = realChats.reduce((s, c) => s + (c.muted ? 0 : (c.unread || 0)), 0)
+      + groups.reduce((s, g) => s + (g.unread_count || 0), 0);
+    native.badge.set(total);
+  }, [realChats, groups]);
 
   const overlays = useOverlays();
   const { t: tr } = useT();
@@ -267,15 +298,18 @@ export default function Index() {
         }).catch(() => { /* повторим при следующем запуске */ });
       },
       () => { /* приложение открыто — сообщение и так появится в чате */ },
-      (data) => {
-        const chatId = Number(data.chat_id || 0);
-        if (chatId) {
-          const c = realChatsRef.current.find(x => x.id === chatId);
-          if (c) { setSelectedChat(c); setView("chats"); setShowSidebar(false); }
-        }
-      }
+      (data) => { pendingOpenRef.current = data; tryOpenFromPush(); }
     );
-  }, [currentUser]);
+    const readTap = async () => {
+      const raw = await native.storage.get("nova_push_open");
+      if (!raw) return;
+      await native.storage.remove("nova_push_open");
+      try { pendingOpenRef.current = JSON.parse(raw); tryOpenFromPush(); } catch { /* ignore */ }
+    };
+    readTap();
+    return native.app.onResume(readTap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -731,7 +765,8 @@ export default function Index() {
 
   const handleBack = () => {
     setShowSidebar(true);
-    setTimeout(() => setSelectedChat(null), 300);
+    const closingId = selectedChat?.id;
+    setTimeout(() => setSelectedChat(prev => (prev && prev.id === closingId ? null : prev)), 300);
   };
 
   return (
