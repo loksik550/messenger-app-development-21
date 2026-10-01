@@ -77,7 +77,7 @@ def _token():
 
 
 def send_one(token: str, title: str, body: str, data: dict, is_call: bool = False) -> str:
-    """Возвращает ok, stale (токен мёртв) или error."""
+    """Возвращает ok, stale (токен недействителен) или error."""
     access, project = _token()
     if not access or not project:
         return "error"
