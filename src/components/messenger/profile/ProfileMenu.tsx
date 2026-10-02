@@ -158,7 +158,7 @@ export function ProfileMenu({
         ...(onOpenProgress ? [{ icon: "Trophy", label: tr("nav.progress"), sub: `${currentUser.level ? `Уровень ${currentUser.level} · ${currentUser.xp || 0} XP` : "Уровни, бейджи, топ"}`, action: onOpenProgress }] : []),
         ...(onOpenCalls ? [{ icon: "Phone", label: "Звонки", sub: "Входящие, исходящие, пропущенные", action: onOpenCalls }] : []),
         ...(onOpenFavorites ? [{ icon: "Bookmark", label: "Избранное", sub: "Заметки, фото, видео и файлы для себя", action: onOpenFavorites }] : []),
-        ...(onOpenSavedNotes ? [{ icon: "Bookmark", label: tr("nav.saved"), sub: "Заметки, сохранёнки, идеи", action: onOpenSavedNotes }] : []),
+        ...(onOpenSavedNotes ? [{ icon: "NotebookPen", label: "Заметки", sub: "Заметки, сохранёнки, идеи", action: onOpenSavedNotes }] : []),
         ...(onOpenPayments ? [{ icon: "ReceiptText", label: "Счета и платежи", sub: "Выставляй и оплачивай", action: onOpenPayments }] : []),
         ...(onOpenPromo ? [{ icon: "Gift", label: "Промокоды и бонусы", sub: "Premium бесплатно и приглашения", action: onOpenPromo }] : []),
         ...(onOpenNotifications ? [{ icon: "Bell", label: tr("nav.notifications"), sub: "Звуки, вибрация, тихие часы", action: onOpenNotifications }] : []),
