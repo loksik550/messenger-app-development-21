@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import { api, avatarGrad, getCallAvatar, getIceServers, type User } from "@/lib/api";
+import { api, getCallAvatar, getIceServers, type User } from "@/lib/api";
+import { CallInfo, CallControls, type CallState } from "@/components/messenger/CallScreenParts";
 import { startRingtone, stopRingtone, startDialTone, stopDialTone, playHangupSound, unlockAudioContext } from "@/lib/sounds";
 
-type CallState = "calling" | "ringing" | "connected" | "ended";
 
 interface CallScreenProps {
   currentUser: User;
@@ -423,6 +423,23 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
   }, [autoAccept]);
 
   const hangup = () => endCall("hangup");
+
+  const toggleMute = () => setMuted(m => {
+    localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = m; });
+    return !m;
+  });
+
+  const toggleSpeaker = () => setSpeaker(s => {
+    const next = !s;
+    if (remoteAudioRef.current) remoteAudioRef.current.muted = isVideo ? true : !next;
+    if (remoteVideoRef.current) remoteVideoRef.current.muted = !next;
+    return next;
+  });
+
+  const toggleVideo = () => setVideoOff(v => {
+    localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = v; });
+    return !v;
+  });
   const reject = () => endCall("decline");
 
   const fmtDuration = (s: number) =>
@@ -472,98 +489,30 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         </>
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 relative z-10">
-        {(!isVideo || state !== "connected") && (
-          <div className="relative">
-            {state === "ringing" && (
-              <>
-                <span className="absolute inset-0 rounded-full bg-emerald-400/30 animate-ping" />
-                <span className="absolute -inset-3 rounded-full border-2 border-emerald-400/40 animate-pulse" />
-              </>
-            )}
-            {callAvatar ? (
-              <img src={callAvatar} alt={remoteName} className="relative w-32 h-32 rounded-full object-cover animate-pulse-glow border-2 border-white/20" />
-            ) : (
-              <div className={`relative w-32 h-32 rounded-full flex items-center justify-center text-6xl font-bold text-white animate-pulse-glow bg-gradient-to-br ${avatarGrad(remoteUserId)}`}>
-                {remoteName[0]?.toUpperCase()}
-              </div>
-            )}
-          </div>
-        )}
-        <h2 className="text-2xl font-bold text-white drop-shadow">{remoteName}</h2>
-        <p className={`font-medium ${state === "connected" && netPoor ? "text-amber-400 text-sm" : state === "connected" ? "text-emerald-400 text-sm" : state === "ringing" ? "text-emerald-400 text-base animate-pulse" : "text-muted-foreground text-sm"}`}>
-          {stateLabel}
-        </p>
-        {isVideo && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs text-white/70"><Icon name="Video" size={12} />Видеозвонок</div>}
-
-
-        {state === "connected" && !isVideo && (
-          <div className="flex items-end gap-1 h-10 mt-2">
-            {Array.from({ length: 20 }).map((_, i) => (
-              <div key={i} className="w-1.5 bg-violet-500/60 rounded-full animate-pulse" style={{ height: `${8 + Math.random() * 24}px`, animationDelay: `${i * 0.07}s` }} />
-            ))}
-          </div>
-        )}
-      </div>
+      <CallInfo
+        state={state}
+        isVideo={isVideo}
+        netPoor={netPoor}
+        remoteUserId={remoteUserId}
+        remoteName={remoteName}
+        callAvatar={callAvatar}
+        stateLabel={stateLabel}
+      />
 
       <div className="w-full relative z-20 flex-shrink-0">
-        {state === "ringing" ? (
-          <div className="flex items-center justify-center gap-16">
-            <div className="flex flex-col items-center gap-2.5">
-              <button onClick={reject} className="w-[72px] h-[72px] bg-red-500 rounded-full flex items-center justify-center shadow-xl shadow-red-500/40 hover:bg-red-600 active:scale-95 transition-all">
-                <Icon name="PhoneOff" size={30} className="text-white" />
-              </button>
-              <span className="text-sm font-medium text-white/80">Отклонить</span>
-            </div>
-            <div className="flex flex-col items-center gap-2.5">
-              <button onClick={acceptCall} className="w-[72px] h-[72px] bg-emerald-500 rounded-full flex items-center justify-center shadow-xl shadow-emerald-500/40 hover:bg-emerald-600 active:scale-95 transition-all animate-call-shake">
-                <Icon name="Phone" size={30} className="text-white" />
-              </button>
-              <span className="text-sm font-medium text-white/80">Принять</span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-6">
-            <div className="flex flex-col items-center gap-2">
-              <button
-                onClick={() => { setMuted(m => { localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = m; }); return !m; }); }}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${muted ? "bg-red-500/20 text-red-400" : "glass text-foreground"}`}
-              >
-                <Icon name={muted ? "MicOff" : "Mic"} size={22} />
-              </button>
-              <span className="text-xs text-muted-foreground">{muted ? "Включить" : "Выкл. микро"}</span>
-            </div>
-
-            <div className="flex flex-col items-center gap-2">
-              <button onClick={hangup} className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors">
-                <Icon name="PhoneOff" size={26} className="text-white" />
-              </button>
-              <span className="text-xs text-muted-foreground">Завершить</span>
-            </div>
-
-            <div className="flex flex-col items-center gap-2">
-              <button
-                onClick={() => { setSpeaker(s => { const next = !s; if (remoteAudioRef.current) remoteAudioRef.current.muted = isVideo ? true : !next; if (remoteVideoRef.current) remoteVideoRef.current.muted = !next; return next; }); }}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${speaker ? "grad-primary text-white" : "glass text-muted-foreground"}`}
-              >
-                <Icon name={speaker ? "Volume2" : "VolumeX"} size={22} />
-              </button>
-              <span className="text-xs text-muted-foreground">{speaker ? "Звук вкл." : "Звук выкл."}</span>
-            </div>
-
-            {isVideo && (
-              <div className="flex flex-col items-center gap-2">
-                <button
-                  onClick={() => { setVideoOff(v => { localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = v; }); return !v; }); }}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${videoOff ? "bg-red-500/20 text-red-400" : "glass text-foreground"}`}
-                >
-                  <Icon name={videoOff ? "VideoOff" : "Video"} size={22} />
-                </button>
-                <span className="text-xs text-muted-foreground">Камера</span>
-              </div>
-            )}
-          </div>
-        )}
+        <CallControls
+          state={state}
+          isVideo={isVideo}
+          muted={muted}
+          speaker={speaker}
+          videoOff={videoOff}
+          onAccept={acceptCall}
+          onReject={reject}
+          onHangup={hangup}
+          onToggleMute={toggleMute}
+          onToggleSpeaker={toggleSpeaker}
+          onToggleVideo={toggleVideo}
+        />
       </div>
     </div>
   );
