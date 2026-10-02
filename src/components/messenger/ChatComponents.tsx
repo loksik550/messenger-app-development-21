@@ -1,10 +1,9 @@
 import Icon from "@/components/ui/icon";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { api, type Chat, type Message, type User } from "@/lib/api";
 import { ChatHeader, ContextMenu, ChatInput } from "@/components/messenger/ChatWindowParts";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import StickerPicker from "@/components/messenger/StickerPicker";
-import { type ScheduledItem } from "@/components/messenger/ScheduledList";
 import PartnerProfilePanel from "@/components/messenger/PartnerProfilePanel";
 import MessageList from "@/components/messenger/MessageList";
 import {
@@ -12,6 +11,8 @@ import {
   TYPING_THROTTLE_MS,
 } from "@/components/messenger/chatConstants";
 import { useChatMessages } from "@/components/messenger/useChatMessages";
+import { useChatSettings } from "@/components/messenger/useChatSettings";
+import { useChatActions, type ConfirmState } from "@/components/messenger/useChatActions";
 import { enqueue, retry as retryOutbox, removeFromOutbox } from "@/lib/outbox";
 import { track } from "@/lib/track";
 import { useDraft } from "@/lib/drafts";
@@ -49,42 +50,31 @@ export function ChatWindow({
   const [showProfile, setShowProfile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const [confirm, setConfirm] = useState<null | { title: string; text: string; danger?: boolean; action: () => void | Promise<void>; }>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   useDraft(`c${chat.id}`, input, setInput, !!editing);
   const [forwardMsgId, setForwardMsgId] = useState<number | null>(null);
-  const [pinnedMsg, setPinnedMsg] = useState<{ id: number; sender_name: string; text: string; media_type?: string } | null>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [newCount, setNewCount] = useState(0);
   const [favToast, setFavToast] = useState("");
   const messagesScrollRef = useRef<HTMLDivElement>(null);
-  // Подсказка о незнакомце: показываем если собеседник не в контактах
-  const [isUnknown, setIsUnknown] = useState(false);
-  const [unknownDismissed, setUnknownDismissed] = useState(false);
   const [, setShowReactionPicker] = useState<number | null>(null);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [showDisappearing, setShowDisappearing] = useState(false);
-  const [disappearingSec, setDisappearingSec] = useState<number | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api("chat_get_settings", { chat_id: chat.id }, currentUser.id).then(r => {
-      if (!alive) return;
-      if (r && !r.error) setDisappearingSec(r.disappearing_seconds ?? null);
-    });
-    return () => { alive = false; };
-  }, [chat.id, currentUser.id]);
+  const {
+    pinnedMsg, setPinnedMsg,
+    isUnknown, setIsUnknown, unknownDismissed, setUnknownDismissed, addToContacts,
+    disappearingSec, setDisappearingSec,
+    scheduled, reloadScheduled,
+    wallpaper, setWallpaper,
+  } = useChatSettings(chat, currentUser, setLastSince);
   const [showVideoCircle, setShowVideoCircle] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showScheduledList, setShowScheduledList] = useState(false);
-  const [scheduled, setScheduled] = useState<ScheduledItem[]>([]);
-  // Глобальные обои из настроек оформления (применяются ко всем чатам по умолчанию)
-  const globalWp = currentUser.chat_wallpaper && currentUser.chat_wallpaper !== "default"
-    ? currentUser.chat_wallpaper : null;
-  const [wallpaper, setWallpaper] = useState<string | null>(globalWp);
   const [showWallpaper, setShowWallpaper] = useState(false);
 
   const {
@@ -93,34 +83,6 @@ export function ChatWindow({
     sendFile, startRecording, stopRecording, cancelRecording,
   } = useChatMedia({ chat, currentUser, setMessages, setLastSince, setShowAttach });
 
-  useEffect(() => {
-    const ls = localStorage.getItem(`nova_wp_${chat.id}`);
-    if (ls) setWallpaper(ls);
-    api("get_wallpaper", { chat_id: chat.id }, currentUser.id).then(r => {
-      if (r && !r.error) {
-        // Персональные обои чата приоритетнее; иначе — глобальные
-        setWallpaper(r.wallpaper || globalWp);
-        if (r.wallpaper) localStorage.setItem(`nova_wp_${chat.id}`, r.wallpaper);
-        else localStorage.removeItem(`nova_wp_${chat.id}`);
-      }
-    });
-  }, [chat.id, currentUser.id, globalWp]);
-  // Незнакомец: проверяем что собеседник не в контактах
-  useEffect(() => {
-    if (!chat.partner_id || chat.saved) { setIsUnknown(false); return; }
-    setUnknownDismissed(false);
-    api("get_contacts", {}, currentUser.id).then(r => {
-      if (r?.contacts) {
-        const known = (r.contacts as Array<{ id: number }>).some(c => c.id === chat.partner_id);
-        setIsUnknown(!known);
-      }
-    });
-  }, [chat.id, chat.partner_id, currentUser.id]);
-  const addToContacts = async () => {
-    if (!chat.partner_id) return;
-    await api("add_contact", { contact_id: chat.partner_id, name_override: chat.name }, currentUser.id);
-    setIsUnknown(false);
-  };
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ msgId: number; out: boolean } | null>(null);
   const [heartBurst, setHeartBurst] = useState<number | null>(null);
@@ -139,25 +101,6 @@ export function ChatWindow({
       }
     };
   }, []);
-
-  // Загрузка запланированных + автозапуск отправки доспевших
-  const reloadScheduled = useCallback(async () => {
-    const r = await api("scheduled_list", { chat_id: chat.id }, currentUser.id);
-    if (r && Array.isArray(r.items)) setScheduled(r.items);
-  }, [chat.id, currentUser.id]);
-
-  useEffect(() => {
-    reloadScheduled();
-    const t = setInterval(async () => {
-      if (document.visibilityState !== "visible") return;
-      const r = await api("scheduled_run_due", {}, currentUser.id);
-      if (r && r.sent && r.sent > 0) {
-        setLastSince(0);
-      }
-      reloadScheduled();
-    }, 60000);
-    return () => clearInterval(t);
-  }, [reloadScheduled, currentUser.id]);
 
   useEffect(() => {
     const container = messagesScrollRef.current;
@@ -275,31 +218,10 @@ export function ChatWindow({
     }));
   };
 
-  const setChatField = async (field: "muted" | "pinned" | "favorite", value: boolean) => {
-    onChatUpdated?.({ ...chat, [field]: value });
-    try {
-      await api("set_chat_setting", { chat_id: chat.id, field, value }, currentUser.id);
-    } catch {
-      onChatUpdated?.({ ...chat, [field]: !value });
-    }
-  };
-
-  const handleToggleMute = () => setChatField("muted", !chat.muted);
-  const handleTogglePin = () => setChatField("pinned", !chat.pinned);
-  const handleToggleFavorite = () => setChatField("favorite", !chat.favorite);
-
-  const handleClearHistory = () => {
-    setConfirm({
-      title: "Очистить историю?",
-      text: "Все сообщения в этом чате будут скрыты у вас. Собеседник продолжит видеть их у себя.",
-      danger: true,
-      action: async () => {
-        await api("clear_history", { chat_id: chat.id }, currentUser.id);
-        setMessages([]);
-        setLastSince(Math.floor(Date.now() / 1000));
-      },
-    });
-  };
+  const {
+    handleToggleMute, handleTogglePin, handleToggleFavorite,
+    handleClearHistory, handleBlock, handleToggleArchive,
+  } = useChatActions({ chat, currentUser, onBack, onChatUpdated, onChatDeleted, setConfirm, setMessages, setLastSince });
 
   // ── Reply / Forward / Edit / Pin ──
   const handleReply = (msgId: number) => {
@@ -349,36 +271,6 @@ export function ChatWindow({
     }
   };
 
-  // Загружаем pinned при смене чата
-  useEffect(() => {
-    let cancel = false;
-    api("get_pinned_message", { chat_id: chat.id }, currentUser.id).then(data => {
-      if (cancel) return;
-      setPinnedMsg(data.pinned || null);
-    });
-    return () => { cancel = true; };
-  }, [chat.id, currentUser.id]);
-
-  const handleBlock = () => {
-    if (!chat.partner_id) return;
-    setConfirm({
-      title: "Заблокировать пользователя?",
-      text: `${chat.name} больше не сможет писать вам сообщения. Чат скроется из списка.`,
-      danger: true,
-      action: async () => {
-        await api("block_user", { target_user_id: chat.partner_id }, currentUser.id);
-        onChatDeleted?.();
-        onBack();
-      },
-    });
-  };
-
-  const handleToggleArchive = async () => {
-    const next = !chat.archived;
-    await api("archive_chat", { chat_id: chat.id, archived: next }, currentUser.id);
-    onChatDeleted?.();
-    onBack();
-  };
 
   const filteredMessages = searchQuery.trim()
     ? messages.filter(m => (m.text || "").toLowerCase().includes(searchQuery.trim().toLowerCase()))
