@@ -20,15 +20,6 @@
     <meta name="apple-mobile-web-app-title" content="Nova">
     <meta name="theme-color" content="#7c3aed">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-    <script>
-      if (location.pathname === "/dev" || location.pathname.indexOf("/dev/") === 0) {
-        document.querySelector('link[rel="manifest"]').href = "/dev-manifest.json";
-        document.querySelector('link[rel="apple-touch-icon"]').href = "/dev-icon-192.png";
-        document.querySelector('meta[name="theme-color"]').content = "#0f0f17";
-        document.querySelector('meta[name="apple-mobile-web-app-title"]').content = "Nova Dev";
-        document.title = "Nova Dev";
-      }
-    </script>
 
     <!-- PWA иконки -->
     <link rel="icon" sizes="192x192" href="/app-icon-192.png">
