@@ -30,7 +30,7 @@ const ROLE_COLOR: Record<string, string> = {
 
 export default function DevTopBar({
   admin, title, onMenu, onLogout, onOpenSettings, onNavigate,
-  light, compact, onToggleLight, onToggleCompact,
+  light, compact, onToggleLight, onToggleCompact, onInstall,
 }: {
   admin: DevAdmin;
   title: string;
@@ -42,6 +42,7 @@ export default function DevTopBar({
   compact?: boolean;
   onToggleLight?: () => void;
   onToggleCompact?: () => void;
+  onInstall?: () => void;
 }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -107,6 +108,17 @@ export default function DevTopBar({
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           Online
         </div>
+
+        {onInstall && (
+          <button
+            onClick={onInstall}
+            title="Установить панель на рабочий стол"
+            className="p-2.5 rounded-xl bg-violet-600/20 border border-violet-500/40 text-violet-200 hover:bg-violet-600/30 transition hidden sm:flex items-center gap-1.5 text-xs font-semibold"
+          >
+            <Icon name="Download" size={16} />
+            <span className="hidden lg:inline">Установить</span>
+          </button>
+        )}
 
         {onToggleCompact && (
           <button

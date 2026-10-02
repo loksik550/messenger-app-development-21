@@ -28,6 +28,8 @@ import DevGrowth from "@/components/devpanel/DevGrowth";
 import DevAutoRules from "@/components/devpanel/DevAutoRules";
 import DevSearch, { DevShortcuts } from "@/components/devpanel/DevSearch";
 import DevUndoBar from "@/components/devpanel/DevUndoBar";
+import DevInstallBar from "@/components/devpanel/DevInstallBar";
+import { useDevPwa } from "@/lib/devPwa";
 
 type Section =
   | "dashboard" | "users" | "channels" | "verification" | "reports"
@@ -71,7 +73,11 @@ export default function DevPanel() {
   const [bgStyle, setBgStyle] = useState("aurora");
   const [bgImage, setBgImage] = useState("");
   const [checking, setChecking] = useState(true);
-  const [section, setSection] = useState<Section>("dashboard");
+  const [section, setSection] = useState<Section>(() => {
+    const h = window.location.hash.replace("#", "");
+    return (NAV.some((n) => n.key === h) ? h : "dashboard") as Section;
+  });
+  const pwa = useDevPwa();
   const [menuOpen, setMenuOpen] = useState(false);
   const [navQuery, setNavQuery] = useState("");
   const [confirmAsk, setConfirmAsk] = useState<{
@@ -406,6 +412,7 @@ export default function DevPanel() {
           compact={compact}
           onToggleLight={toggleLight}
           onToggleCompact={toggleCompact}
+          onInstall={pwa.canInstall && !pwa.installed ? () => { pwa.install(); } : undefined}
         />
 
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-5 lg:p-8">
@@ -471,6 +478,7 @@ export default function DevPanel() {
       <DevShortcuts open={keysOpen} onClose={() => setKeysOpen(false)} />
 
       {admin && <DevUndoBar />}
+      <DevInstallBar pwa={pwa} />
 
       {loginNotice && (
         <DevLoginToast notice={loginNotice} onClose={() => setLoginNotice(null)} />
