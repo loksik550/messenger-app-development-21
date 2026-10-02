@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { api, uploadMedia, type User, type Group, type GroupMember, type Contact } from "@/lib/api";
-import { Avatar } from "@/components/messenger/ChatAtoms";
+import { api, uploadMedia, type User, type Group, type GroupMember } from "@/lib/api";
 import { ConfirmDialog } from "@/components/messenger/ConfirmDialog";
 import { AddMemberModal } from "@/components/messenger/AddMemberModal";
-import { groupMuteLabel } from "@/components/messenger/groupProfileUtils";
+import { useGroupProfileData } from "@/components/messenger/group-profile/useGroupProfileData";
+import { useGroupMemberActions } from "@/components/messenger/group-profile/useGroupMemberActions";
+import { GroupInfoTab } from "@/components/messenger/group-profile/GroupInfoTab";
+import { GroupMembersTab } from "@/components/messenger/group-profile/GroupMembersTab";
+import { GroupAdminsTab } from "@/components/messenger/group-profile/GroupAdminsTab";
 
 type Tab = "info" | "members" | "admins";
 
@@ -25,34 +28,8 @@ export function GroupProfilePanel({
   onClose, onGroupUpdated, onMembersChanged, onGroupDeleted, onHistoryCleared,
 }: Props) {
   const isOwner = myRole === "owner";
-  const [verifState, setVerifState] = useState<{
-    verified: boolean;
-    request: { status: string; note: string } | null;
-  }>({ verified: false, request: null });
-  const [verifBusy, setVerifBusy] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    api("channel_verification_status", { group_id: group.id }, currentUser.id).then(r => {
-      if (!alive || !r || r.error) return;
-      setVerifState({ verified: !!r.verified, request: r.request || null });
-    });
-    return () => { alive = false; };
-  }, [group.id, currentUser.id]);
-
-  const applyVerification = async () => {
-    setVerifBusy(true);
-    try {
-      const r = await api("channel_verification_apply", { group_id: group.id }, currentUser.id);
-      if (r?.error) {
-        alert(r.error);
-        return;
-      }
-      setVerifState(prev => ({ ...prev, request: { status: "pending", note: "" } }));
-    } finally {
-      setVerifBusy(false);
-    }
-  };
+  const data = useGroupProfileData(group, currentUser);
+  const { info, setInfo } = data;
   const isAdmin = isOwner || myRole === "admin";
 
   const [tab, setTab] = useState<Tab>("info");
@@ -64,76 +41,17 @@ export function GroupProfilePanel({
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [info, setInfo] = useState<Group>(group);
-  const [inviteLink, setInviteLink] = useState<string>(group.invite_link || "");
-  const [copyState, setCopyState] = useState<"idle" | "ok">("idle");
-  const [regenBusy, setRegenBusy] = useState(false);
-
-  const [memberSearch, setMemberSearch] = useState("");
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [contactSearch, setContactSearch] = useState("");
-  const [addingId, setAddingId] = useState<number | null>(null);
-
-  const [confirmKick, setConfirmKick] = useState<{ id: number; name: string } | null>(null);
-  const [confirmLeave, setConfirmLeave] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [onlyAdmins, setOnlyAdmins] = useState<boolean>(false);
-
-  // mute
-  const [muted, setMuted] = useState(false);
-  const [mutedUntil, setMutedUntil] = useState(0);
-  const [muteMenuOpen, setMuteMenuOpen] = useState(false);
-
-  // Подгружаем актуальную инфу
-  useEffect(() => {
-    api("get_group_info", { group_id: group.id }, currentUser.id).then(d => {
-      if (d?.group) {
-        setInfo(d.group);
-        if (d.group.invite_link) setInviteLink(d.group.invite_link);
-        setOnlyAdmins(!!d.group.only_admins_post);
-      }
-    });
-    // подтягиваем mute-статус
-    api("get_mute_settings", {}, currentUser.id).then(d => {
-      const entry = (d?.muted_groups || []).find((g: { group_id: number; muted_until: number }) => g.group_id === group.id);
-      if (entry) {
-        setMuted(true);
-        setMutedUntil(entry.muted_until || 0);
-      } else {
-        setMuted(false);
-        setMutedUntil(0);
-      }
-    });
-  }, [group.id, currentUser.id]);
-
-  const applyMute = async (mute: boolean, hours?: number) => {
-    setMuteMenuOpen(false);
-    const prev = { muted, mutedUntil };
-    setMuted(mute);
-    setMutedUntil(mute && hours ? Math.floor(Date.now() / 1000) + hours * 3600 : 0);
-    const r = await api(
-      "set_group_mute",
-      { group_id: group.id, muted: mute, ...(hours ? { hours } : {}) },
-      currentUser.id,
-    );
-    if (r?.error) {
-      setMuted(prev.muted);
-      setMutedUntil(prev.mutedUntil);
-      alert(r.error);
-    }
-  };
-
-  const muteLabel = groupMuteLabel(muted, mutedUntil);
-
-  const toggleOnlyAdmins = async () => {
-    const next = !onlyAdmins;
-    setOnlyAdmins(next);
-    const r = await api("set_group_only_admins", { group_id: group.id, only_admins_post: next }, currentUser.id);
-    if (r?.error) { setOnlyAdmins(!next); alert(r.error); }
-  };
+  const m = useGroupMemberActions({
+    group, members, currentUser,
+    onClose, onMembersChanged, onGroupDeleted, onHistoryCleared,
+  });
+  const {
+    adminsList, showAddMember, setShowAddMember, contacts, filteredContacts,
+    contactSearch, setContactSearch, addingId, addMember,
+    confirmKick, setConfirmKick, confirmLeave, setConfirmLeave,
+    confirmDelete, setConfirmDelete, confirmClear, setConfirmClear,
+    busy, kick, leave, deleteGroup, clearHistory,
+  } = m;
 
   const saveName = async () => {
     const v = editName.trim();
@@ -174,106 +92,6 @@ export function GroupProfilePanel({
       setUploadingAvatar(false);
     }
   };
-
-  const fullInviteUrl = inviteLink ? `${window.location.origin}/?join=${inviteLink}` : "";
-
-  const copyInvite = async () => {
-    if (!fullInviteUrl) return;
-    try {
-      await navigator.clipboard.writeText(fullInviteUrl);
-      setCopyState("ok");
-      setTimeout(() => setCopyState("idle"), 1500);
-    } catch {
-      alert("Не получилось скопировать. Скопируй вручную: " + fullInviteUrl);
-    }
-  };
-
-  const regenerateInvite = async () => {
-    if (!confirm("Старая ссылка перестанет работать. Продолжить?")) return;
-    setRegenBusy(true);
-    const r = await api("regenerate_group_invite", { group_id: group.id }, currentUser.id);
-    setRegenBusy(false);
-    if (r?.invite_link) {
-      setInviteLink(r.invite_link);
-    } else if (r?.error) {
-      alert(r.error);
-    }
-  };
-
-  const setRole = async (userId: number, role: "admin" | "member") => {
-    const r = await api("set_member_role", { group_id: group.id, target_user_id: userId, role }, currentUser.id);
-    if (r?.error) { alert(r.error); return; }
-    onMembersChanged();
-  };
-
-  const kick = async () => {
-    if (!confirmKick) return;
-    setBusy(true);
-    const r = await api("remove_group_member", { group_id: group.id, kick_user_id: confirmKick.id }, currentUser.id);
-    setBusy(false);
-    setConfirmKick(null);
-    if (r?.error) { alert(r.error); return; }
-    onMembersChanged();
-  };
-
-  const leave = async () => {
-    setBusy(true);
-    const r = await api("leave_group", { group_id: group.id }, currentUser.id);
-    setBusy(false);
-    setConfirmLeave(false);
-    if (r?.error) { alert(r.error); return; }
-    onGroupDeleted?.();
-    onClose();
-  };
-
-  const deleteGroup = async () => {
-    setBusy(true);
-    const r = await api("delete_group", { group_id: group.id }, currentUser.id);
-    setBusy(false);
-    setConfirmDelete(false);
-    if (r?.error) { alert(r.error); return; }
-    onGroupDeleted?.();
-    onClose();
-  };
-
-  const clearHistory = async () => {
-    setBusy(true);
-    const r = await api("clear_group_history", { group_id: group.id }, currentUser.id);
-    setBusy(false);
-    setConfirmClear(false);
-    if (r?.error) { alert(r.error); return; }
-    onHistoryCleared?.();
-    onClose();
-  };
-
-  // Контакты для добавления
-  useEffect(() => {
-    if (!showAddMember) return;
-    api("get_contacts", {}, currentUser.id).then(d => {
-      if (Array.isArray(d?.contacts)) setContacts(d.contacts);
-    });
-  }, [showAddMember, currentUser.id]);
-
-  const addMember = async (uid: number) => {
-    setAddingId(uid);
-    const r = await api("add_group_member", { group_id: group.id, new_user_id: uid }, currentUser.id);
-    setAddingId(null);
-    if (r?.error) { alert(r.error); return; }
-    onMembersChanged();
-  };
-
-  const visibleMembers = members.filter(m =>
-    !memberSearch.trim() || m.name.toLowerCase().includes(memberSearch.trim().toLowerCase())
-  );
-
-  const memberIds = new Set(members.map(m => m.id));
-  const filteredContacts = contacts.filter(c =>
-    !memberIds.has(c.id) &&
-    (!contactSearch.trim() || c.name.toLowerCase().includes(contactSearch.trim().toLowerCase()) || c.phone.includes(contactSearch.trim()))
-  );
-
-  const adminsList = members.filter(m => m.role === "owner" || m.role === "admin");
-  const fmtDate = (ts: number) => ts ? new Date(ts * 1000).toLocaleDateString("ru", { day: "numeric", month: "long", year: "numeric" }) : "";
 
   return (
     <div className="absolute inset-0 z-[80] flex flex-col bg-[hsl(var(--background))] animate-fade-in overflow-hidden">
@@ -364,317 +182,60 @@ export function GroupProfilePanel({
 
         {/* TAB: INFO */}
         {tab === "info" && (
-          <div className="px-4 py-4 space-y-3 animate-fade-in">
-            {/* Описание */}
-            <div className="glass rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Описание</span>
-                {isAdmin && !editingDesc && (
-                  <button onClick={() => setEditingDesc(true)} className="text-xs text-violet-400 font-medium">
-                    {info.description ? "Изменить" : "Добавить"}
-                  </button>
-                )}
-              </div>
-              {editingDesc ? (
-                <>
-                  <textarea
-                    autoFocus
-                    value={editDesc}
-                    onChange={e => setEditDesc(e.target.value)}
-                    placeholder="Расскажите о группе..."
-                    rows={4}
-                    className="w-full glass rounded-xl px-3 py-2 text-sm outline-none resize-none mb-2"
-                  />
-                  <div className="flex gap-2">
-                    <button onClick={saveDesc} className="flex-1 grad-primary rounded-xl py-2 text-white text-xs font-bold">Сохранить</button>
-                    <button onClick={() => { setEditDesc(info.description || ""); setEditingDesc(false); }} className="flex-1 glass rounded-xl py-2 text-xs">Отмена</button>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-foreground/90 whitespace-pre-wrap">
-                  {info.description || <span className="text-muted-foreground italic">Описания пока нет</span>}
-                </p>
-              )}
-            </div>
-
-            {/* Invite link */}
-            {isAdmin && (
-              <div className="glass rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Ссылка-приглашение</span>
-                  <Icon name="Link" size={14} className="text-violet-400" />
-                </div>
-                <p className="text-xs text-muted-foreground mb-2">
-                  Поделись ссылкой, чтобы кто угодно мог присоединиться к {info.is_channel ? "каналу" : "группе"}.
-                </p>
-                <div className="flex items-center gap-2 glass rounded-xl px-3 py-2 mb-2">
-                  <Icon name="Globe" size={14} className="text-muted-foreground flex-shrink-0" />
-                  <span className="flex-1 text-xs truncate font-mono">{fullInviteUrl || "—"}</span>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={copyInvite}
-                    disabled={!fullInviteUrl}
-                    className="flex-1 grad-primary text-white rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                  >
-                    {copyState === "ok"
-                      ? <><Icon name="Check" size={12} /> Скопировано</>
-                      : <><Icon name="Copy" size={12} /> Копировать</>}
-                  </button>
-                  <button
-                    onClick={regenerateInvite}
-                    disabled={regenBusy}
-                    className="flex-1 glass rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5"
-                  >
-                    {regenBusy
-                      ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      : <><Icon name="RefreshCw" size={12} /> Обновить</>}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Верификация канала/группы — только владелец */}
-            {isOwner && (
-              <div className="glass rounded-2xl p-4">
-                <div className="flex items-start gap-3">
-                  <Icon name="BadgeCheck" size={20} className="text-sky-400 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm mb-0.5">
-                      {verifState.verified ? "Подтверждён" : "Верификация"}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mb-2">
-                      {verifState.verified
-                        ? "Синяя галочка подтверждает подлинность"
-                        : verifState.request?.status === "pending"
-                          ? "Заявка на рассмотрении, обычно до трёх дней"
-                          : "Синяя галочка защитит от подделок"}
-                    </p>
-                    {!verifState.verified && verifState.request?.status !== "pending" && (
-                      <button
-                        onClick={applyVerification}
-                        disabled={verifBusy}
-                        className="px-3 py-1.5 rounded-xl grad-primary text-white text-xs font-bold disabled:opacity-60"
-                      >
-                        {verifBusy ? "Отправляем..." : "Подать заявку"}
-                      </button>
-                    )}
-                    {verifState.request?.status === "rejected" && !verifState.verified && (
-                      <p className="text-[11px] text-red-400 mt-2">
-                        Прошлая заявка отклонена{verifState.request.note ? `: ${verifState.request.note}` : ""}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Только админы могут писать (для каналов и групп) */}
-            {isOwner && (
-              <div className="glass rounded-2xl p-4 flex items-center gap-3">
-                <Icon name="ShieldCheck" size={20} className="text-violet-400" />
-                <div className="flex-1">
-                  <div className="font-semibold text-sm">Писать могут только админы</div>
-                  <p className="text-[11px] text-muted-foreground">
-                    {info.is_channel ? "Стандартное поведение каналов" : "Превратит группу в анонс-канал"}
-                  </p>
-                </div>
-                <button
-                  onClick={toggleOnlyAdmins}
-                  className={`w-11 h-6 rounded-full transition ${onlyAdmins ? "bg-violet-500" : "bg-white/10"}`}
-                >
-                  <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${onlyAdmins ? "translate-x-5" : "translate-x-0.5"}`} />
-                </button>
-              </div>
-            )}
-
-            {/* Уведомления (mute) */}
-            <div className="glass rounded-2xl overflow-hidden relative">
-              <button
-                onClick={() => (muted ? applyMute(false) : setMuteMenuOpen(v => !v))}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition text-left"
-              >
-                <Icon
-                  name={muted ? "BellOff" : "Bell"}
-                  size={18}
-                  className={muted ? "text-amber-400" : "text-violet-400"}
-                />
-                <div className="flex-1">
-                  <div className="font-semibold text-sm">
-                    {muted ? "Уведомления отключены" : "Уведомления"}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">{muteLabel}</p>
-                </div>
-                <div className={`w-11 h-6 rounded-full transition ${muted ? "bg-amber-500/70" : "bg-white/10"}`}>
-                  <span
-                    className={`block w-5 h-5 bg-white rounded-full transition-transform mt-0.5 ${
-                      muted ? "translate-x-5" : "translate-x-0.5"
-                    }`}
-                  />
-                </div>
-              </button>
-              {muteMenuOpen && !muted && (
-                <div className="border-t border-white/10 divide-y divide-white/5">
-                  {[
-                    { h: 1, label: "На 1 час" },
-                    { h: 8, label: "На 8 часов" },
-                    { h: 24 * 7, label: "На неделю" },
-                    { h: 0, label: "Навсегда" },
-                  ].map(opt => (
-                    <button
-                      key={opt.label}
-                      onClick={() => applyMute(true, opt.h || undefined)}
-                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition"
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Дата создания */}
-            <div className="glass rounded-2xl p-4">
-              <div className="flex items-center gap-3">
-                <Icon name="Calendar" size={16} className="text-muted-foreground" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Создано</div>
-                  <div className="text-sm font-medium">{fmtDate(info.created_at as number) || "—"}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Действия */}
-            <div className="glass rounded-2xl overflow-hidden divide-y divide-white/5">
-              <button
-                onClick={() => setConfirmClear(true)}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition text-left"
-              >
-                <Icon name="Eraser" size={18} className="text-amber-400" />
-                <span className="text-sm font-medium">Очистить переписку</span>
-              </button>
-              {!isOwner && (
-                <button
-                  onClick={() => setConfirmLeave(true)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/10 transition text-left"
-                >
-                  <Icon name="LogOut" size={18} className="text-red-400" />
-                  <span className="text-sm font-medium text-red-400">
-                    Покинуть {info.is_channel ? "канал" : "группу"}
-                  </span>
-                </button>
-              )}
-              {isOwner && (
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/10 transition text-left"
-                >
-                  <Icon name="Trash2" size={18} className="text-red-400" />
-                  <span className="text-sm font-medium text-red-400">
-                    Удалить {info.is_channel ? "канал" : "группу"}
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
+          <GroupInfoTab
+            info={info}
+            isAdmin={isAdmin}
+            isOwner={isOwner}
+            editingDesc={editingDesc}
+            setEditingDesc={setEditingDesc}
+            editDesc={editDesc}
+            setEditDesc={setEditDesc}
+            saveDesc={saveDesc}
+            fullInviteUrl={data.fullInviteUrl}
+            copyState={data.copyState}
+            copyInvite={data.copyInvite}
+            regenBusy={data.regenBusy}
+            regenerateInvite={data.regenerateInvite}
+            verifState={data.verifState}
+            verifBusy={data.verifBusy}
+            applyVerification={data.applyVerification}
+            onlyAdmins={data.onlyAdmins}
+            toggleOnlyAdmins={data.toggleOnlyAdmins}
+            muted={data.muted}
+            muteLabel={data.muteLabel}
+            muteMenuOpen={data.muteMenuOpen}
+            setMuteMenuOpen={data.setMuteMenuOpen}
+            applyMute={data.applyMute}
+            setConfirmClear={setConfirmClear}
+            setConfirmLeave={setConfirmLeave}
+            setConfirmDelete={setConfirmDelete}
+          />
         )}
 
         {/* TAB: MEMBERS */}
         {tab === "members" && (
-          <div className="px-4 py-4 space-y-2 animate-fade-in">
-            {isAdmin && (
-              <button
-                onClick={() => setShowAddMember(true)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl glass hover:bg-white/8 transition"
-              >
-                <div className="w-10 h-10 rounded-2xl bg-violet-500/15 flex items-center justify-center">
-                  <Icon name="UserPlus" size={18} className="text-violet-400" />
-                </div>
-                <span className="text-sm font-semibold text-violet-300">Добавить участника</span>
-              </button>
-            )}
-
-            <div className="flex items-center gap-2 glass rounded-xl px-3 py-2">
-              <Icon name="Search" size={14} className="text-muted-foreground" />
-              <input
-                value={memberSearch}
-                onChange={e => setMemberSearch(e.target.value)}
-                placeholder="Поиск по участникам"
-                className="flex-1 bg-transparent outline-none text-sm"
-              />
-            </div>
-
-            <div className="space-y-0.5">
-              {visibleMembers.map(m => (
-                <div key={m.id} className="flex items-center gap-3 px-3 py-2.5 rounded-2xl hover:bg-white/5">
-                  <Avatar label={m.name[0]?.toUpperCase() || "?"} id={m.id} src={m.avatar_url} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium flex items-center gap-1.5 truncate">
-                      <span className="truncate">{m.name}</span>
-                      {m.id === currentUser.id && <span className="text-[10px] text-muted-foreground flex-shrink-0">(вы)</span>}
-                    </div>
-                    <div className="text-[11px] flex items-center gap-1">
-                      {m.role === "owner" && <span className="text-amber-400 font-semibold">👑 Владелец</span>}
-                      {m.role === "admin" && <span className="text-violet-400 font-semibold">⚡ Администратор</span>}
-                      {m.role === "member" && <span className="text-muted-foreground">Участник</span>}
-                    </div>
-                  </div>
-                  {isAdmin && m.id !== currentUser.id && m.role !== "owner" && (
-                    <div className="flex gap-1 flex-shrink-0">
-                      {isOwner && (
-                        <button
-                          onClick={() => setRole(m.id, m.role === "admin" ? "member" : "admin")}
-                          className="p-1.5 rounded-lg hover:bg-white/8 text-muted-foreground"
-                          title={m.role === "admin" ? "Понизить" : "Сделать админом"}
-                        >
-                          <Icon name={m.role === "admin" ? "ShieldOff" : "ShieldCheck"} size={14} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setConfirmKick({ id: m.id, name: m.name })}
-                        className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" title="Исключить"
-                      >
-                        <Icon name="UserMinus" size={14} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {visibleMembers.length === 0 && (
-                <p className="text-center text-sm text-muted-foreground py-8">Никого не нашли</p>
-              )}
-            </div>
-          </div>
+          <GroupMembersTab
+            currentUser={currentUser}
+            isAdmin={isAdmin}
+            isOwner={isOwner}
+            visibleMembers={m.visibleMembers}
+            memberSearch={m.memberSearch}
+            setMemberSearch={m.setMemberSearch}
+            setShowAddMember={setShowAddMember}
+            setRole={m.setRole}
+            setConfirmKick={setConfirmKick}
+          />
         )}
 
         {/* TAB: ADMINS */}
         {tab === "admins" && (
-          <div className="px-4 py-4 space-y-2 animate-fade-in">
-            <p className="text-xs text-muted-foreground px-1">
-              Администраторы могут редактировать {info.is_channel ? "канал" : "группу"}, добавлять и удалять участников.
-            </p>
-            {adminsList.map(m => (
-              <div key={m.id} className="flex items-center gap-3 glass rounded-2xl px-3 py-2.5">
-                <Avatar label={m.name[0]?.toUpperCase() || "?"} id={m.id} src={m.avatar_url} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{m.name}</div>
-                  <div className="text-[11px]">
-                    {m.role === "owner"
-                      ? <span className="text-amber-400 font-semibold">👑 Владелец</span>
-                      : <span className="text-violet-400 font-semibold">⚡ Администратор</span>}
-                  </div>
-                </div>
-                {isOwner && m.id !== currentUser.id && m.role === "admin" && (
-                  <button
-                    onClick={() => setRole(m.id, "member")}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/8 hover:bg-white/15"
-                  >
-                    Снять
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          <GroupAdminsTab
+            info={info}
+            currentUser={currentUser}
+            isOwner={isOwner}
+            adminsList={adminsList}
+            setRole={m.setRole}
+          />
         )}
       </div>
 

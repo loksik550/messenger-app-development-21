@@ -4,18 +4,15 @@ import { getDraft, useDraftsVersion } from "@/lib/drafts";
 import { track, setTrackUser } from "@/lib/track";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import Icon from "@/components/ui/icon";
-import { api, PUSH_API, subscribeToPush, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
-import { playMessageSound } from "@/lib/sounds";
-import { native } from "@/lib/native";
+import { api, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
 import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
 import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger/Panels";
 import { AuthScreen } from "@/components/messenger/AuthScreen";
 import { ContactsPanel } from "@/components/messenger/ContactsPanel";
 import { CallScreen } from "@/components/messenger/CallScreen";
 import EnableNotificationsBanner from "@/components/messenger/EnableNotificationsBanner";
-import { toast } from "@/hooks/use-toast";
-import NotificationsBell, { type UserNotif } from "@/components/messenger/NotificationsBell";
-import NovaToaster, { type NovaToastItem } from "@/components/messenger/NovaToast";
+import NotificationsBell from "@/components/messenger/NotificationsBell";
+import NovaToaster from "@/components/messenger/NovaToast";
 import ComingSoon from "@/components/messenger/ComingSoon";
 import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
 import { RealStoriesBar, type StoryGroup } from "@/components/messenger/RealStories";
@@ -26,6 +23,12 @@ import ConsentScreen, { hasConsent } from "@/components/messenger/ConsentScreen"
 import OnboardingScreen, { hasSeenOnboarding } from "@/components/messenger/OnboardingScreen";
 import PinLockScreen from "@/components/messenger/PinLockScreen";
 import IndexOverlays from "@/pages/IndexOverlays";
+import { useDeepLinks, useJoinByInvite } from "@/pages/index-hooks/useDeepLinks";
+import { usePushSetup, usePushOpen } from "@/pages/index-hooks/usePushSetup";
+import { useUserNotifications } from "@/pages/index-hooks/useUserNotifications";
+import { useAccountStatus } from "@/pages/index-hooks/useAccountStatus";
+import { useChatsAndGroups, mapChat } from "@/pages/index-hooks/useChatsAndGroups";
+import { useIncomingCalls } from "@/pages/index-hooks/useIncomingCalls";
 
 // Редкие панели грузятся лениво — это ускоряет первый запуск приложения
 const GroupChatWindow = lazyWithRetry(() => import("@/components/messenger/GroupChatWindow"));
@@ -41,38 +44,6 @@ const BannedScreen = lazyWithRetry(() => import("@/components/messenger/BannedSc
 import { type Contact } from "@/lib/api";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
-
-interface ChatRaw {
-  id: number;
-  last_message: string;
-  last_message_at: number;
-  partner: { id: number; name: string; last_seen: number; avatar_url?: string | null; verified?: boolean };
-  unread: number;
-  muted?: boolean;
-  pinned?: boolean;
-  favorite?: boolean;
-  archived?: boolean;
-}
-
-function mapChat(c: ChatRaw): Chat {
-  return {
-    id: c.id,
-    name: c.partner.name,
-    avatar: c.partner.name[0]?.toUpperCase() || "?",
-    avatar_url: c.partner.avatar_url || null,
-    lastMsg: c.last_message || "Нет сообщений",
-    time: c.last_message_at ? new Date(c.last_message_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }) : "",
-    unread: c.unread || 0,
-    online: Date.now() / 1000 - (c.partner.last_seen || 0) < 60,
-    partner_id: c.partner.id,
-    lastSeen: c.partner.last_seen,
-    muted: c.muted || false,
-    pinned: c.pinned || false,
-    favorite: c.favorite || false,
-    verified: c.partner.verified || false,
-    archived: c.archived || false,
-  };
-}
 
 const LAZY_FALLBACK = (
   <div className="fixed inset-0 z-[280] flex items-center justify-center bg-background/60 backdrop-blur-sm">
@@ -103,11 +74,6 @@ export default function Index() {
   const [showHelp, setShowHelp] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
   const [showPromo, setShowPromo] = useState(false);
-  const notifSeenRef = useRef<Set<number>>(new Set());
-  const [notifs, setNotifs] = useState<UserNotif[]>([]);
-  const [toasts, setToasts] = useState<NovaToastItem[]>([]);
-  const [notifUnread, setNotifUnread] = useState(0);
-  const [banInfo, setBanInfo] = useState<{ banned_until: number | null; banned_reason: string; forever?: boolean } | null>(null);
 
   // Восстановление сессии из localStorage
   useEffect(() => {
@@ -162,88 +128,8 @@ export default function Index() {
     if (u.bubble_style) applyBubbleStyle(u.bubble_style);
   }, [currentUser?.id]);
 
-  // Открытие сбора по ссылке ?fund=ID
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const fid = url.searchParams.get("fund");
-    if (fid) {
-      const id = parseInt(fid, 10);
-      if (!isNaN(id) && id > 0) {
-        setFundraiserView({ mode: "view", id });
-        url.searchParams.delete("fund");
-        window.history.replaceState({}, "", url.toString());
-      }
-    }
-  }, []);
-
-  // Автоматический вход в группу/канал по ссылке ?join=CODE
-  const [pendingJoin, setPendingJoin] = useState<string | null>(null);
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get("join");
-    if (code) {
-      setPendingJoin(code);
-      url.searchParams.delete("join");
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, []);
-
-  // Ссылка-приглашение ?ref=CODE — запоминаем до входа
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const ref = (url.searchParams.get("ref") || "").trim();
-    if (ref && /^[A-Za-z0-9_-]{3,32}$/.test(ref)) {
-      try { localStorage.setItem("nova_ref", ref.toUpperCase()); } catch { /* ignore */ }
-      url.searchParams.delete("ref");
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, []);
-  const [refToast, setRefToast] = useState("");
-  const [deepLinkTick, setDeepLinkTick] = useState(0);
-  useEffect(() => native.app.onUrlOpen((raw) => {
-    try {
-      const u = new URL(raw);
-      const ref = (u.searchParams.get("ref") || "").trim();
-      if (ref && /^[A-Za-z0-9_-]{3,32}$/.test(ref)) {
-        localStorage.setItem("nova_ref", ref.toUpperCase());
-        setDeepLinkTick(t => t + 1);
-      }
-      const join = u.searchParams.get("join");
-      if (join) setPendingJoin(join);
-    } catch { /* ignore */ }
-  }), []);
-  useEffect(() => {
-    if (!currentUser) return;
-    let code = "";
-    try { code = localStorage.getItem("nova_ref") || ""; } catch { /* ignore */ }
-    if (!code) return;
-    try { localStorage.removeItem("nova_ref"); } catch { /* ignore */ }
-    api("referral_apply", { code, auto: true }, currentUser.id)
-      .then(r => {
-        if (r?.success) {
-          track("invite_applied");
-          setRefToast(`Подарок от друга: Premium на ${r.granted_days} дн.`);
-          setTimeout(() => setRefToast(""), 5000);
-          api("refresh_me", {}, currentUser.id).then(me => {
-            if (me?.user) setCurrentUser(prev => prev ? { ...prev, ...me.user } : prev);
-          }).catch(() => null);
-        }
-      })
-      .catch(() => null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id, deepLinkTick]);
-
-  // Открытие по пушу звонка с заблокированного экрана: ?call_id=...
-  const [pendingCallId, setPendingCallId] = useState<string | null>(null);
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const cid = url.searchParams.get("call_id");
-    if (cid) {
-      setPendingCallId(cid);
-      url.searchParams.delete("call_id");
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, []);
+  const overlays = useOverlays();
+  const { pendingJoin, setPendingJoin, refToast, pendingCallId, setPendingCallId } = useDeepLinks({ currentUser, setCurrentUser, setFundraiserView: overlays.setFundraiserView });
 
   const [activeTab, setActiveTab] = useState<Tab>("chats");
   const [view, setView] = useState<View>("chats");
@@ -265,303 +151,23 @@ export default function Index() {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const groupsRef = useRef<Group[]>([]);
   groupsRef.current = groups;
-  const pendingOpenRef = useRef<Record<string, string> | null>(null);
-  const tryOpenFromPush = useCallback(() => {
-    const d = pendingOpenRef.current;
-    if (!d) return;
-    if (d.is_call === "1" && d.call_id) {
-      pendingOpenRef.current = null;
-      const uid = currentUserRef.current?.id;
-      if (!uid) return;
-      const callId = d.call_id;
-      const accept = d.call_accept === "1";
-      api("poll_incoming_call", { since: Math.floor(Date.now() / 1000) - 90 }, uid)
-        .then((data) => {
-          if (data.call && data.call.call_id === callId) {
-            setActiveCall(prev => prev && prev.callId === callId
-              ? { ...prev, autoAccept: prev.autoAccept || accept }
-              : { userId: data.call.from_user_id, name: data.call.from_name, callId, incoming: true, autoAccept: accept });
-          }
-        })
-        .catch(() => { /* звонок уже завершён */ });
-      return;
-    }
-    const chatId = Number(d.chat_id || 0);
-    const groupId = Number(d.group_id || 0);
-    if (chatId) {
-      const c = realChatsRef.current.find(x => x.id === chatId);
-      if (!c) return;
-      pendingOpenRef.current = null;
-      setSelectedGroup(null); setSelectedChat(c); setView("chats"); setShowSidebar(false);
-    } else if (groupId) {
-      const g = groupsRef.current.find(x => x.id === groupId);
-      if (!g) return;
-      pendingOpenRef.current = null;
-      setSelectedChat(null); setSelectedGroup(g); setView("chats"); setShowSidebar(false);
-    } else {
-      pendingOpenRef.current = null;
-    }
-  }, []);
-  useEffect(() => { tryOpenFromPush(); }, [realChats, groups, tryOpenFromPush]);
-  const badgeLoadedRef = useRef(false);
-  useEffect(() => {
-    if (realChats.length || groups.length) badgeLoadedRef.current = true;
-    if (!badgeLoadedRef.current) return;
-    const total = realChats.reduce((s, c) => s + (c.muted ? 0 : (c.unread || 0)), 0)
-      + groups.reduce((s, g) => s + (g.unread_count || 0), 0);
-    native.badge.set(total);
-  }, [realChats, groups]);
+  const { pendingOpenRef, tryOpenFromPush } = usePushOpen({ currentUserRef, realChatsRef, groupsRef, realChats, groups, setActiveCall, setSelectedChat, setSelectedGroup, setView, setShowSidebar });
 
-  const overlays = useOverlays();
   const { t: tr } = useT();
   const {
     setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowProgress, setShowBots, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
   } = overlays;
   const openOverlay = overlays.open;
 
-  // Push-подписка
-  // Нативные push (FCM) на Android-приложении: регистрируем токен и показываем
-  // локальное уведомление при получении пуша — чтобы уведомления приходили в фоне.
-  useEffect(() => {
-    if (!currentUser) return;
-    if (!native.isNative) return;
-    const uid = currentUser.id;
-    native.push.register(
-      (token) => {
-        fetch(PUSH_API, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-User-Id": String(uid) },
-          body: JSON.stringify({ action: "register_native", token, platform: native.platform }),
-        }).catch(() => { /* повторим при следующем запуске */ });
-      },
-      () => { /* приложение открыто — сообщение и так появится в чате */ },
-      (data) => { pendingOpenRef.current = data; tryOpenFromPush(); }
-    );
-    const readTap = async () => {
-      const raw = await native.storage.get("nova_push_open");
-      if (!raw) return;
-      await native.storage.remove("nova_push_open");
-      try { pendingOpenRef.current = JSON.parse(raw); tryOpenFromPush(); } catch { /* ignore */ }
-    };
-    readTap();
-    return native.app.onResume(readTap);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id]);
+  usePushSetup({ currentUser, realChats, pendingOpenRef, tryOpenFromPush });
 
-  useEffect(() => {
-    if (!currentUser) return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    const uid = currentUser.id;
+  const { notifs, toasts, setToasts, notifUnread, loadNotifs } = useUserNotifications({ currentUser, setCurrentUser });
 
-    // Если уже granted — подписываемся сразу. Иначе ждём первого пользовательского жеста,
-    // браузеры (особенно Safari) не дают вызвать requestPermission без тапа.
-    if (Notification.permission === "granted") {
-      subscribeToPush(uid);
-      return;
-    }
-    if (Notification.permission === "default") {
-      const onUserGesture = () => {
-        subscribeToPush(uid);
-        window.removeEventListener("pointerdown", onUserGesture);
-        window.removeEventListener("keydown", onUserGesture);
-      };
-      window.addEventListener("pointerdown", onUserGesture, { once: true });
-      window.addEventListener("keydown", onUserGesture, { once: true });
-      return () => {
-        window.removeEventListener("pointerdown", onUserGesture);
-        window.removeEventListener("keydown", onUserGesture);
-      };
-    }
-  }, [currentUser]);
+  const { banInfo, setBanInfo } = useAccountStatus({ currentUser, setCurrentUser, view });
 
-  // PWA badge на иконке приложения — считаем без замьюченных чатов
-  useEffect(() => {
-    const total = realChats.reduce((s, c) => s + (c.muted ? 0 : (c.unread || 0)), 0);
-    type NavWithBadge = Navigator & {
-      setAppBadge?: (n?: number) => Promise<void>;
-      clearAppBadge?: () => Promise<void>;
-    };
-    const nav = navigator as NavWithBadge;
-    try {
-      if (total > 0 && typeof nav.setAppBadge === "function") {
-        nav.setAppBadge(total).catch(() => {});
-      } else if (typeof nav.clearAppBadge === "function") {
-        nav.clearAppBadge().catch(() => {});
-      }
-    } catch {
-      /* badge api недоступен */
-    }
-    // Также обновляем title вкладки браузера
-    const base = "Nova";
-    document.title = total > 0 ? `(${total > 99 ? "99+" : total}) ${base}` : base;
-  }, [realChats]);
+  useChatsAndGroups({ currentUser, showArchived, selectedChat, unreadRef, setArchivedCount, setRealChats, setGroups });
 
-  // Уведомления пользователя: копятся списком в колокольчике
-  const loadNotifs = useCallback(async (announce = false) => {
-    if (!currentUser) return;
-    const r = await api("my_notifications", {}, currentUser.id);
-    if (!r || r.error || !r.items) return;
-    const items = r.items as UserNotif[];
-    const prevIds = notifSeenRef.current;
-    setNotifs(items);
-    setNotifUnread(r.unread || 0);
-    if (announce) {
-      const fresh = items.filter(n => !n.read && !prevIds.has(n.id));
-      if (fresh.length > 0) {
-        setToasts(prev => [
-          ...fresh.map(n => ({ id: n.id, kind: n.kind, title: n.title, body: n.body })),
-          ...prev,
-        ].slice(0, 3));
-      }
-      if (fresh.length > 0) {
-        const me = await api("refresh_me", {}, currentUser.id);
-        if (me?.user) setCurrentUser(prev => (prev ? { ...prev, ...me.user } : prev));
-      }
-    }
-    notifSeenRef.current = new Set(items.map(n => n.id));
-  }, [currentUser?.id]);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    loadNotifs(true);
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") loadNotifs(true);
-    }, 45000);
-    return () => clearInterval(t);
-  }, [currentUser?.id, loadNotifs]);
-
-  // Проверка блокировки аккаунта
-  useEffect(() => {
-    if (!currentUser) return;
-    const uid = currentUser.id;
-    let alive = true;
-    const check = async () => {
-      const r = await api("ban_status", {}, uid);
-      if (!alive || !r) return;
-      if (r.banned) {
-        setBanInfo({
-          banned_until: r.banned_until ?? null,
-          banned_reason: r.banned_reason || "",
-          forever: r.forever,
-        });
-      } else if (r.banned === false) {
-        setBanInfo(null);
-      }
-    };
-    check();
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") check();
-    }, 60000);
-    return () => { alive = false; clearInterval(t); };
-  }, [currentUser?.id]);
-
-  // Свежие данные профиля (баланс, галочка) при открытии профиля
-  useEffect(() => {
-    if (!currentUser || view !== "profile") return;
-    let alive = true;
-    api("refresh_me", {}, currentUser.id).then(r => {
-      if (!alive || !r || r.error || !r.user) return;
-      setCurrentUser(prev => (prev ? { ...prev, ...r.user } : prev));
-    });
-    return () => { alive = false; };
-  }, [view, currentUser?.id]);
-
-  // Отметка присутствия: сразу «в сети», при уходе — «не в сети»
-  useEffect(() => {
-    if (!currentUser) return;
-    const uid = currentUser.id;
-    const beat = (online: boolean) => { api("heartbeat", { online }, uid); };
-    beat(true);
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") beat(true);
-    }, 30000);
-    const onVis = () => beat(document.visibilityState === "visible");
-    const onLeave = () => beat(false);
-    document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("pagehide", onLeave);
-    return () => {
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("pagehide", onLeave);
-      beat(false);
-    };
-  }, [currentUser?.id]);
-
-  // Загрузка чатов
-  useEffect(() => {
-    if (!currentUser) return;
-    const loadChats = async () => {
-      const data = await api("get_chats", { archived: showArchived }, currentUser.id);
-      if (typeof data.archived_count === "number") setArchivedCount(data.archived_count);
-      if (data.chats) {
-        const mapped: Chat[] = data.chats.map(mapChat);
-        // Детект новых входящих сообщений: если непрочитанных стало больше —
-        // показываем локальное уведомление и звук (работает пока приложение открыто,
-        // это резерв на случай, когда Web Push не доходит, напр. на iOS в браузере).
-        const prevUnread = unreadRef.current;
-        if (prevUnread !== null) {
-          for (const c of mapped) {
-            const before = prevUnread.get(c.id) || 0;
-            const now = c.unread || 0;
-            const isActiveOpen = selectedChat?.id === c.id && document.visibilityState === "visible";
-            if (now > before && !c.muted && !isActiveOpen) {
-              playMessageSound();
-              native.localNotify.show(c.name, c.lastMsg || "Новое сообщение");
-              break;
-            }
-          }
-        }
-        unreadRef.current = new Map(mapped.map(c => [c.id, c.unread || 0]));
-        // Обновляем только если реально что-то изменилось — иначе мигают ники
-        setRealChats(prev => {
-          const prevStr = JSON.stringify(prev.map(c => ({ id: c.id, lastMsg: c.lastMsg, unread: c.unread, online: c.online, time: c.time, muted: c.muted, pinned: c.pinned, favorite: c.favorite })));
-          const nextStr = JSON.stringify(mapped.map(c => ({ id: c.id, lastMsg: c.lastMsg, unread: c.unread, online: c.online, time: c.time, muted: c.muted, pinned: c.pinned, favorite: c.favorite })));
-          return prevStr === nextStr ? prev : mapped;
-        });
-      }
-    };
-    loadChats();
-    const tick = () => { if (document.visibilityState === "visible") loadChats(); };
-    const interval = setInterval(tick, 8000);
-    const onVis = () => { if (document.visibilityState === "visible") loadChats(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVis); };
-  }, [currentUser, showArchived]);
-
-  // Загрузка групп
-  useEffect(() => {
-    if (!currentUser) return;
-    const loadGroups = () => {
-      api("get_groups", {}, currentUser.id).then(d => {
-        if (d.groups) setGroups(d.groups);
-      });
-    };
-    loadGroups();
-    const tick = () => { if (document.visibilityState === "visible") loadGroups(); };
-    const t = setInterval(tick, 10000);
-    const onVis = () => { if (document.visibilityState === "visible") loadGroups(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
-  }, [currentUser]);
-
-  // Обработка ?join=CODE после авторизации
-  useEffect(() => {
-    if (!currentUser || !pendingJoin) return;
-    const code = pendingJoin;
-    setPendingJoin(null);
-    api("join_by_invite", { invite_link: code }, currentUser.id).then(r => {
-      if (r?.error) { alert("Не удалось войти: " + r.error); return; }
-      if (r?.group_id) {
-        const g: Group = { id: r.group_id, name: r.name || "Группа", owner_id: 0, is_channel: !!r.is_channel };
-        setGroups(prev => prev.some(x => x.id === g.id) ? prev : [g, ...prev]);
-        setSelectedGroup(g);
-        setSelectedChat(null);
-        setShowSidebar(false);
-        // Подгрузим актуальный список
-        api("get_groups", {}, currentUser.id).then(d => { if (d.groups) setGroups(d.groups); });
-      }
-    });
-  }, [currentUser, pendingJoin]);
+  useJoinByInvite({ currentUser, pendingJoin, setPendingJoin, setGroups, setSelectedGroup, setSelectedChat, setShowSidebar });
 
   // Загрузка пользователей для поиска
   useEffect(() => {
@@ -644,72 +250,7 @@ export default function Index() {
     setActiveCall({ userId, name, callId, incoming: false });
   };
 
-  // Polling входящих звонков. Работает и в фоне — если вкладка не активна,
-  // показываем локальное уведомление о звонке (резерв к Web Push).
-  useEffect(() => {
-    if (!currentUser) return;
-    const since = { val: Math.floor(Date.now() / 1000) - 5 };
-    const interval = setInterval(async () => {
-      if (activeCall) return;
-      const data = await api("poll_incoming_call", { since: since.val }, currentUser.id);
-      if (data.call) {
-        since.val = data.call.created_at;
-        if (document.visibilityState === "visible") {
-          setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
-        } else {
-          // Приложение свёрнуто — уведомляем звонком-уведомлением
-          // (на Android с Firebase звонок уже показан полноэкранно/уведомлением)
-          if (!(native.isNative && native.push.enabled)) {
-            native.localNotify.show(`📞 ${data.call.from_name}`, "Входящий звонок");
-          }
-        }
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [currentUser, activeCall]);
-
-  // Приложение открыто по пушу звонка (?call_id=...) — открываем экран вызова.
-  useEffect(() => {
-    if (!currentUser || !pendingCallId || activeCall) return;
-    let alive = true;
-    api("poll_incoming_call", { since: Math.floor(Date.now() / 1000) - 90 }, currentUser.id)
-      .then((data) => {
-        if (!alive) return;
-        if (data.call && data.call.call_id === pendingCallId) {
-          setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
-        }
-        setPendingCallId(null);
-      })
-      .catch(() => { if (alive) setPendingCallId(null); });
-    return () => { alive = false; };
-  }, [currentUser, pendingCallId, activeCall]);
-
-  // Сообщения от Service Worker: клик по пушу звонка (с заблокированного экрана)
-  // сразу открывает экран входящего вызова, не дожидаясь поллинга.
-  useEffect(() => {
-    if (!currentUser) return;
-    if (!("serviceWorker" in navigator)) return;
-    const onSwMessage = (e: MessageEvent) => {
-      const d = e.data || {};
-      if (d.type === "incoming_call" && d.call_id) {
-        if (activeCall) return;
-        // Подтягиваем данные звонка с бэкенда и открываем экран вызова
-        api("poll_incoming_call", { since: Math.floor(Date.now() / 1000) - 60 }, currentUser.id)
-          .then((data) => {
-            if (data.call && data.call.call_id === d.call_id) {
-              setActiveCall({ userId: data.call.from_user_id, name: data.call.from_name, callId: data.call.call_id, incoming: true });
-            }
-          })
-          .catch(() => { /* ignore */ });
-      }
-      // Входящее сообщение/рассылка пока приложение открыто — показываем тост
-      if (d.type === "in_app_message" && d.body) {
-        toast({ title: d.title || "Nova", description: d.body, duration: 6000 });
-      }
-    };
-    navigator.serviceWorker.addEventListener("message", onSwMessage);
-    return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
-  }, [currentUser, activeCall]);
+  useIncomingCalls({ currentUser, activeCall, setActiveCall, pendingCallId, setPendingCallId });
 
   const login = (user: User) => {
     localStorage.setItem("nova_user", JSON.stringify(user));

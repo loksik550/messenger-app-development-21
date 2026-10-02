@@ -1,16 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { native } from "@/lib/native";
-import { track } from "@/lib/track";
 import Icon from "@/components/ui/icon";
-import { api, avatarGrad, type Contact, type User, type Chat } from "@/lib/api";
+import { api, type Contact, type User, type Chat } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
-import { Avatar } from "@/components/messenger/ChatAtoms";
-
-type PickerContact = { name?: string[]; tel?: string[] };
-type ContactsManager = {
-  select: (props: string[], opts?: { multiple?: boolean }) => Promise<PickerContact[]>;
-  getProperties: () => Promise<string[]>;
-};
+import { useContactsImport } from "@/components/messenger/contacts/useContactsImport";
+import { ImportHelpModal } from "@/components/messenger/contacts/ImportHelpModal";
+import { SyncBanners } from "@/components/messenger/contacts/SyncBanners";
+import { AddContactForm } from "@/components/messenger/contacts/AddContactForm";
+import { ContactListItem } from "@/components/messenger/contacts/ContactListItem";
 
 export function ContactsPanel({
   currentUser,
@@ -32,12 +29,6 @@ export function ContactsPanel({
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const [search, setSearch] = useState("");
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<null | { added: number; total: number; not_registered: number }>(null);
-  const [foundFriends, setFoundFriends] = useState<{ id: number; name: string; phone: string; avatar_url?: string | null }[]>([]);
-  const [syncError, setSyncError] = useState("");
-  const [showImportHelp, setShowImportHelp] = useState(false);
-  const vcfInputRef = useRef<HTMLInputElement>(null);
 
   const loadContacts = async () => {
     setLoading(true);
@@ -45,6 +36,21 @@ export function ContactsPanel({
     if (data.contacts) setContacts(data.contacts);
     setLoading(false);
   };
+
+  const {
+    syncing,
+    syncResult,
+    setSyncResult,
+    foundFriends,
+    setFoundFriends,
+    syncError,
+    setSyncError,
+    showImportHelp,
+    setShowImportHelp,
+    vcfInputRef,
+    handleVcfFile,
+    startImport,
+  } = useContactsImport(currentUser.id, loadContacts);
 
   useEffect(() => { loadContacts(); }, []);
 
@@ -70,166 +76,6 @@ export function ContactsPanel({
       setAddError(data.error || "Ошибка");
     }
     setAdding(false);
-  };
-
-  const syncPhoneContacts = async () => {
-    setSyncError("");
-    setSyncResult(null);
-    if (native.phoneContacts.supported) {
-      setSyncing(true);
-      try {
-        const { items, denied } = await native.phoneContacts.read();
-        if (denied) {
-          setSyncError("Нет доступа к контактам. Разрешите его: Настройки → Приложения → Nova → Разрешения → Контакты.");
-          return;
-        }
-        if (items.length === 0) {
-          setSyncError("В телефонной книге не нашлось номеров.");
-          return;
-        }
-        track("contacts_sync");
-        let added = 0, notReg = 0;
-        const found: { id: number; name: string; phone: string; avatar_url?: string | null }[] = [];
-        for (let i = 0; i < items.length; i += 1000) {
-          const data = await api("import_contacts", { contacts: items.slice(i, i + 1000) }, currentUser.id);
-          if (!data.ok) { setSyncError(data.error || "Не удалось синхронизировать контакты"); return; }
-          added += Number(data.added) || 0;
-          notReg += Array.isArray(data.not_registered) ? data.not_registered.length : 0;
-          if (Array.isArray(data.matched)) found.push(...data.matched);
-        }
-        setSyncResult({ added, total: items.length, not_registered: notReg });
-        setFoundFriends(found);
-        try { localStorage.setItem("nova_contacts_synced", String(Date.now())); } catch { /* ignore */ }
-        await loadContacts();
-        native.haptic.success();
-      } catch (e) {
-        setSyncError((e as Error).message || "Не удалось получить контакты");
-      } finally {
-        setSyncing(false);
-      }
-      return;
-    }
-    const nav = navigator as Navigator & { contacts?: ContactsManager };
-    if (!nav.contacts || typeof nav.contacts.select !== "function") {
-      setShowImportHelp(true);
-      return;
-    }
-    try {
-      setSyncing(true);
-      const props = await nav.contacts.getProperties();
-      if (!props.includes("tel")) {
-        setSyncError("Браузер не разрешает читать номера телефонов из контактов.");
-        return;
-      }
-      const picked = await nav.contacts.select(["name", "tel"], { multiple: true });
-      const items: { phone: string; name?: string }[] = [];
-      for (const c of picked) {
-        const nm = (c.name && c.name[0]) || undefined;
-        const tels = c.tel || [];
-        for (const t of tels) {
-          if (t && typeof t === "string") items.push({ phone: t, name: nm });
-        }
-      }
-      if (items.length === 0) {
-        setSyncError("Не выбрано ни одного контакта с номером.");
-        return;
-      }
-      const data = await api("import_contacts", { contacts: items }, currentUser.id);
-      if (data.ok) {
-        setSyncResult({
-          added: Number(data.added) || 0,
-          total: items.length,
-          not_registered: Array.isArray(data.not_registered) ? data.not_registered.length : 0,
-        });
-        await loadContacts();
-        try { (navigator as Navigator & { vibrate?: (p: number | number[]) => boolean }).vibrate?.(20); } catch { /* ignore */ }
-      } else {
-        setSyncError(data.error || "Не удалось синхронизировать контакты");
-      }
-    } catch (e) {
-      setSyncError((e as Error).message || "Не удалось получить контакты");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const parseVcf = (text: string): { phone: string; name?: string }[] => {
-    const items: { phone: string; name?: string }[] = [];
-    // Каждый контакт — между BEGIN:VCARD и END:VCARD
-    const cards = text.split(/BEGIN:VCARD/i).slice(1);
-    for (const raw of cards) {
-      const block = raw.split(/END:VCARD/i)[0] || "";
-      // Склейка многострочных значений (продолжение начинается с пробела)
-      const lines = block.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
-      let displayName: string | undefined;
-      let structuredName: string | undefined;
-      const phones: string[] = [];
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const colon = line.indexOf(":");
-        if (colon < 0) continue;
-        const left = line.slice(0, colon);
-        const value = line.slice(colon + 1).trim();
-        const upper = left.toUpperCase();
-        if (upper === "FN" || upper.startsWith("FN;")) {
-          displayName = value;
-        } else if (upper === "N" || upper.startsWith("N;")) {
-          // N: фамилия;имя;отчество;префикс;суффикс
-          const parts = value.split(";").map(p => p.trim()).filter(Boolean);
-          if (parts.length >= 2) structuredName = `${parts[1]} ${parts[0]}`.trim();
-          else if (parts.length === 1) structuredName = parts[0];
-        } else if (upper === "TEL" || upper.startsWith("TEL;") || upper.startsWith("TEL:")) {
-          const cleaned = value.replace(/[^\d+]/g, "");
-          if (cleaned.length >= 5) phones.push(cleaned);
-        }
-      }
-      const nm = displayName || structuredName;
-      for (const p of phones) {
-        items.push({ phone: p, name: nm });
-      }
-    }
-    return items;
-  };
-
-  const handleVcfFile = async (file: File) => {
-    setSyncError("");
-    setSyncResult(null);
-    try {
-      setSyncing(true);
-      const text = await file.text();
-      const items = parseVcf(text);
-      if (items.length === 0) {
-        setSyncError("В файле не найдено контактов с номерами. Убедись, что это .vcf (vCard).");
-        return;
-      }
-      const data = await api("import_contacts", { contacts: items }, currentUser.id);
-      if (data.ok) {
-        setSyncResult({
-          added: Number(data.added) || 0,
-          total: items.length,
-          not_registered: Array.isArray(data.not_registered) ? data.not_registered.length : 0,
-        });
-        await loadContacts();
-        try { (navigator as Navigator & { vibrate?: (p: number | number[]) => boolean }).vibrate?.(20); } catch { /* ignore */ }
-      } else {
-        setSyncError(data.error || "Не удалось импортировать контакты");
-      }
-    } catch (e) {
-      setSyncError((e as Error).message || "Не удалось прочитать файл");
-    } finally {
-      setSyncing(false);
-      if (vcfInputRef.current) vcfInputRef.current.value = "";
-    }
-  };
-
-  const startImport = () => {
-    const nav = navigator as Navigator & { contacts?: ContactsManager };
-    if (native.phoneContacts.supported || (nav.contacts && typeof nav.contacts.select === "function")) {
-      syncPhoneContacts();
-    } else {
-      // На iOS / десктопе — показываем подсказку и предлагаем .vcf
-      setShowImportHelp(true);
-    }
   };
 
   const removeContact = async (contactId: number) => {
@@ -297,55 +143,16 @@ export function ContactsPanel({
             </button>
           </div>
         </div>
-        {syncResult && (
-          <div className="mt-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-2 animate-fade-in">
-            <Icon name="CheckCircle2" size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              Добавлено {syncResult.added} из {syncResult.total}.{" "}
-              {syncResult.not_registered > 0 && (
-                <span className="text-emerald-300/70">{syncResult.not_registered} ещё не в Nova.</span>
-              )}
-            </div>
-            <button onClick={() => setSyncResult(null)} className="text-emerald-300/60 hover:text-emerald-300">
-              <Icon name="X" size={12} />
-            </button>
-          </div>
-        )}
-        {foundFriends.length > 0 && (
-          <div className="mt-2 rounded-2xl glass p-3 animate-fade-in">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold text-violet-300">Уже в Nova из ваших контактов: {foundFriends.length}</div>
-              <button onClick={() => setFoundFriends([])} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={12} /></button>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {foundFriends.slice(0, 30).map(f => (
-                <button
-                  key={f.id}
-                  onClick={async () => {
-                    const r = await api("get_or_create_chat", { partner_id: f.id }, currentUser.id);
-                    if (r?.chat_id) onStartChat({
-                      id: r.chat_id, name: f.name, avatar: (f.name || "?")[0].toUpperCase(),
-                      avatar_url: f.avatar_url || null, lastMsg: "", time: "", partner_id: f.id,
-                    } as Chat);
-                  }}
-                  className="flex flex-col items-center gap-1 w-16 flex-shrink-0"
-                >
-                  <Avatar label={(f.name || "?")[0].toUpperCase()} id={f.id} src={f.avatar_url || undefined} />
-                  <span className="text-[11px] truncate w-full text-center">{f.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {syncError && (
-          <div className="mt-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2 animate-fade-in">
-            <Icon name="AlertTriangle" size={14} className="text-amber-400 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 min-w-0">{syncError}</div>
-            <button onClick={() => setSyncError("")} className="text-amber-300/60 hover:text-amber-300">
-              <Icon name="X" size={12} />
-            </button>
-          </div>
-        )}
+        <SyncBanners
+          currentUserId={currentUser.id}
+          onStartChat={onStartChat}
+          syncResult={syncResult}
+          onDismissResult={() => setSyncResult(null)}
+          foundFriends={foundFriends}
+          onDismissFriends={() => setFoundFriends([])}
+          syncError={syncError}
+          onDismissError={() => setSyncError("")}
+        />
         {/* Search */}
         <div className="flex items-center gap-2 glass rounded-xl px-3 py-2">
           <Icon name="Search" size={15} className="text-muted-foreground" />
@@ -360,29 +167,15 @@ export function ContactsPanel({
 
       {/* Add contact form */}
       {showAdd && (
-        <div className="px-4 py-4 border-b border-white/5 glass animate-fade-in">
-          <p className="text-xs text-muted-foreground mb-3">Добавить по номеру телефона</p>
-          <input
-            value={phone}
-            onChange={e => setPhone(e.target.value)}
-            placeholder="Номер телефона (+79991234567)"
-            className="w-full glass rounded-xl px-4 py-2.5 text-sm outline-none text-foreground placeholder-muted-foreground mb-2"
-          />
-          <input
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="Имя (необязательно)"
-            className="w-full glass rounded-xl px-4 py-2.5 text-sm outline-none text-foreground placeholder-muted-foreground mb-2"
-          />
-          {addError && <p className="text-red-400 text-xs mb-2">{addError}</p>}
-          <button
-            onClick={addContact}
-            disabled={adding || !phone.trim()}
-            className="w-full grad-primary text-white rounded-xl py-2.5 text-sm font-semibold glow-primary transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {adding ? "Добавляем..." : "Добавить контакт"}
-          </button>
-        </div>
+        <AddContactForm
+          phone={phone}
+          setPhone={setPhone}
+          name={name}
+          setName={setName}
+          addError={addError}
+          adding={adding}
+          onSubmit={addContact}
+        />
       )}
 
       {/* List */}
@@ -417,35 +210,13 @@ export function ContactsPanel({
               <span className="text-[11px] font-bold text-violet-400 uppercase tracking-wider">{letter}</span>
             </div>
             {grouped[letter].map(contact => (
-              <div
+              <ContactListItem
                 key={contact.id}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer group"
-                onClick={() => openChat(contact)}
-              >
-                <div
-                  className={`w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0 ${avatarGrad(contact.id)}`}
-                >
-                  {contact.name[0]?.toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm truncate">{contact.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{contact.phone}</p>
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={e => { e.stopPropagation(); onCall(contact); }}
-                    className="p-2 glass rounded-xl text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                  >
-                    <Icon name="Phone" size={15} />
-                  </button>
-                  <button
-                    onClick={e => { e.stopPropagation(); removeContact(contact.id); }}
-                    className="p-2 glass rounded-xl text-red-400 hover:bg-red-500/10 transition-colors"
-                  >
-                    <Icon name="UserMinus" size={15} />
-                  </button>
-                </div>
-              </div>
+                contact={contact}
+                onOpen={openChat}
+                onCall={onCall}
+                onRemove={removeContact}
+              />
             ))}
           </div>
         ))}
@@ -464,77 +235,11 @@ export function ContactsPanel({
       />
 
       {showImportHelp && (
-        <div
-          className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center animate-fade-in"
-          onClick={() => setShowImportHelp(false)}
-        >
-          <div
-            className="w-full sm:max-w-md glass-strong rounded-t-3xl sm:rounded-3xl p-5 animate-slide-up"
-            style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl grad-primary flex items-center justify-center">
-                  <Icon name="Users" size={18} className="text-white" />
-                </div>
-                <h3 className="text-base font-bold">Импорт контактов</h3>
-              </div>
-              <button onClick={() => setShowImportHelp(false)} className="p-2 rounded-xl hover:bg-white/8">
-                <Icon name="X" size={16} />
-              </button>
-            </div>
-
-            <p className="text-xs text-muted-foreground mb-4">
-              Прямой доступ к телефонной книге работает только в Android Chrome. На iPhone, Mac и Windows используй файл vCard (.vcf).
-            </p>
-
-            <div className="glass rounded-2xl p-3 mb-3">
-              <div className="text-xs font-bold mb-2 flex items-center gap-1.5">
-                <Icon name="Smartphone" size={12} className="text-violet-400" />
-                Как получить .vcf на iPhone
-              </div>
-              <ol className="text-[11px] text-muted-foreground space-y-1 list-decimal pl-4">
-                <li>Открой приложение «Контакты»</li>
-                <li>Нажми «Списки» → выбери «Все контакты»</li>
-                <li>Долгое нажатие → «Поделиться»</li>
-                <li>Выбери «Сохранить в Файлы» — получится .vcf</li>
-                <li>Загрузи его сюда кнопкой ниже</li>
-              </ol>
-            </div>
-
-            <div className="glass rounded-2xl p-3 mb-4">
-              <div className="text-xs font-bold mb-2 flex items-center gap-1.5">
-                <Icon name="Monitor" size={12} className="text-violet-400" />
-                На Mac / Windows
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                В приложении «Контакты» (Mac) или «Люди» (Windows) выдели всех → «Экспорт» → формат vCard (.vcf).
-              </p>
-            </div>
-
-            <button
-              onClick={() => vcfInputRef.current?.click()}
-              disabled={syncing}
-              className="w-full grad-primary text-white rounded-2xl py-3 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {syncing ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  Загружаем...
-                </>
-              ) : (
-                <>
-                  <Icon name="Upload" size={16} />
-                  Загрузить .vcf файл
-                </>
-              )}
-            </button>
-            <p className="text-[10px] text-muted-foreground text-center mt-3">
-              Файл обрабатывается у тебя в браузере, мы загружаем только номера и имена.
-            </p>
-          </div>
-        </div>
+        <ImportHelpModal
+          syncing={syncing}
+          onClose={() => setShowImportHelp(false)}
+          onPickFile={() => vcfInputRef.current?.click()}
+        />
       )}
     </div>
   );

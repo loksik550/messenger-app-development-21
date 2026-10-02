@@ -1,19 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User, type IconName } from "@/lib/api";
-import { APP_VERSION } from "@/lib/version";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
-import {
-  RINGTONES, NOTIFY_SOUNDS,
-  getRingtoneId, setRingtoneId,
-  getNotifyId, setNotifyId,
-  previewRingtone, previewNotifySound, stopRingtone,
-  saveCustomRingtone, getCustomRingtoneMeta, clearCustomRingtone,
-  saveCustomNotify, getCustomNotifyMeta, clearCustomNotify,
-  type RingtoneId, type NotifyId,
-} from "@/lib/sounds";
-
-const MAX_RINGTONE_SIZE = 10 * 1024 * 1024;
+import { useSettingsSounds } from "@/components/messenger/settings/useSettingsSounds";
+import { SoundsSection } from "@/components/messenger/settings/SoundsSection";
+import { PinDialog, type PinFlow } from "@/components/messenger/settings/PinDialog";
+import { LoginEventsList, type LoginEvent } from "@/components/messenger/settings/LoginEventsList";
+import { NotificationsInfo } from "@/components/messenger/settings/NotificationsInfo";
+import { SettingsActions } from "@/components/messenger/settings/SettingsActions";
 
 /** Переключатель. Вынесен наружу, чтобы не пересоздавался при обновлениях. */
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -63,9 +57,7 @@ export function SettingsPanel({
 
   // Оповещения о входе с нового устройства — хранятся на сервере
   const [loginAlerts, setLoginAlerts] = useState(() => readBool("nova_sec_login_alerts", true));
-  const [loginEvents, setLoginEvents] = useState<
-    { device: string; ip: string; is_new: boolean; ts: number }[]
-  >([]);
+  const [loginEvents, setLoginEvents] = useState<LoginEvent[]>([]);
   const [devicesCount, setDevicesCount] = useState(0);
   const [showLogins, setShowLogins] = useState(false);
 
@@ -101,69 +93,10 @@ export function SettingsPanel({
     });
   };
 
-  const [ringtone, setRingtone] = useState<RingtoneId>(() => getRingtoneId());
-  const [notifySnd, setNotifySnd] = useState<NotifyId>(() => getNotifyId());
-  const [customMeta, setCustomMeta] = useState<{ name: string; size: number; type: string } | null>(null);
-  const [customNotifyMeta, setCustomNotifyMeta] = useState<{ name: string; size: number; type: string } | null>(null);
-  const ringFileRef = useRef<HTMLInputElement | null>(null);
-  const notifyFileRef = useRef<HTMLInputElement | null>(null);
-  const [pushPerm, setPushPerm] = useState<NotificationPermission>(() => (typeof Notification !== "undefined" ? Notification.permission : "default"));
-  const [soundError, setSoundError] = useState<string>("");
+  const sounds = useSettingsSounds();
+  const { pushPerm, requestPushPerm } = sounds;
 
-  useEffect(() => { getCustomRingtoneMeta().then(setCustomMeta); }, []);
-  useEffect(() => { getCustomNotifyMeta().then(setCustomNotifyMeta); }, []);
-  useEffect(() => {
-    if (!soundError) return;
-    const t = setTimeout(() => setSoundError(""), 3500);
-    return () => clearTimeout(t);
-  }, [soundError]);
-
-  const onPickRingFile = () => ringFileRef.current?.click();
-  const onRingFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = "";
-    if (!f) return;
-    const audioExt = /\.(mp3|m4a|aac|ogg|oga|opus|wav|weba|webm|flac|caf|3gp|amr)$/i.test(f.name);
-    // На некоторых устройствах MIME-тип пустой — тогда проверяем по расширению
-    if (!f.type.startsWith("audio/") && !audioExt) { setSoundError("Можно загрузить только аудио"); return; }
-    if (f.size > MAX_RINGTONE_SIZE) { setSoundError("Файл слишком большой (макс 10 МБ)"); return; }
-    try {
-      const meta = await saveCustomRingtone(f);
-      setCustomMeta({ name: meta.name, size: meta.size, type: f.type });
-      setRingtoneId("custom");
-      setRingtone("custom");
-    } catch (err) {
-      console.error("[ringtone] save failed:", err);
-      setSoundError((err as Error)?.message || "Не удалось сохранить файл");
-    }
-  };
-
-  const onPickNotifyFile = () => notifyFileRef.current?.click();
-  const onNotifyFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = "";
-    if (!f) return;
-    const audioExt = /\.(mp3|m4a|aac|ogg|oga|opus|wav|weba|webm|flac|caf|3gp|amr)$/i.test(f.name);
-    if (!f.type.startsWith("audio/") && !audioExt) { setSoundError("Можно загрузить только аудио"); return; }
-    if (f.size > MAX_RINGTONE_SIZE) { setSoundError("Файл слишком большой (макс 10 МБ)"); return; }
-    try {
-      const meta = await saveCustomNotify(f);
-      setCustomNotifyMeta({ name: meta.name, size: meta.size, type: f.type });
-      setNotifyId("custom");
-      setNotifySnd("custom");
-    } catch (err) {
-      console.error("[notify] save failed:", err);
-      setSoundError((err as Error)?.message || "Не удалось сохранить файл");
-    }
-  };
-
-  const requestPushPerm = async () => {
-    if (typeof Notification === "undefined") return;
-    const p = await Notification.requestPermission();
-    setPushPerm(p);
-  };
-
-  const [pinFlow, setPinFlow] = useState<null | { step: "set" | "confirm" | "verify"; first?: string; value: string; error?: string }>(null);
+  const [pinFlow, setPinFlow] = useState<null | PinFlow>(null);
 
 
   useEffect(() => { writeBool("nova_sec_e2e", e2e); }, [e2e]);
@@ -336,55 +269,7 @@ export function SettingsPanel({
         ))}
 
         {loginEvents.length > 0 && (
-          <div className="glass rounded-2xl overflow-hidden">
-            <button
-              onClick={() => setShowLogins(v => !v)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors"
-            >
-              <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
-                <Icon name="History" size={18} className="text-violet-400" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <div className="text-sm font-medium">Последние входы</div>
-                <div className="text-xs text-muted-foreground truncate">
-                  Проверьте, всё ли это ваши устройства
-                </div>
-              </div>
-              <Icon name={showLogins ? "ChevronUp" : "ChevronDown"} size={16} className="text-muted-foreground flex-shrink-0" />
-            </button>
-
-            {showLogins && (
-              <div className="border-t border-white/5">
-                {loginEvents.map((ev, i) => (
-                  <div key={i} className="flex items-center gap-3 px-4 py-2.5 border-b border-white/5 last:border-0">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${ev.is_new ? "bg-amber-500/15" : "bg-white/5"}`}>
-                      <Icon
-                        name={ev.is_new ? "ShieldAlert" : "Smartphone"}
-                        size={15}
-                        className={ev.is_new ? "text-amber-400" : "text-muted-foreground"}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate">
-                        {ev.device}
-                        {ev.is_new && <span className="text-[10px] text-amber-400 ml-1.5">новое</span>}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {new Date(ev.ts * 1000).toLocaleString("ru", {
-                          day: "numeric", month: "short",
-                          hour: "2-digit", minute: "2-digit",
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <div className="px-4 py-2.5 text-[11px] text-muted-foreground leading-relaxed">
-                  Не узнаёте устройство? Смените PIN-код и завершите чужие сеансы
-                  в разделе «Безопасность и приватность».
-                </div>
-              </div>
-            )}
-          </div>
+          <LoginEventsList loginEvents={loginEvents} showLogins={showLogins} setShowLogins={setShowLogins} />
         )}
 
         {bioError && (
@@ -394,273 +279,22 @@ export function SettingsPanel({
           </div>
         )}
 
-        <div className="px-4 py-3 glass rounded-2xl mt-1">
-          <div className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Пример уведомления</div>
-          <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5">
-            <div className="w-9 h-9 rounded-full grad-primary flex items-center justify-center text-white font-bold text-sm">N</div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold">Nova {notifications ? "" : "(выкл.)"}</div>
-              <div className="text-xs text-muted-foreground truncate">
-                {!notifications ? "Уведомления отключены" : msgPreview ? "Алексей: Привет! Как дела?" : "Новое сообщение"}
-              </div>
-            </div>
-          </div>
-        </div>
+        <NotificationsInfo notifications={notifications} msgPreview={msgPreview} pushPerm={pushPerm} requestPushPerm={requestPushPerm} />
 
-        {pushPerm !== "granted" && (
-          <div className="px-4 py-3 glass rounded-2xl mt-1 flex items-center gap-3 border border-amber-500/30">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-              <Icon name="BellRing" size={18} className="text-amber-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium">
-                {pushPerm === "denied" ? "Уведомления заблокированы" : "Включи уведомления"}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {pushPerm === "denied"
-                  ? "Разреши в настройках браузера, чтобы видеть звонки и сообщения при заблокированном экране"
-                  : "Чтобы получать звонки и сообщения, когда телефон заблокирован"}
-              </div>
-            </div>
-            {pushPerm !== "denied" && (
-              <button onClick={requestPushPerm} className="px-3 py-1.5 grad-primary text-white rounded-xl text-xs font-semibold flex-shrink-0">
-                Включить
-              </button>
-            )}
-          </div>
-        )}
+        <SoundsSection sounds={sounds} />
 
-        <div className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mt-4 mb-1 px-1">Звуки</div>
-        {soundError && (
-          <div className="px-4 py-2 glass rounded-xl border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-            <Icon name="AlertCircle" size={14} />
-            <span>{soundError}</span>
-          </div>
-        )}
-
-        <div className="px-4 py-3 glass rounded-2xl">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon name="Phone" size={16} className="text-violet-400" />
-            <span className="text-sm font-medium">Мелодия звонка</span>
-          </div>
-          <div className="space-y-1.5">
-            {RINGTONES.map((r) => (
-              <div key={r.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${ringtone === r.id ? "border-violet-500 bg-violet-500/10" : "border-white/5 hover:bg-white/5"}`}>
-                <button
-                  onClick={() => { setRingtone(r.id); setRingtoneId(r.id); }}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 ${ringtone === r.id ? "border-violet-500" : "border-white/20"} flex items-center justify-center flex-shrink-0`}>
-                    {ringtone === r.id && <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate">{r.name}</div>
-                    {r.id === "custom" && customMeta && <div className="text-[11px] text-muted-foreground truncate">{customMeta.name}</div>}
-                    {r.id === "custom" && !customMeta && <div className="text-[11px] text-muted-foreground">Файл не загружен</div>}
-                  </div>
-                </button>
-                {r.id === "custom" ? (
-                  <>
-                    <button onClick={onPickRingFile} className="p-1.5 rounded-lg hover:bg-white/8" title="Загрузить">
-                      <Icon name="Upload" size={14} className="text-violet-400" />
-                    </button>
-                    {customMeta && (
-                      <>
-                        <button onClick={() => previewRingtone("custom")} className="p-1.5 rounded-lg hover:bg-white/8" title="Прослушать">
-                          <Icon name="Play" size={14} />
-                        </button>
-                        <button onClick={async () => { await clearCustomRingtone(); setCustomMeta(null); if (ringtone === "custom") { setRingtone("nova"); setRingtoneId("nova"); } }} className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" title="Удалить">
-                          <Icon name="Trash2" size={14} />
-                        </button>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => previewRingtone(r.id)} className="p-1.5 rounded-lg hover:bg-white/8" title="Прослушать">
-                      <Icon name="Play" size={14} />
-                    </button>
-                    <button onClick={() => stopRingtone()} className="p-1.5 rounded-lg hover:bg-white/8" title="Остановить">
-                      <Icon name="Square" size={14} />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-          <input ref={ringFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onRingFile} />
-          <p className="text-[11px] text-muted-foreground mt-2">Загрузи MP3, WAV или другой аудиофайл — он будет играть как в Telegram при входящем звонке.</p>
-        </div>
-
-        <div className="px-4 py-3 glass rounded-2xl">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon name="Bell" size={16} className="text-violet-400" />
-            <span className="text-sm font-medium">Звук уведомлений</span>
-          </div>
-          <div className="space-y-1.5">
-            {NOTIFY_SOUNDS.map((s) => (
-              <div key={s.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${notifySnd === s.id ? "border-violet-500 bg-violet-500/10" : "border-white/5 hover:bg-white/5"}`}>
-                <button
-                  onClick={() => {
-                    if (s.id === "custom" && !customNotifyMeta) { onPickNotifyFile(); return; }
-                    setNotifySnd(s.id); setNotifyId(s.id); previewNotifySound(s.id);
-                  }}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 ${notifySnd === s.id ? "border-violet-500" : "border-white/20"} flex items-center justify-center flex-shrink-0`}>
-                    {notifySnd === s.id && <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate">{s.name}</div>
-                    {s.id === "custom" && customNotifyMeta && <div className="text-[11px] text-muted-foreground truncate">{customNotifyMeta.name}</div>}
-                    {s.id === "custom" && !customNotifyMeta && <div className="text-[11px] text-muted-foreground">Файл не загружен</div>}
-                  </div>
-                </button>
-                {s.id === "custom" ? (
-                  <>
-                    <button onClick={onPickNotifyFile} className="p-1.5 rounded-lg hover:bg-white/8" title="Загрузить">
-                      <Icon name="Upload" size={14} className="text-violet-400" />
-                    </button>
-                    {customNotifyMeta && (
-                      <>
-                        <button onClick={() => previewNotifySound("custom")} className="p-1.5 rounded-lg hover:bg-white/8" title="Прослушать">
-                          <Icon name="Play" size={14} />
-                        </button>
-                        <button onClick={async () => { await clearCustomNotify(); setCustomNotifyMeta(null); if (notifySnd === "custom") { setNotifySnd("ping"); setNotifyId("ping"); } }} className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" title="Удалить">
-                          <Icon name="Trash2" size={14} />
-                        </button>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <button onClick={() => previewNotifySound(s.id)} className="p-1.5 rounded-lg hover:bg-white/8">
-                    <Icon name="Play" size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <input ref={notifyFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onNotifyFile} />
-          <p className="text-[11px] text-muted-foreground mt-2">Можно загрузить свой короткий звук для входящих сообщений.</p>
-        </div>
-
-        <button
-          onClick={exportBackup}
-          className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/5 transition-all mt-2"
-        >
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center">
-            <Icon name="Download" size={18} className="text-emerald-400" />
-          </div>
-          <div className="flex-1 text-left">
-            <div className="text-sm font-medium">Резервная копия</div>
-            <div className="text-xs text-muted-foreground">Скачать все чаты в файл JSON</div>
-          </div>
-          <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
-        </button>
-
-        {onOpenHelp && (
-          <button onClick={onOpenHelp} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/8 transition-all mt-3">
-            <div className="w-9 h-9 rounded-xl bg-cyan-500/15 flex items-center justify-center">
-              <Icon name="CircleHelp" size={18} className="text-cyan-400" />
-            </div>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-medium">Помощь</div>
-              <div className="text-xs text-muted-foreground">Ответы на частые вопросы</div>
-            </div>
-            <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
-          </button>
-        )}
-
-        {onOpenPrivacyPolicy && (
-          <button onClick={onOpenPrivacyPolicy} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/8 transition-all mt-3">
-            <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center">
-              <Icon name="FileText" size={18} className="text-violet-400" />
-            </div>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-medium">Политика конфиденциальности</div>
-              <div className="text-xs text-muted-foreground">Как мы храним и защищаем ваши данные</div>
-            </div>
-            <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
-          </button>
-        )}
-
-        {onOpenTerms && (
-          <button onClick={onOpenTerms} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/8 transition-all mt-2">
-            <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center">
-              <Icon name="ScrollText" size={18} className="text-violet-400" />
-            </div>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-medium">Пользовательское соглашение</div>
-              <div className="text-xs text-muted-foreground">Правила использования и запрещённый контент</div>
-            </div>
-            <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
-          </button>
-        )}
-
-        <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-red-500/10 transition-all mt-2">
-          <div className="w-9 h-9 rounded-xl bg-red-500/15 flex items-center justify-center">
-            <Icon name="LogOut" size={18} className="text-red-400" />
-          </div>
-          <span className="text-sm font-medium text-red-400">Выйти из аккаунта</span>
-          <Icon name="ChevronRight" size={16} className="text-red-400/50 ml-auto" />
-        </button>
-
-        {onDeleteAccount && (
-          <button onClick={onDeleteAccount} className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-red-500/15 transition-all mt-2 border border-red-500/20">
-            <div className="w-9 h-9 rounded-xl bg-red-500/20 flex items-center justify-center">
-              <Icon name="Trash2" size={18} className="text-red-400" />
-            </div>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-semibold text-red-400">Удалить аккаунт</div>
-              <div className="text-xs text-red-300/70">Полное и безвозвратное удаление всех данных</div>
-            </div>
-            <Icon name="ChevronRight" size={16} className="text-red-400/50 ml-auto" />
-          </button>
-        )}
-
-        <div className="w-full text-center text-[11px] text-muted-foreground/60 py-6 select-none">
-          Nova {APP_VERSION}
-        </div>
+        <SettingsActions
+          exportBackup={exportBackup}
+          onLogout={onLogout}
+          onDeleteAccount={onDeleteAccount}
+          onOpenPrivacyPolicy={onOpenPrivacyPolicy}
+          onOpenTerms={onOpenTerms}
+          onOpenHelp={onOpenHelp}
+        />
       </div>
 
       {pinFlow && (
-        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={() => setPinFlow(null)}>
-          <div className="glass-strong rounded-2xl p-5 w-full max-w-sm animate-scale-in" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl grad-primary flex items-center justify-center">
-                <Icon name="KeyRound" size={20} className="text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="font-semibold">
-                  {pinFlow.step === "set" && "Придумайте PIN-код"}
-                  {pinFlow.step === "confirm" && "Повторите PIN-код"}
-                  {pinFlow.step === "verify" && "Введите PIN-код"}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {pinFlow.step === "verify" ? "Чтобы отключить 2FA" : "От 4 до 6 цифр"}
-                </div>
-              </div>
-            </div>
-            <input
-              autoFocus
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-              value={pinFlow.value}
-              onChange={(e) => setPinFlow({ ...pinFlow, value: e.target.value.replace(/\D/g, ""), error: undefined })}
-              onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }}
-              className="w-full text-center text-2xl tracking-[0.5em] font-bold bg-white/5 rounded-xl py-3 outline-none focus:ring-2 focus:ring-violet-500"
-              placeholder="••••"
-            />
-            {pinFlow.error && <p className="text-red-400 text-xs mt-2 text-center">{pinFlow.error}</p>}
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => setPinFlow(null)} className="flex-1 px-4 py-2.5 rounded-xl hover:bg-white/8 text-sm">Отмена</button>
-              <button onClick={submitPin} className="flex-1 grad-primary text-white rounded-xl py-2.5 text-sm font-semibold">
-                {pinFlow.step === "verify" ? "Отключить" : pinFlow.step === "set" ? "Далее" : "Готово"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PinDialog pinFlow={pinFlow} setPinFlow={setPinFlow} submitPin={submitPin} />
       )}
     </div>
   );

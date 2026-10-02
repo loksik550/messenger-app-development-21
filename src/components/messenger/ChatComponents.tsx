@@ -6,10 +6,7 @@ import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import StickerPicker from "@/components/messenger/StickerPicker";
 import PartnerProfilePanel from "@/components/messenger/PartnerProfilePanel";
 import MessageList from "@/components/messenger/MessageList";
-import {
-  SCROLL_NEAR_BOTTOM_PX, SCROLL_SHOW_DOWN_PX, SCROLL_RESET_NEW_PX,
-  TYPING_THROTTLE_MS,
-} from "@/components/messenger/chatConstants";
+import { TYPING_THROTTLE_MS } from "@/components/messenger/chatConstants";
 import { useChatMessages } from "@/components/messenger/useChatMessages";
 import { useChatSettings } from "@/components/messenger/useChatSettings";
 import { useChatActions, type ConfirmState } from "@/components/messenger/useChatActions";
@@ -17,6 +14,8 @@ import { enqueue, retry as retryOutbox, removeFromOutbox } from "@/lib/outbox";
 import { track } from "@/lib/track";
 import { useDraft } from "@/lib/drafts";
 import { useChatMedia } from "@/components/messenger/useChatMedia";
+import { useChatScroll } from "@/components/messenger/useChatScroll";
+import { useMessageActions } from "@/components/messenger/useMessageActions";
 import {
   ConfirmDialog, EncryptionBadge, UnknownContactHint, PinnedBar, ScrollDownButton,
 } from "@/components/messenger/ChatOverlays";
@@ -55,11 +54,7 @@ export function ChatWindow({
   const [editing, setEditing] = useState<Message | null>(null);
   useDraft(`c${chat.id}`, input, setInput, !!editing);
   const [forwardMsgId, setForwardMsgId] = useState<number | null>(null);
-  const [highlightId, setHighlightId] = useState<number | null>(null);
-  const [showScrollDown, setShowScrollDown] = useState(false);
-  const [newCount, setNewCount] = useState(0);
-  const [favToast, setFavToast] = useState("");
-  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const { messagesScrollRef, endRef, showScrollDown, newCount, handleMessagesScroll, scrollToBottom } = useChatScroll({ messages, isTyping });
   const [, setShowReactionPicker] = useState<number | null>(null);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);
@@ -86,14 +81,11 @@ export function ChatWindow({
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ msgId: number; out: boolean } | null>(null);
   const [heartBurst, setHeartBurst] = useState<number | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
-      if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
       if (typingTimerRef.current) { clearTimeout(typingTimerRef.current); typingTimerRef.current = null; }
       const mr = mediaRecorder.current;
       if (mr && mr.state === "recording") {
@@ -101,36 +93,6 @@ export function ChatWindow({
       }
     };
   }, []);
-
-  useEffect(() => {
-    const container = messagesScrollRef.current;
-    if (!container) return;
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    // если близко к низу — авто-скроллим
-    if (distanceFromBottom < SCROLL_NEAR_BOTTOM_PX) {
-      endRef.current?.scrollIntoView({ behavior: "smooth" });
-      setNewCount(0);
-    } else {
-      // считаем непрочитанные «новые входящие»
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg && !lastMsg.out) {
-        setNewCount((n) => n + 1);
-      }
-    }
-  }, [messages, isTyping]);
-
-  const handleMessagesScroll = () => {
-    const container = messagesScrollRef.current;
-    if (!container) return;
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    setShowScrollDown(distanceFromBottom > SCROLL_SHOW_DOWN_PX);
-    if (distanceFromBottom < SCROLL_RESET_NEW_PX) setNewCount(0);
-  };
-
-  const scrollToBottom = () => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-    setNewCount(0);
-  };
 
   const notifyTyping = () => {
     // Не чаще одного запроса в 3 секунды
@@ -172,105 +134,19 @@ export function ChatWindow({
     }
   };
 
-  const deleteMessage = (msgId: number) => {
-    setCtxMenu(null);
-    setConfirm({
-      title: "Удалить сообщение?",
-      text: "Сообщение исчезнет у всех участников чата.",
-      danger: true,
-      action: async () => {
-        // Оптимистично убираем
-        setMessages(prev => prev.filter(m => m.id !== msgId));
-        const r = await api("delete_message", { message_id: msgId }, currentUser.id);
-        if (r?.error) {
-          alert("Не удалось удалить: " + r.error);
-          // Откат: перезагрузим
-          setLastSince(0);
-        }
-      },
-    });
-  };
-
-  const startHold = (msgId: number, out: boolean) => {
-    if (msgId < 0) return;
-    holdTimer.current = setTimeout(() => setCtxMenu({ msgId, out }), 500);
-  };
-  const cancelHold = () => { if (holdTimer.current) clearTimeout(holdTimer.current); };
-
-  const addReaction = async (msgId: number, emoji: string) => {
-    setShowReactionPicker(null);
-    setCtxMenu(null);
-    await api("add_reaction", { message_id: msgId, emoji }, currentUser.id);
-    setMessages(prev => prev.map(m => {
-      if (m.id !== msgId) return m;
-      const existing = m.reactions || [];
-      const myIdx = existing.findIndex(r => r.user_id === currentUser.id);
-      if (myIdx >= 0) {
-        const updated = [...existing];
-        if (updated[myIdx].emoji === emoji) {
-          updated.splice(myIdx, 1);
-        } else {
-          updated[myIdx] = { ...updated[myIdx], emoji };
-        }
-        return { ...m, reactions: updated };
-      }
-      return { ...m, reactions: [...existing, { emoji, user_id: currentUser.id, user_name: "Я" }] };
-    }));
-  };
-
   const {
     handleToggleMute, handleTogglePin, handleToggleFavorite,
     handleClearHistory, handleBlock, handleToggleArchive,
   } = useChatActions({ chat, currentUser, onBack, onChatUpdated, onChatDeleted, setConfirm, setMessages, setLastSince });
 
-  // ── Reply / Forward / Edit / Pin ──
-  const handleReply = (msgId: number) => {
-    const m = messages.find(x => x.id === msgId);
-    if (m) {
-      setReplyTo({ ...m, sender_name: m.out ? "Вы" : (m.sender_name || chat.name) });
-      setEditing(null);
-      setCtxMenu(null);
-    }
-  };
-
-  const handleEdit = (msgId: number) => {
-    const m = messages.find(x => x.id === msgId);
-    if (m) {
-      setEditing(m);
-      setReplyTo(null);
-      setInput(m.text);
-      setCtxMenu(null);
-    }
-  };
-
-  const handleForward = (msgId: number) => {
-    setForwardMsgId(msgId);
-    setCtxMenu(null);
-  };
-
-  const handlePinToggle = async (msgId: number) => {
-    setCtxMenu(null);
-    if (pinnedMsg?.id === msgId) {
-      setPinnedMsg(null);
-      await api("unpin_message", { chat_id: chat.id }, currentUser.id);
-    } else {
-      const m = messages.find(x => x.id === msgId);
-      if (m) {
-        setPinnedMsg({ id: m.id, sender_name: m.out ? "Вы" : (m.sender_name || chat.name), text: m.text, media_type: m.media_type });
-      }
-      await api("pin_message", { chat_id: chat.id, message_id: msgId }, currentUser.id);
-    }
-  };
-
-  const scrollToMessage = (msgId: number) => {
-    const el = document.getElementById(`msg-${msgId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      setHighlightId(msgId);
-      setTimeout(() => setHighlightId(null), 1500);
-    }
-  };
-
+  const {
+    highlightId, favToast,
+    deleteMessage, startHold, cancelHold, addReaction,
+    handleReply, handleEdit, handleForward, handlePinToggle, scrollToMessage, handleFavorite,
+  } = useMessageActions({
+    chat, currentUser, messages, setMessages, setLastSince, setConfirm, setCtxMenu, setShowReactionPicker,
+    setReplyTo, setEditing, setInput, setForwardMsgId, pinnedMsg, setPinnedMsg,
+  });
 
   const filteredMessages = searchQuery.trim()
     ? messages.filter(m => (m.text || "").toLowerCase().includes(searchQuery.trim().toLowerCase()))
@@ -360,16 +236,7 @@ export function ChatWindow({
           onEdit={handleEdit}
           onPin={handlePinToggle}
           isPinned={pinnedMsg?.id === ctxMenu.msgId}
-          onFavorite={chat.saved ? undefined : async (id) => {
-            setCtxMenu(null);
-            const saved = await api("saved_chat", {}, currentUser.id).catch(() => null);
-            const r = saved?.chat_id
-              ? await api("forward_message", { message_id: id, target_chat_id: saved.chat_id }, currentUser.id).catch(() => null)
-              : null;
-            track("favorite_add");
-            setFavToast(r && !r.error ? "Добавлено в избранное" : "Не удалось добавить");
-            setTimeout(() => setFavToast(""), 1800);
-          }}
+          onFavorite={chat.saved ? undefined : handleFavorite}
         />
       )}
 
