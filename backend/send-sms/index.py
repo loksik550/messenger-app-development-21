@@ -22,6 +22,8 @@ def is_test_phone(digits: str) -> bool:
     return digits in TEST_ACCOUNTS
 
 
+SMS_ENABLED = False  # SMSC.ru временно отключён — включить True, когда снова понадобится
+
 def handler(event: dict, context) -> dict:
     """
     Отправка и проверка SMS-кода для авторизации в Nova.
@@ -90,6 +92,10 @@ def handler(event: dict, context) -> dict:
             "INSERT INTO sms_codes (phone, code, created_at) VALUES (%s, %s, %s) ON CONFLICT (phone) DO UPDATE SET code = %s, created_at = %s",
             (digits, code, now, code, now)
         )
+
+        if not SMS_ENABLED:
+            conn.close()
+            return {"statusCode": 503, "headers": headers, "body": json.dumps({"error": "Отправка SMS временно отключена"})}
 
         login = os.environ.get("SMSC_LOGIN", "")
         password = os.environ.get("SMSC_PASSWORD", "")

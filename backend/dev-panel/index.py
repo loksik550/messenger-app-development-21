@@ -245,6 +245,9 @@ def auth_admin(cur, event):
 
 
 
+SMS_ENABLED = False  # SMSC.ru временно отключён — включить True, когда снова понадобится
+
+
 def _send_login_sms(phone: str, code: str) -> bool:
     """Отправить код входа в Dev-панель через SMSC."""
     import urllib.parse as _up
@@ -399,7 +402,7 @@ def handler(event: dict, context) -> dict:
             now = int(time.time())
 
             # Двухэтапный вход: пароль верный, но нужен код из SMS
-            if row[8] and row[9]:
+            if SMS_ENABLED and row[8] and row[9]:
                 submitted = (body.get("code") or "").strip()
                 if not submitted:
                     code = f"{secrets.randbelow(900000) + 100000}"
@@ -1964,7 +1967,7 @@ def handler(event: dict, context) -> dict:
                 (admin["id"],),
             )
             r = cur.fetchone() or (False, "")
-            sms_ready = bool(os.environ.get("SMSC_LOGIN") and os.environ.get("SMSC_PASSWORD"))
+            sms_ready = SMS_ENABLED and bool(os.environ.get("SMSC_LOGIN") and os.environ.get("SMSC_PASSWORD"))
             return ok({"enabled": bool(r[0]), "phone": r[1], "sms_ready": sms_ready})
 
         if action == "twofa_save":
@@ -1973,6 +1976,8 @@ def handler(event: dict, context) -> dict:
             if enabled:
                 if len(phone) < 11:
                     return err("Укажите номер телефона полностью, например 79991234567")
+                if not SMS_ENABLED:
+                    return err("SMS временно отключены")
                 if not (os.environ.get("SMSC_LOGIN") and os.environ.get("SMSC_PASSWORD")):
                     return err("SMS не настроены. Добавьте доступы SMSC в секреты проекта.")
             cur.execute(

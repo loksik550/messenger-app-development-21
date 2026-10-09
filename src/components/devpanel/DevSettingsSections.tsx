@@ -60,7 +60,7 @@ export function TwoFactor() {
       {!smsReady && (
         <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5 mb-3">
           <Icon name="TriangleAlert" size={14} className="mt-0.5 shrink-0" />
-          <span>Сначала подключите отправку SMS — доступы SMSC в секретах проекта</span>
+          <span>SMS временно отключены — вход работает только по паролю</span>
         </div>
       )}
 

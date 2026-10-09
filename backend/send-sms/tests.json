@@ -10,35 +10,52 @@
       "name": "Send: тестовый номер RuStore",
       "method": "POST",
       "path": "/",
-      "body": {"action": "send", "phone": "79991234567"},
+      "body": {
+        "action": "send",
+        "phone": "79991234567"
+      },
       "expectedStatus": 200
     },
     {
       "name": "Verify: тестовый номер с правильным кодом 1234",
       "method": "POST",
       "path": "/",
-      "body": {"action": "verify", "phone": "79991234567", "code": "1234"},
+      "body": {
+        "action": "verify",
+        "phone": "79991234567",
+        "code": "1234"
+      },
       "expectedStatus": 200
     },
     {
       "name": "Verify: тестовый номер с неверным кодом",
       "method": "POST",
       "path": "/",
-      "body": {"action": "verify", "phone": "79991234567", "code": "9999"},
+      "body": {
+        "action": "verify",
+        "phone": "79991234567",
+        "code": "9999"
+      },
       "expectedStatus": 400
     },
     {
-      "name": "Send: реальный номер",
+      "name": "Send: реальный номер — SMS временно отключены",
       "method": "POST",
       "path": "/",
-      "body": {"action": "send", "phone": "79998887766"},
-      "expectedStatus": 200
+      "body": {
+        "action": "send",
+        "phone": "79998887766"
+      },
+      "expectedStatus": 503
     },
     {
       "name": "Reject invalid phone",
       "method": "POST",
       "path": "/",
-      "body": {"action": "send", "phone": "123"},
+      "body": {
+        "action": "send",
+        "phone": "123"
+      },
       "expectedStatus": 400
     }
   ]
