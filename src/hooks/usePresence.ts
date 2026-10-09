@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { api } from "@/lib/api";
+import { authHeaders, getAuthToken } from "@/lib/authToken";
 
 /**
  * Поддерживает онлайн-статус пользователя:
@@ -34,11 +35,12 @@ export function usePresence(userId: number | null | undefined) {
             [JSON.stringify({ action: "set_offline", user_id: userId })],
             { type: "application/json" }
           );
-          navigator.sendBeacon(url + `?user_id=${userId}`, blobWithId);
+          const tk = getAuthToken();
+          navigator.sendBeacon(url + `?user_id=${userId}` + (tk ? `&token=${encodeURIComponent(tk)}` : ""), blobWithId);
         } else {
           fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-User-Id": String(userId) },
+            headers: { "Content-Type": "application/json", ...authHeaders(userId) },
             body: JSON.stringify({ action: "set_offline" }),
             keepalive: true,
           }).catch(() => { /* ignore */ });

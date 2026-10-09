@@ -8,6 +8,7 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 
 import psycopg2
+import nova_auth
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 MIN_AMOUNT = 1.00
@@ -18,7 +19,7 @@ YOOKASSA_API_URL = "https://api.yookassa.ru/v3/payments"
 HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id',
+    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token',
     'Content-Type': 'application/json'
 }
 
@@ -124,6 +125,15 @@ def handler(event, context):
         user_id = int(user_id)
     except (TypeError, ValueError):
         return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Bad user_id'})}
+
+    _ac = get_conn()
+    try:
+        _ok = nova_auth.check(_ac.cursor(), event, user_id)
+        _ac.commit()
+    finally:
+        _ac.close()
+    if not _ok:
+        return nova_auth.denied(HEADERS)
 
     try:
         amount = float(data.get('amount', 0))

@@ -223,7 +223,8 @@ public class IncomingCallActivity extends Activity {
         handled = true;
         stopRinging();
         final String c = callId, f = fromUser, me = recipient;
-        new Thread(() -> CallActionReceiver.sendDecline(c, f, me)).start();
+        final android.content.Context appCtx = getApplicationContext();
+        new Thread(() -> CallActionReceiver.sendDecline(appCtx, c, f, me)).start();
         CallActionReceiver.dismiss(this, null);
         finishAndRemoveTask();
     }

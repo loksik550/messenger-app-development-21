@@ -6,6 +6,7 @@ import hmac
 import urllib.request
 import threading
 import psycopg2
+import nova_auth
 
 
 def _hash_password(password: str) -> str:
@@ -27,11 +28,18 @@ def _verify_password(password: str, stored: str) -> bool:
         return False
 
 
+def _json_headers(url: str) -> dict:
+    h = {"Content-Type": "application/json"}
+    if url and url == os.environ.get("PUSH_NOTIFY_URL", ""):
+        h["X-Internal-Key"] = nova_auth.internal_key()
+    return h
+
+
 def _fire_and_forget_http(url: str, body: bytes, timeout: float = 3.0) -> None:
     """Отправить HTTP POST в фоне, не блокируя ответ клиенту."""
     def _run():
         try:
-            req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+            req = urllib.request.Request(url, data=body, headers=_json_headers(url))
             urllib.request.urlopen(req, timeout=timeout)
         except Exception:
             pass
@@ -58,7 +66,7 @@ SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Admin-Password, X-Admin-Token",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token, X-Admin-Password, X-Admin-Token",
 }
 
 
@@ -348,6 +356,17 @@ def _device_name(headers: dict) -> str:
     return f"{dev} · {br}" if br else dev
 
 
+def _login_reply(cur, event: dict, row, extra: dict) -> dict:
+    """Успешный вход: выдаём секретный ключ сессии вместе с профилем."""
+    headers = event.get("headers", {}) or {}
+    ip = ((event.get("requestContext", {}) or {}).get("identity", {}) or {}).get("sourceIp", "")
+    ua = (headers.get("user-agent") or headers.get("User-Agent") or "")
+    token = nova_auth.issue_token(cur, int(row[0]), _device_name(headers), ua, ip)
+    data = {"user": serialize_user(row), "token": token}
+    data.update(extra)
+    return ok(data)
+
+
 def track_login(cur, uid: int, event: dict) -> None:
     """
     Запоминает вход и предупреждает хозяина, если устройство незнакомое.
@@ -482,6 +501,12 @@ def _handle(event: dict, context) -> dict:
         except (ValueError, TypeError):
             pass
 
+    AUTH_FREE = {"register", "auth_password", "reset_password", "app_status", "ping",
+                 "ban_status", "logout", "bot_get_updates", "bot_send_message"}
+    if user_id and action not in AUTH_FREE and not nova_auth.check(cur, event, user_id):
+        conn.close()
+        return nova_auth.denied(CORS)
+
     if action == "app_status":
         """Проверка режима технических работ — приложение спрашивает при запуске."""
         cur.execute(
@@ -518,105 +543,8 @@ def _handle(event: dict, context) -> dict:
 
     # ── register ──────────────────────────────────────────────────────────────
     if action == "register":
-        phone = (body.get("phone") or "").strip()
-        name = (body.get("name") or "").strip()
-        if not phone or not name:
-            conn.close()
-            return err("Укажите phone и name")
-        # Rate-limit по IP: не более 10 регистраций/минуту с одного IP
-        ip = (event.get("requestContext", {}) or {}).get("identity", {}).get("sourceIp", "anon")
-        if not _rate_limit(cur, f"reg:{ip}", 10):
-            conn.close()
-            return err("Слишком много попыток, подождите минуту", 429)
-
-        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE phone = %s", (phone,))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE phone = %s", (int(time.time()), phone))
-            track_login(cur, int(existing[0]), event)
-            conn.close()
-            return ok({"user": serialize_user(existing), "existed": True})
-
-        cur.execute(
-            f"""INSERT INTO {SCHEMA}.users (phone, name, last_seen, created_at)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id""",
-            (phone, name, int(time.time()), int(time.time()))
-        )
-        new_id = cur.fetchone()[0]
-        track_login(cur, int(new_id), event)
-        _grant_xp(cur, new_id, "registered")
-        _award_badge(cur, new_id, "newcomer")
-        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id=%s", (new_id,))
-        row = cur.fetchone()
-
-        # Кого уведомить: те, кто добавил этот номер как "отложенный контакт".
-        # Нормализуем телефон так же, как в add_contact.
-        norm_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-        if norm_phone.startswith("8"):
-            norm_phone = "7" + norm_phone[1:]
-        if norm_phone.startswith("+"):
-            norm_phone = norm_phone[1:]
-        waiters = []
-        try:
-            cur.execute(
-                f"""SELECT id, user_id, name_override FROM {SCHEMA}.pending_contacts
-                    WHERE phone = %s AND notified = 0""",
-                (norm_phone,)
-            )
-            waiters = cur.fetchall()
-            if waiters:
-                # Автоматически добавляем нового юзера в контакты тех, кто его ждал
-                for _pid, waiter_uid, waiter_name in waiters:
-                    cur.execute(
-                        f"""INSERT INTO {SCHEMA}.contacts (user_id, contact_id, name_override, created_at)
-                            VALUES (%s, %s, %s, %s)
-                            ON CONFLICT (user_id, contact_id) DO NOTHING""",
-                        (int(waiter_uid), new_id, waiter_name, int(time.time()))
-                    )
-                cur.execute(
-                    f"UPDATE {SCHEMA}.pending_contacts SET notified = 1 WHERE phone = %s",
-                    (norm_phone,)
-                )
-        except Exception:
-            waiters = []
         conn.close()
-
-        # Push admin'у о новой регистрации
-        admin_id = os.environ.get("ADMIN_USER_ID", "").strip()
-        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
-
-        # Push тем, кто ждал регистрацию этого контакта
-        if push_url and waiters:
-            for _pid, waiter_uid, waiter_name in waiters:
-                try:
-                    disp = (waiter_name or row[2])
-                    wbody = json.dumps({
-                        "action": "send",
-                        "recipient_id": int(waiter_uid),
-                        "title": "🎉 Контакт в Nova",
-                        "sender_name": "Nova",
-                        "message": f"{disp} теперь в Nova — можно написать или позвонить",
-                        "tag": f"contact_joined_{new_id}",
-                    }).encode("utf-8")
-                    _fire_and_forget_http(push_url, wbody, timeout=5.0)
-                except Exception:
-                    pass
-        if admin_id and admin_id.isdigit() and push_url and int(admin_id) != row[0]:
-            try:
-                push_body = json.dumps({
-                    "action": "send",
-                    "recipient_id": int(admin_id),
-                    "title": "👤 Новая регистрация",
-                    "sender_name": "Nova",
-                    "message": f"{row[2]} ({row[1]}) присоединился к Nova",
-                    "tag": f"reg_{row[0]}",
-                }).encode("utf-8")
-                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
-                urllib.request.urlopen(req, timeout=5)
-            except Exception:
-                pass
-        return ok({"user": serialize_user(row)})
+        return ok({"deprecated": True, "error": "Обновите приложение: вход по номеру и паролю"})
 
     # ── auth_password — вход/регистрация по паролю (без SMS) ───────────────────
     if action == "auth_password":
@@ -675,8 +603,10 @@ def _handle(event: dict, context) -> dict:
             cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (int(time.time()), user_id_db))
             cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (user_id_db,))
             row = cur.fetchone()
+            track_login(cur, int(user_id_db), event)
+            res = _login_reply(cur, event, row, {"existed": True})
             conn.close()
-            return ok({"user": serialize_user(row), "existed": True})
+            return res
 
         # Новый пользователь — для регистрации нужно имя
         if not name:
@@ -694,8 +624,10 @@ def _handle(event: dict, context) -> dict:
         _award_badge(cur, new_id, "newcomer")
         cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id=%s", (new_id,))
         row = cur.fetchone()
+        track_login(cur, int(new_id), event)
+        res = _login_reply(cur, event, row, {"existed": False})
         conn.close()
-        return ok({"user": serialize_user(row), "existed": False})
+        return res
 
     # ── reset_password (восстановление доступа по имени аккаунта) ──────────────
     if action == "reset_password":
@@ -735,8 +667,14 @@ def _handle(event: dict, context) -> dict:
         )
         cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (user_id_db,))
         row = cur.fetchone()
+        cur.execute(
+            f"UPDATE {SCHEMA}.user_sessions SET revoked = TRUE WHERE user_id = %s AND token_hash IS NOT NULL",
+            (user_id_db,),
+        )
+        track_login(cur, int(user_id_db), event)
+        res = _login_reply(cur, event, row, {"reset": True})
         conn.close()
-        return ok({"user": serialize_user(row), "reset": True})
+        return res
 
     # ── get_me ────────────────────────────────────────────────────────────────
     if action == "get_me":
@@ -1709,19 +1647,27 @@ def _handle(event: dict, context) -> dict:
         return ok({"success": True})
 
     # ── User Sessions ─────────────────────────────────────────────────────────
+    if action == "logout":
+        nova_auth.revoke_token(cur, nova_auth.get_token(event))
+        conn.close()
+        return ok({"ok": True})
+
     if action == "sessions_list":
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")
         cur.execute(
             f"""SELECT id, device_name, device_info, ip_addr, created_at, last_active_at, revoked
-                FROM {SCHEMA}.user_sessions WHERE user_id=%s ORDER BY last_active_at DESC LIMIT 50""",
+                FROM {SCHEMA}.user_sessions WHERE user_id=%s AND revoked = FALSE
+                ORDER BY last_active_at DESC LIMIT 50""",
             (int(user_id),)
         )
         rows = cur.fetchall()
+        me_sid = nova_auth.current_session_id(cur, event, user_id)
         conn.close()
         return ok({"sessions": [{
             "id": r[0], "device_name": r[1], "device_info": r[2], "ip_addr": r[3],
             "created_at": int(r[4]), "last_active_at": int(r[5]), "revoked": bool(r[6]),
+            "current": r[0] == me_sid,
         } for r in rows]})
 
     if action == "sessions_revoke":
@@ -1742,8 +1688,8 @@ def _handle(event: dict, context) -> dict:
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")
         cur.execute(
-            f"UPDATE {SCHEMA}.user_sessions SET revoked=TRUE WHERE user_id=%s",
-            (int(user_id),)
+            f"UPDATE {SCHEMA}.user_sessions SET revoked=TRUE WHERE user_id=%s AND id <> %s",
+            (int(user_id), nova_auth.current_session_id(cur, event, user_id) or 0)
         )
         conn.close()
         return ok({"ok": True})
@@ -2978,7 +2924,7 @@ def _handle(event: dict, context) -> dict:
                             "chat_id": int(miss_chat_id),
                             "from_user_id": int(caller_id),
                         }).encode("utf-8")
-                        req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
+                        req = urllib.request.Request(push_url, data=push_body, headers=_json_headers(push_url))
                         urllib.request.urlopen(req, timeout=5)
                     except Exception:
                         pass
@@ -5480,7 +5426,7 @@ def _handle(event: dict, context) -> dict:
                     "message": f"📸 Ответ на историю: {(emoji + ' ' + text).strip()[:80]}" if text else f"📸 Отреагировал(а) {emoji} на историю",
                     "chat_id": chat_id,
                 }).encode("utf-8")
-                req = urllib.request.Request(push_url, data=push_payload, headers={"Content-Type": "application/json"})
+                req = urllib.request.Request(push_url, data=push_payload, headers=_json_headers(push_url))
                 urllib.request.urlopen(req, timeout=5)
             except Exception:
                 pass

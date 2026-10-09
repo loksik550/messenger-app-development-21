@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User, type Fundraiser, YOOKASSA_PAY_API } from "@/lib/api";
+import { authHeaders } from "@/lib/authToken";
 
 interface Props {
   currentUser: User;
@@ -91,7 +92,7 @@ export default function FundraiserPanel({ currentUser, fundraiserId, mode, onClo
       const returnUrl = `${window.location.origin}${window.location.pathname}?payment=success&fund=${fundraiserId}`;
       const res = await fetch(YOOKASSA_PAY_API, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-User-Id": String(currentUser.id) },
+        headers: { "Content-Type": "application/json", ...authHeaders(currentUser.id) },
         body: JSON.stringify({
           amount: a,
           user_email: donateEmail,

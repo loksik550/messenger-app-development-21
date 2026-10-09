@@ -42,6 +42,7 @@ const HelpPanel = lazyWithRetry(() => import("@/components/messenger/HelpPanel")
 const VerificationPanel = lazyWithRetry(() => import("@/components/messenger/VerificationPanel"));
 const BannedScreen = lazyWithRetry(() => import("@/components/messenger/BannedScreen"));
 import { type Contact } from "@/lib/api";
+import { restoreAuthToken, setAuthToken, onAuthExpired } from "@/lib/authToken";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
@@ -77,17 +78,28 @@ export default function Index() {
 
   // Восстановление сессии из localStorage
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("nova_user");
-      if (saved) {
-        const user = JSON.parse(saved) as User;
-        if (user?.id && user?.phone && user?.name) {
-          setCurrentUser(user);
+    let cancelled = false;
+    restoreAuthToken().finally(() => {
+      if (cancelled) return;
+      try {
+        const saved = localStorage.getItem("nova_user");
+        if (saved) {
+          const user = JSON.parse(saved) as User;
+          if (user?.id && user?.phone && user?.name) {
+            setCurrentUser(user);
+          }
         }
-      }
-    } catch { /* ignore */ }
-    setSessionChecked(true);
+      } catch { /* ignore */ }
+      setSessionChecked(true);
+    });
+    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => onAuthExpired(() => {
+    localStorage.removeItem("nova_user");
+    setAuthToken(null);
+    setCurrentUser(null);
+  }), []);
 
   // Проверяем, не идут ли технические работы (включается в Dev-панели)
   const checkMaintenance = useCallback(() => {
@@ -252,12 +264,16 @@ export default function Index() {
 
   useIncomingCalls({ currentUser, activeCall, setActiveCall, pendingCallId, setPendingCallId });
 
-  const login = (user: User) => {
+  const login = (user: User, token?: string) => {
+    if (token) setAuthToken(token);
     localStorage.setItem("nova_user", JSON.stringify(user));
     setCurrentUser(user);
   };
 
   const logout = () => {
+    const uid = currentUser?.id;
+    if (uid) api("logout", {}, uid).catch(() => {}).finally(() => setAuthToken(null));
+    else setAuthToken(null);
     localStorage.removeItem("nova_user");
     setCurrentUser(null);
   };

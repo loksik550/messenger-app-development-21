@@ -1,4 +1,5 @@
 import { CHAT_API } from "@/lib/api";
+import { authHeaders } from "@/lib/authToken";
 
 const queue: string[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -14,7 +15,7 @@ function flush() {
   const features = queue.splice(0, 30);
   fetch(CHAT_API, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": String(userId) } : {}) },
+    headers: { "Content-Type": "application/json", ...authHeaders(userId) },
     body: JSON.stringify({ action: "track", features }),
     keepalive: true,
   }).catch(() => { /* статистика не критична */ });

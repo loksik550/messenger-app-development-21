@@ -3,13 +3,14 @@ import json
 import time
 import random
 import psycopg2
+import nova_auth
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token",
 }
 
 
@@ -44,6 +45,9 @@ def handler(event: dict, context) -> dict:
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     conn.autocommit = True
     cur = conn.cursor()
+    if not nova_auth.check(cur, event, user_id):
+        conn.close()
+        return nova_auth.denied(CORS)
 
     # ── get_typing ───────────────────────────────────────────────────────────
     if action == "get_typing":

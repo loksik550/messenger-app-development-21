@@ -1,4 +1,4 @@
-const CACHE = "nova-v15";
+const CACHE = "nova-v16";
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;
 
@@ -12,16 +12,29 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k !== CACHE && k !== AUTH_CACHE).map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
 });
 
+// Секретный ключ сессии — для действий из уведомлений (отклонить звонок).
+let AUTH_TOKEN = null;
+const AUTH_CACHE = "nova-auth";
+const loadToken = () =>
+  AUTH_TOKEN ? Promise.resolve(AUTH_TOKEN)
+    : caches.open(AUTH_CACHE).then((c) => c.match("/__auth")).then((r) => (r ? r.text() : "")).then((t) => { AUTH_TOKEN = t || null; return AUTH_TOKEN; }).catch(() => null);
+
 // Пользователь нажал «Обновить» — активируем новый SW немедленно.
 self.addEventListener("message", (e) => {
   if (e.data && e.data.type === "SKIP_WAITING") {
     self.skipWaiting();
+  }
+  if (e.data && e.data.type === "AUTH_TOKEN") {
+    AUTH_TOKEN = e.data.token || null;
+    caches.open(AUTH_CACHE).then((c) =>
+      AUTH_TOKEN ? c.put("/__auth", new Response(AUTH_TOKEN)) : c.delete("/__auth")
+    ).catch(() => {});
   }
 });
 
@@ -114,16 +127,19 @@ self.addEventListener("notificationclick", (e) => {
   if (e.action === "decline") {
     if (notifData.call_id && notifData.from_user_id && notifData.recipient_id) {
       e.waitUntil(
-        fetch(CHAT_API, {
+        loadToken().then((tk) => fetch(CHAT_API, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-User-Id": String(notifData.recipient_id) },
+          headers: Object.assign(
+            { "Content-Type": "application/json", "X-User-Id": String(notifData.recipient_id) },
+            tk ? { "X-Auth-Token": tk } : {}
+          ),
           body: JSON.stringify({
             action: "call_signal",
             call_id: notifData.call_id,
             to_user_id: notifData.from_user_id,
             type: "decline",
           }),
-        }).catch(() => {})
+        })).catch(() => {})
       );
     }
     return;

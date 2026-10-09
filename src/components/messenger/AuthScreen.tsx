@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
 
-export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
+export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) => void }) {
   const [step, setStep] = useState<"phone" | "password" | "name" | "reset">("phone");
   const [showPolicy, setShowPolicy] = useState(false);
   const [phone, setPhone] = useState("");
@@ -45,7 +45,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
     try {
       const data = await api("auth_password", { phone: digits, password });
       if (data.user) {
-        onDone(data.user);
+        onDone(data.user, data.token);
       } else if (data.need_name) {
         // Новый пользователь — спрашиваем имя
         setStep("name");
@@ -69,7 +69,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
       const digits = phone.replace(/\D/g, "");
       const data = await api("auth_password", { phone: digits, password, name: name.trim() });
       if (data.user) {
-        onDone(data.user);
+        onDone(data.user, data.token);
       } else {
         setErrorMsg(data.error || "Ошибка регистрации");
         triggerShake();
@@ -91,7 +91,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User) => void }) {
     try {
       const data = await api("reset_password", { phone: digits, name: resetName.trim(), new_password: resetPassword });
       if (data.user) {
-        onDone(data.user);
+        onDone(data.user, data.token);
       } else {
         setErrorMsg(data.error || "Не удалось восстановить доступ");
         triggerShake();

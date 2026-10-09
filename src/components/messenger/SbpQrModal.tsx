@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { YOOKASSA_PAY_API } from "@/lib/api";
+import { authHeaders } from "@/lib/authToken";
 
 /**
  * Оплата по QR-коду СБП. Пользователь сканирует код банковским приложением,
@@ -33,7 +34,7 @@ export default function SbpQrModal({
       try {
         const res = await fetch(YOOKASSA_PAY_API, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-User-Id": String(userId) },
+          headers: { "Content-Type": "application/json", ...authHeaders(userId) },
           body: JSON.stringify({ action: "check_status", payment_id: paymentId }),
         });
         const d = await res.json();

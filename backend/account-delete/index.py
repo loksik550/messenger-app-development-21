@@ -8,13 +8,14 @@ import os
 import json
 import time
 import psycopg2
+import nova_auth
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS, DELETE",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token",
 }
 
 
@@ -139,6 +140,9 @@ def handler(event: dict, context) -> dict:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
+            if not nova_auth.check(cur, event, user_id):
+                conn.rollback()
+                return nova_auth.denied(CORS)
             cur.execute(
                 f"SELECT id, phone FROM {SCHEMA}.users WHERE id = %s",
                 (user_id,),

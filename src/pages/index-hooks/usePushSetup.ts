@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, type Dispatch, type MutableRefObject, t
 import { api, PUSH_API, subscribeToPush, type Chat, type User, type Group, type View } from "@/lib/api";
 import type { ActiveCall } from "@/pages/index-hooks/useIncomingCalls";
 import { native } from "@/lib/native";
+import { authHeaders } from "@/lib/authToken";
 
 /** Регистрация нативных (FCM) и web push-уведомлений, PWA-бейдж и заголовок вкладки. */
 export function usePushSetup({
@@ -26,7 +27,7 @@ export function usePushSetup({
       (token) => {
         fetch(PUSH_API, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-User-Id": String(uid) },
+          headers: { "Content-Type": "application/json", ...authHeaders(uid) },
           body: JSON.stringify({ action: "register_native", token, platform: native.platform }),
         }).catch(() => { /* повторим при следующем запуске */ });
       },

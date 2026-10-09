@@ -38,6 +38,20 @@
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Подписка с поддельным ключом отклоняется",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "1",
+        "X-Auth-Token": "1.fake"
+      },
+      "body": {
+        "action": "register_native",
+        "token": "x"
+      },
+      "expectedStatus": 401
     }
   ]
 }

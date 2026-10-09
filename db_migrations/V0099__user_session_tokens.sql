@@ -1,0 +1,3 @@
+ALTER TABLE t_p67547116_messenger_app_develo.user_sessions ADD COLUMN IF NOT EXISTS token_hash text NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS user_sessions_token_hash_uq ON t_p67547116_messenger_app_develo.user_sessions (token_hash) WHERE token_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS user_sessions_user_token_idx ON t_p67547116_messenger_app_develo.user_sessions (user_id) WHERE token_hash IS NOT NULL;

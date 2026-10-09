@@ -1,4 +1,5 @@
 import { reportNetworkError, reportNetworkOk } from "@/lib/connection";
+import { authHeaders, reportAuthExpired } from "@/lib/authToken";
 
 export const CHAT_API = "https://functions.poehali.dev/b97ade88-cc88-4702-a461-4c386efd5ca3";
 export const CHAT_POLL_API = "https://functions.poehali.dev/3fc067b7-d1b3-4aed-8ad9-98df81040f0a";
@@ -64,7 +65,7 @@ export async function uploadMedia(file: File, userId: number): Promise<UploadRes
         const base64 = (reader.result as string).split(",")[1];
         const res = await fetch(UPLOAD_API, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-User-Id": String(userId) },
+          headers: { "Content-Type": "application/json", ...authHeaders(userId) },
           body: JSON.stringify({ data: base64, mime: file.type, file_name: file.name, file_size: file.size }),
         });
         if (res.status === 413) { reject(new Error("Файл слишком большой для отправки")); return; }
@@ -111,7 +112,7 @@ export async function api(action: string, body: Record<string, unknown> = {}, us
   try {
     res = await fetchWithRetry(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": String(userId) } : {}) },
+      headers: { "Content-Type": "application/json", ...authHeaders(userId) },
       body: JSON.stringify({ action, ...body }),
     });
   } catch (e) {
@@ -119,6 +120,12 @@ export async function api(action: string, body: Record<string, unknown> = {}, us
     throw e;
   }
   reportNetworkOk();
+  if (res.status === 401 && userId) {
+    try {
+      const j = await res.clone().json();
+      if (j?.auth_required) reportAuthExpired();
+    } catch { /* ignore */ }
+  }
   if (res.status >= 500) {
     try { await res.text(); } catch { /* ignore */ }
     return { error: "bad_response", status: res.status };
@@ -146,7 +153,7 @@ export async function smsApi(action: string, body: Record<string, unknown> = {})
 export async function pushApi(action: string, body: Record<string, unknown> = {}, userId?: number) {
   const res = await fetchWithRetry(PUSH_API, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": String(userId) } : {}) },
+    headers: { "Content-Type": "application/json", ...authHeaders(userId) },
     body: JSON.stringify({ action, ...body }),
   });
   try {

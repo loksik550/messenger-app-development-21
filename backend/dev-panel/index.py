@@ -41,7 +41,7 @@ ROLES = {
 CONFIRM_ACTIONS = {
     "delete_user", "delete_chat", "bulk_action", "team_update", "team_remove",
     "wallet_set", "payment_refund", "settings_save", "broadcast_send",
-    "channel_delete", "create_invite",
+    "channel_delete", "create_invite", "auth_strict_save",
 }
 
 ACTION_PERMS = {
@@ -77,6 +77,7 @@ ACTION_PERMS = {
     "payments_export": "dashboard",
     "user_billing": "users", "wallet_set": "settings",
     "twofa_get": "dashboard", "twofa_save": "dashboard",
+    "auth_strict_get": "dashboard", "auth_strict_save": "settings",
     "trends": "dashboard", "expiring_soon": "dashboard",
     "live_feed": "dashboard", "system_health": "dashboard", "spark": "dashboard",
     "funnel": "dashboard", "retention": "dashboard",
@@ -849,6 +850,7 @@ def handler(event: dict, context) -> dict:
             uid = int(body.get("user_id") or 0)
             cur.execute(f"DELETE FROM {SCHEMA}.push_subscriptions WHERE user_id = %s", (uid,))
             cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = 0 WHERE id = %s", (uid,))
+            cur.execute(f"UPDATE {SCHEMA}.user_sessions SET revoked = TRUE WHERE user_id = %s", (uid,))
             audit(cur, admin, "force_logout", f"Выход со всех устройств ID {uid}", ip)
             return ok({"success": True})
 
@@ -1986,6 +1988,36 @@ def handler(event: dict, context) -> dict:
             )
             audit(cur, admin, "twofa_save",
                   "Включена защита входа кодом" if enabled else "Отключена защита входа", ip)
+            return ok({"success": True, "enabled": enabled})
+
+        if action == "auth_strict_get":
+            cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'auth_strict'")
+            r = cur.fetchone()
+            day = int(time.time()) - 86400
+            cur.execute(
+                f"SELECT COUNT(DISTINCT user_id) FROM {SCHEMA}.user_sessions "
+                f"WHERE token_hash IS NOT NULL AND revoked = FALSE AND last_active_at > %s",
+                (day,),
+            )
+            with_key = int(cur.fetchone()[0])
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users "
+                f"WHERE last_seen > %s AND COALESCE(is_bot, FALSE) = FALSE AND id NOT IN ("
+                f"SELECT user_id FROM {SCHEMA}.user_sessions WHERE token_hash IS NOT NULL AND revoked = FALSE)",
+                (day,),
+            )
+            without_key = int(cur.fetchone()[0])
+            return ok({"enabled": bool(r and r[0] == "1"), "with_key": with_key, "without_key": without_key})
+
+        if action == "auth_strict_save":
+            enabled = bool(body.get("enabled"))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) VALUES ('auth_strict', %s, %s, %s) "
+                f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
+                ("1" if enabled else "0", int(time.time()), admin["id"]),
+            )
+            audit(cur, admin, "auth_strict_save",
+                  "Включена строгая проверка входа" if enabled else "Выключена строгая проверка входа", ip)
             return ok({"success": True, "enabled": enabled})
 
         if action == "settings_get":

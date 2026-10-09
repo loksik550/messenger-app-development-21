@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User, YOOKASSA_PAY_API } from "@/lib/api";
 import SbpQrModal from "@/components/messenger/SbpQrModal";
+import { authHeaders } from "@/lib/authToken";
 
 interface Props {
   currentUser: User;
@@ -114,7 +115,7 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
       const returnUrl = `${window.location.origin}${window.location.pathname}?payment=success`;
       const res = await fetch(YOOKASSA_PAY_API, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-User-Id": String(currentUser.id) },
+        headers: { "Content-Type": "application/json", ...authHeaders(currentUser.id) },
         body: JSON.stringify({
           amount: plan.price,
           user_email: email,

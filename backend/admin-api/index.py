@@ -1,3 +1,5 @@
+import hmac
+import hashlib
 import os
 import json
 import time
@@ -27,10 +29,15 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
+def _internal_key() -> str:
+    base = os.environ.get("DATABASE_URL", "") + "|nova-internal"
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
 def check_auth(event):
     token = event.get("headers", {}).get("X-Admin-Token", "")
     password = os.environ.get("ADMIN_PASSWORD", "")
-    return token == password and password != ""
+    return password != "" and hmac.compare_digest(token.encode(), password.encode())
 
 
 def handler(event: dict, context) -> dict:
@@ -486,7 +493,7 @@ def handler(event: dict, context) -> dict:
                     "message": text[:100],
                     "chat_id": chat_id,
                 }).encode("utf-8")
-                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
+                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json", "X-Internal-Key": _internal_key()})
                 urllib.request.urlopen(req, timeout=5)
             except Exception:
                 pass
@@ -553,7 +560,7 @@ def handler(event: dict, context) -> dict:
                     "sender_name": "Nova Dev",
                     "message": text[:140],
                 }).encode("utf-8")
-                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
+                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json", "X-Internal-Key": _internal_key()})
                 urllib.request.urlopen(req, timeout=15)
             except Exception:
                 pass
@@ -671,7 +678,7 @@ def handler(event: dict, context) -> dict:
                     "sender_name": "Поддержка Nova",
                     "message": "Ответ от поддержки: " + text[:100],
                 }).encode("utf-8")
-                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json"})
+                req = urllib.request.Request(push_url, data=push_body, headers={"Content-Type": "application/json", "X-Internal-Key": _internal_key()})
                 urllib.request.urlopen(req, timeout=5)
             except Exception:
                 pass

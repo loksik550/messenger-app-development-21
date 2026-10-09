@@ -3,11 +3,13 @@ import json
 import time
 import base64
 import boto3
+import psycopg2
+import nova_auth
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token",
 }
 
 # Расширения по MIME
@@ -36,6 +38,15 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     user_id = event.get("headers", {}).get("X-User-Id", "0")
+    if user_id not in ("", "0"):
+        _c = psycopg2.connect(os.environ["DATABASE_URL"])
+        _c.autocommit = True
+        try:
+            _ok = nova_auth.check(_c.cursor(), event, user_id)
+        finally:
+            _c.close()
+        if not _ok:
+            return nova_auth.denied(CORS)
     body = json.loads(event.get("body") or "{}")
     data_b64 = body.get("data", "")
     mime = body.get("mime", "image/jpeg")

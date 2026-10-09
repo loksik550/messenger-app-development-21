@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { CHAT_API, uploadMedia, type User } from "@/lib/api";
+import { authHeaders } from "@/lib/authToken";
 
 interface Item {
   emoji: string;
@@ -32,7 +33,7 @@ export function AdminStickersPanel({ currentUser, onClose }: { currentUser: User
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-User-Id": String(currentUser.id),
+        ...authHeaders(currentUser.id),
         "X-Admin-Password": token,
       },
       body: JSON.stringify({ action, ...payload }),

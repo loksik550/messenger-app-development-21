@@ -3,6 +3,7 @@ package ru.nova.messenger;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 
 import androidx.core.app.NotificationManagerCompat;
 
@@ -37,7 +38,7 @@ public class CallActionReceiver extends BroadcastReceiver {
         final PendingResult pr = goAsync();
         new Thread(() -> {
             try {
-                sendDecline(callId, fromUser, me);
+                sendDecline(context, callId, fromUser, me);
             } finally {
                 pr.finish();
             }
@@ -82,8 +83,9 @@ public class CallActionReceiver extends BroadcastReceiver {
                         req.put("chat_id", Long.parseLong(chatId));
                     }
                 }
-                ok = post(req, me) / 100 == 2;
-                if (isReply && ok) post(new JSONObject().put("action", "track").put("feature", "notif_reply"), me);
+                String tk = authToken(ctx);
+                ok = post(req, me, tk) / 100 == 2;
+                if (isReply && ok) post(new JSONObject().put("action", "track").put("feature", "notif_reply"), me, tk);
             } catch (Exception ignored) {
             } finally {
                 finishMessageNotification(ctx, tag, isReply, ok, body);
@@ -122,7 +124,16 @@ public class CallActionReceiver extends BroadcastReceiver {
         }
     }
 
-    private static int post(JSONObject body, String me) {
+    static String authToken(Context ctx) {
+        try {
+            SharedPreferences p = ctx.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+            return p.getString("nova_auth_token", null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static int post(JSONObject body, String me, String token) {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(CHAT_API).openConnection();
@@ -132,6 +143,7 @@ public class CallActionReceiver extends BroadcastReceiver {
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("X-User-Id", me);
+            if (token != null && !token.isEmpty()) conn.setRequestProperty("X-Auth-Token", token);
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
@@ -151,7 +163,7 @@ public class CallActionReceiver extends BroadcastReceiver {
         IncomingCallActivity.finishIfShowing(callId);
     }
 
-    static void sendDecline(String callId, String toUser, String me) {
+    static void sendDecline(Context ctx, String callId, String toUser, String me) {
         HttpURLConnection conn = null;
         try {
             JSONObject body = new JSONObject();
@@ -166,6 +178,8 @@ public class CallActionReceiver extends BroadcastReceiver {
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("X-User-Id", me);
+            String tk = authToken(ctx);
+            if (tk != null && !tk.isEmpty()) conn.setRequestProperty("X-Auth-Token", tk);
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }

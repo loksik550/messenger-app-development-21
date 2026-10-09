@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import funcUrls from "@/../backend/func2url.json";
 import type { User } from "@/lib/api";
+import { authHeaders } from "@/lib/authToken";
 
 interface Props {
   user: User;
@@ -49,7 +50,7 @@ export default function AccountDeletePanel({ user, onBack, onDeleted }: Props) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-User-Id": String(user.id),
+          ...authHeaders(user.id),
         },
         body: JSON.stringify({
           confirm: "DELETE",

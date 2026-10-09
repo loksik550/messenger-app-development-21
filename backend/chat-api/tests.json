@@ -4,23 +4,35 @@
       "name": "Health check - unknown action returns 400",
       "method": "POST",
       "path": "/",
-      "body": {"action": "unknown_action_xyz"},
+      "body": {
+        "action": "unknown_action_xyz"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
     {
-      "name": "Register returns 200",
+      "name": "Register (старый способ) отключён",
       "method": "POST",
       "path": "/",
-      "body": {"action": "register", "phone": "79990000001", "name": "TestBot"},
+      "body": {
+        "action": "register",
+        "phone": "79990000001",
+        "name": "TestBot"
+      },
       "expectedStatus": 200,
-      "bodyMatcher": "partial"
+      "bodyMatcher": "partial",
+      "expectedBody": {
+        "deprecated": true
+      }
     },
     {
       "name": "create_group requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "create_group", "name": "Test Group"},
+      "body": {
+        "action": "create_group",
+        "name": "Test Group"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -28,7 +40,9 @@
       "name": "get_groups requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "get_groups"},
+      "body": {
+        "action": "get_groups"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -36,7 +50,11 @@
       "name": "send_group_message requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "send_group_message", "group_id": 1, "text": "hi"},
+      "body": {
+        "action": "send_group_message",
+        "group_id": 1,
+        "text": "hi"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -44,7 +62,9 @@
       "name": "wallet_balance requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "wallet_balance"},
+      "body": {
+        "action": "wallet_balance"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -52,7 +72,10 @@
       "name": "buy_pro requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "buy_pro", "plan": "month"},
+      "body": {
+        "action": "buy_pro",
+        "plan": "month"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -60,7 +83,11 @@
       "name": "set_chat_mute requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "set_chat_mute", "chat_id": 1, "muted": true},
+      "body": {
+        "action": "set_chat_mute",
+        "chat_id": 1,
+        "muted": true
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -68,7 +95,11 @@
       "name": "set_group_mute requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "set_group_mute", "group_id": 1, "muted": true},
+      "body": {
+        "action": "set_group_mute",
+        "group_id": 1,
+        "muted": true
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -76,7 +107,9 @@
       "name": "get_mute_settings requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "get_mute_settings"},
+      "body": {
+        "action": "get_mute_settings"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -84,7 +117,11 @@
       "name": "report requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "report", "reported_user_id": 2, "reason": "spam"},
+      "body": {
+        "action": "report",
+        "reported_user_id": 2,
+        "reason": "spam"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -92,8 +129,13 @@
       "name": "report requires reported_user_id",
       "method": "POST",
       "path": "/",
-      "headers": {"X-User-Id": "1"},
-      "body": {"action": "report", "reason": "spam"},
+      "headers": {
+        "X-User-Id": "1"
+      },
+      "body": {
+        "action": "report",
+        "reason": "spam"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -101,7 +143,10 @@
       "name": "block_user requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "block_user", "target_user_id": 2},
+      "body": {
+        "action": "block_user",
+        "target_user_id": 2
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -109,8 +154,12 @@
       "name": "block_user requires target_user_id",
       "method": "POST",
       "path": "/",
-      "headers": {"X-User-Id": "1"},
-      "body": {"action": "block_user"},
+      "headers": {
+        "X-User-Id": "1"
+      },
+      "body": {
+        "action": "block_user"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -118,7 +167,10 @@
       "name": "unblock_user requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "unblock_user", "target_user_id": 2},
+      "body": {
+        "action": "unblock_user",
+        "target_user_id": 2
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -126,7 +178,10 @@
       "name": "clear_group_history requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "clear_group_history", "group_id": 1},
+      "body": {
+        "action": "clear_group_history",
+        "group_id": 1
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -134,7 +189,11 @@
       "name": "add_group_reaction requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "add_group_reaction", "message_id": 1, "emoji": "👍"},
+      "body": {
+        "action": "add_group_reaction",
+        "message_id": 1,
+        "emoji": "👍"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -142,7 +201,10 @@
       "name": "delete_group_message requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "delete_group_message", "message_id": 1},
+      "body": {
+        "action": "delete_group_message",
+        "message_id": 1
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -150,7 +212,11 @@
       "name": "edit_group_message requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "edit_group_message", "message_id": 1, "text": "x"},
+      "body": {
+        "action": "edit_group_message",
+        "message_id": 1,
+        "text": "x"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -158,7 +224,11 @@
       "name": "search_group_messages requires X-User-Id",
       "method": "POST",
       "path": "/",
-      "body": {"action": "search_group_messages", "group_id": 1, "query": "test"},
+      "body": {
+        "action": "search_group_messages",
+        "group_id": 1,
+        "query": "test"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -166,7 +236,12 @@
       "name": "reset_password rejects bad phone",
       "method": "POST",
       "path": "/",
-      "body": {"action": "reset_password", "phone": "123", "name": "Test", "new_password": "secret"},
+      "body": {
+        "action": "reset_password",
+        "phone": "123",
+        "name": "Test",
+        "new_password": "secret"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -174,7 +249,11 @@
       "name": "reset_password requires name",
       "method": "POST",
       "path": "/",
-      "body": {"action": "reset_password", "phone": "79991112233", "new_password": "secret"},
+      "body": {
+        "action": "reset_password",
+        "phone": "79991112233",
+        "new_password": "secret"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -182,7 +261,12 @@
       "name": "reset_password rejects short password",
       "method": "POST",
       "path": "/",
-      "body": {"action": "reset_password", "phone": "79991112233", "name": "Test", "new_password": "1"},
+      "body": {
+        "action": "reset_password",
+        "phone": "79991112233",
+        "name": "Test",
+        "new_password": "1"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -190,7 +274,11 @@
       "name": "auth_password rejects short password",
       "method": "POST",
       "path": "/",
-      "body": {"action": "auth_password", "phone": "79991112233", "password": "1"},
+      "body": {
+        "action": "auth_password",
+        "phone": "79991112233",
+        "password": "1"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
@@ -198,8 +286,43 @@
       "name": "auth_password rejects bad phone",
       "method": "POST",
       "path": "/",
-      "body": {"action": "auth_password", "phone": "123", "password": "secret"},
+      "body": {
+        "action": "auth_password",
+        "phone": "123",
+        "password": "secret"
+      },
       "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Чужой ключ отклоняется",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "1",
+        "X-Auth-Token": "2.fake-token"
+      },
+      "body": {
+        "action": "get_chats"
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "auth_required": true
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Поддельный ключ отклоняется",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "1",
+        "X-Auth-Token": "1.fake-token"
+      },
+      "body": {
+        "action": "get_chats"
+      },
+      "expectedStatus": 401,
       "bodyMatcher": "partial"
     }
   ]

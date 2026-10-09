@@ -5,6 +5,7 @@ import threading
 import psycopg2
 from pywebpush import webpush, WebPushException
 import fcm
+import nova_auth
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
@@ -31,7 +32,7 @@ def _vapid_private() -> str:
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token",
 }
 
 
@@ -163,6 +164,16 @@ def handler(event: dict, context) -> dict:
 
     conn = get_conn()
     cur = conn.cursor()
+
+    if action in ("send", "send_group", "broadcast", "cancel_call") and not nova_auth.is_internal(event):
+        if nova_auth.is_strict(cur):
+            conn.close()
+            return err("Нет доступа", 403)
+        print(f"[auth] legacy external push call action={action}")
+    if action in ("register_native", "subscribe", "unsubscribe", "unregister_native") \
+            and not nova_auth.check(cur, event, user_id):
+        conn.close()
+        return nova_auth.denied(CORS)
 
     # ── register_native — токен Firebase с телефона ───────────────────────────
     if action == "register_native":

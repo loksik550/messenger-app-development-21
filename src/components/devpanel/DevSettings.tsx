@@ -4,6 +4,7 @@ import { devApi, type DevAdmin } from "@/lib/devApi";
 import DevTelegram, { DevBackup } from "./DevTelegram";
 import { Loading, ErrorBox } from "./DevDashboard";
 import { TwoFactor, Maintenance, MyProfile, ChangePassword, ChangeEmail } from "./DevSettingsSections";
+import DevAuthStrict from "./DevAuthStrict";
 
 interface Props {
   onSaved: (name: string, subtitle: string, logo: string, bgStyle: string, bgImage: string) => void;
@@ -231,6 +232,8 @@ export default function DevSettings({ onSaved, can, admin, onEmailChanged, onPro
       {editable && <DevBackup />}
 
       <Maintenance editable={editable} />
+
+      <DevAuthStrict editable={editable} />
 
       <TwoFactor />
 
