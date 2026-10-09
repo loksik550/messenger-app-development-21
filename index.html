@@ -63,6 +63,9 @@
     window.addEventListener("error", function (e) {
       var t = e.target;
       if (t && t !== window && t.tagName !== "SCRIPT" && t.tagName !== "LINK") return;
+      var src = (t && t !== window && (t.src || t.href)) || e.filename || "";
+      if (src && src.indexOf(location.origin) !== 0) return;
+      if (!src && (!e.message || e.message === "Script error.")) return;
       var where = e.filename ? " (" + String(e.filename).split("/").pop() + ":" + e.lineno + ":" + e.colno + ")" : "";
       errs.push("Ошибка: " + (e.message || (e.target && (e.target.src || e.target.href)) || "загрузка файла") + where);
       show("Nova не запустилась");
