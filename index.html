@@ -58,7 +58,26 @@
         box.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;max-height:60vh;overflow:auto;background:#fff;color:#111;font:13px/1.45 -apple-system,sans-serif;padding:16px 16px calc(16px + env(safe-area-inset-bottom));border-top:3px solid #e11d48;white-space:pre-wrap;word-break:break-word";
         document.body.appendChild(box);
       }
-      box.textContent = title + "\n\n" + errs.slice(-5).join("\n\n") + "\n\n" + navigator.userAgent + "\n\nСделайте скриншот и отправьте разработчику.";
+      box.textContent = title + "\n\n" + errs.slice(-5).join("\n\n") + "\n\n" + navigator.userAgent + "\n\nСделайте скриншот и отправьте разработчику.\n\n";
+      var btn = document.createElement("button");
+      btn.textContent = "Очистить кэш и перезапустить";
+      btn.style.cssText = "display:block;width:100%;padding:12px;border:0;border-radius:10px;background:#7c3aed;color:#fff;font:600 15px -apple-system,sans-serif";
+      btn.onclick = resetApp;
+      box.appendChild(btn);
+    }
+    function resetApp() {
+      var jobs = [];
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.map(function (r) { return r.unregister(); }));
+        }));
+      }
+      if (window.caches && caches.keys) {
+        jobs.push(caches.keys().then(function (ks) {
+          return Promise.all(ks.filter(function (k) { return k !== "nova-auth"; }).map(function (k) { return caches.delete(k); }));
+        }));
+      }
+      Promise.all(jobs).catch(function () {}).then(function () { location.replace("/?r=" + Date.now()); });
     }
     window.addEventListener("error", function (e) {
       var t = e.target;

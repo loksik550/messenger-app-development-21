@@ -3,6 +3,8 @@
   "short_name": "Nova",
   "description": "Nova — мессенджер для приватного общения: личные и групповые чаты, звонки, фото, видео и голосовые сообщения",
   "start_url": "/",
+  "id": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",
   "theme_color": "#7c3aed",
@@ -35,5 +37,8 @@
       "form_factor": "narrow"
     }
   ],
-  "categories": ["communication", "social"]
+  "categories": [
+    "communication",
+    "social"
+  ]
 }

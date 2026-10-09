@@ -1,4 +1,4 @@
-const CACHE = "nova-v16";
+const CACHE = "nova-v17";
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;
 
@@ -39,18 +39,31 @@ self.addEventListener("message", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
-  if (e.request.url.includes("functions.poehali.dev")) return;
-  if (e.request.url.includes("fonts.googleapis.com")) return;
+  const req = e.request;
+  if (req.method !== "GET") return;
+  if (req.headers.has("range")) return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  if (req.mode === "navigate") {
+    e.respondWith(
+      fetch(req, { cache: "no-store" }).catch(() =>
+        caches.match("/").then((r) => r || Response.error())
+      )
+    );
+    return;
+  }
 
   e.respondWith(
-    fetch(e.request)
+    fetch(req)
       .then((res) => {
-        const clone = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, clone));
+        if (res.ok && res.type === "basic") {
+          const clone = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {});
+        }
         return res;
       })
-      .catch(() => caches.match(e.request).then((r) => r || fetch(e.request)))
+      .catch(() => caches.match(req).then((r) => r || Response.error()))
   );
 });
 
