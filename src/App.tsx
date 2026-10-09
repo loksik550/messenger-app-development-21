@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,14 +9,14 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { native } from "@/lib/native";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
-import Privacy from "./pages/Privacy";
-import Security from "./pages/Security";
-import DevPanel from "@/pages/DevPanel";
-import Shots from "./pages/Shots";
-import Banner from "./pages/Banner";
-import StoreAssets from "./pages/StoreAssets";
-import Terms from "./pages/Terms";
-import NotFound from "./pages/NotFound";
+const Privacy = lazyWithRetry(() => import("./pages/Privacy"));
+const Security = lazyWithRetry(() => import("./pages/Security"));
+const DevPanel = lazyWithRetry(() => import("@/pages/DevPanel"));
+const Shots = lazyWithRetry(() => import("./pages/Shots"));
+const Banner = lazyWithRetry(() => import("./pages/Banner"));
+const StoreAssets = lazyWithRetry(() => import("./pages/StoreAssets"));
+const Terms = lazyWithRetry(() => import("./pages/Terms"));
+const NotFound = lazyWithRetry(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
@@ -59,6 +60,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <NativeShell />
+        <Suspense fallback={<div className="min-h-screen bg-background" />}>
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/privacy" element={<Privacy />} />
@@ -75,6 +77,7 @@ const App = () => (
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
     </QueryClientProvider>

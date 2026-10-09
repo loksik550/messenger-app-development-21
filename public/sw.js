@@ -1,21 +1,17 @@
-const CACHE = "nova-v17";
+const SW_VERSION = "nova-sw-18";
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(["/"]))
-  );
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE && k !== AUTH_CACHE).map((k) => caches.delete(k)))
-    )
+      Promise.all(keys.filter((k) => k !== AUTH_CACHE).map((k) => caches.delete(k)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // Секретный ключ сессии — для действий из уведомлений (отклонить звонок).
@@ -38,34 +34,9 @@ self.addEventListener("message", (e) => {
   }
 });
 
-self.addEventListener("fetch", (e) => {
-  const req = e.request;
-  if (req.method !== "GET") return;
-  if (req.headers.has("range")) return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
-
-  if (req.mode === "navigate") {
-    e.respondWith(
-      fetch(req, { cache: "no-store" }).catch(() =>
-        caches.match("/").then((r) => r || Response.error())
-      )
-    );
-    return;
-  }
-
-  e.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res.ok && res.type === "basic") {
-          const clone = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {});
-        }
-        return res;
-      })
-      .catch(() => caches.match(req).then((r) => r || Response.error()))
-  );
-});
+// Загрузку страниц и файлов сайта не перехватываем: браузер берёт их напрямую.
+// На iPhone (ярлык на экране «Домой») перехват давал белый экран и долгую загрузку.
+// Этот файл нужен только для push-уведомлений.
 
 // ── Push уведомления ──────────────────────────────────────────────────────────
 self.addEventListener("push", (e) => {
