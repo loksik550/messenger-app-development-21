@@ -47,6 +47,36 @@
 
 <body>
 <div id="root"></div>
+<script>
+  (function () {
+    var errs = [];
+    function show(title) {
+      var box = document.getElementById("nova-boot-error");
+      if (!box) {
+        box = document.createElement("div");
+        box.id = "nova-boot-error";
+        box.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;max-height:60vh;overflow:auto;background:#fff;color:#111;font:13px/1.45 -apple-system,sans-serif;padding:16px 16px calc(16px + env(safe-area-inset-bottom));border-top:3px solid #e11d48;white-space:pre-wrap;word-break:break-word";
+        document.body.appendChild(box);
+      }
+      box.textContent = title + "\n\n" + errs.slice(-5).join("\n\n") + "\n\n" + navigator.userAgent + "\n\nСделайте скриншот и отправьте разработчику.";
+    }
+    window.addEventListener("error", function (e) {
+      var t = e.target;
+      if (t && t !== window && t.tagName !== "SCRIPT" && t.tagName !== "LINK") return;
+      var where = e.filename ? " (" + String(e.filename).split("/").pop() + ":" + e.lineno + ":" + e.colno + ")" : "";
+      errs.push("Ошибка: " + (e.message || (e.target && (e.target.src || e.target.href)) || "загрузка файла") + where);
+      show("Nova не запустилась");
+    }, true);
+    window.addEventListener("unhandledrejection", function (e) {
+      var r = e.reason;
+      errs.push("Ошибка: " + (r && (r.stack || r.message) || String(r)));
+    });
+    setTimeout(function () {
+      var root = document.getElementById("root");
+      if (root && !root.children.length) show("Nova не запустилась за 8 секунд");
+    }, 8000);
+  })();
+</script>
 <noscript>
     <div style="max-width:720px;margin:0 auto;padding:24px;font-family:sans-serif;color:#111;line-height:1.6">
         <h1>Nova — мессенджер для общения</h1>

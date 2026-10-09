@@ -7,13 +7,15 @@ interface Props {
 
 interface State {
   hasError: boolean;
+  message?: string;
 }
 
 class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false };
 
-  static getDerivedStateFromError(): State {
-    return { hasError: true };
+  static getDerivedStateFromError(error: unknown): State {
+    const e = error as { message?: string; stack?: string };
+    return { hasError: true, message: (e?.stack || e?.message || String(error)).slice(0, 600) };
   }
 
   handleReload = () => {
@@ -30,6 +32,11 @@ class ErrorBoundary extends Component<Props, State> {
         <p className="text-sm text-muted-foreground max-w-xs">
           Произошёл сбой при загрузке экрана. Попробуйте вернуться на главную.
         </p>
+        {this.state.message && (
+          <pre className="max-w-sm max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-left text-[11px] text-muted-foreground">
+            {this.state.message}
+          </pre>
+        )}
         <button
           onClick={this.handleReload}
           className="mt-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground"
