@@ -292,6 +292,7 @@ def handler(event: dict, context) -> dict:
                     }, is_call=bool(is_call))
                 else:
                     n_stale = []
+                print(f"[push] to={recipient_id} call={bool(is_call)} tokens={len(ntokens)} sent={native_sent} stale={len(n_stale)}")
                 _drop_native(cur, n_stale)
 
         if not subs:

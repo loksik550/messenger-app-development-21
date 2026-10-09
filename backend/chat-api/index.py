@@ -38,8 +38,20 @@ def _fire_and_forget_http(url: str, body: bytes, timeout: float = 3.0) -> None:
     try:
         t = threading.Thread(target=_run, daemon=True)
         t.start()
+        _PENDING.append(t)
     except Exception:
         pass
+
+
+_PENDING: list = []
+
+
+def _wait_pending(limit: float = 3.5) -> None:
+    """Дождаться фоновых отправок: после ответа облако замораживает функцию и они теряются."""
+    deadline = time.time() + limit
+    while _PENDING:
+        t = _PENDING.pop()
+        t.join(timeout=max(0.05, deadline - time.time()))
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p67547116_messenger_app_develo")
 
@@ -409,6 +421,21 @@ def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
 
 
 def handler(event: dict, context) -> dict:
+    """Chat API Nova: выполняет действие и дожидается фоновых уведомлений."""
+    _PENDING.clear()
+    try:
+        return _handle(event, context)
+    finally:
+        limit = 2.5
+        try:
+            limit = min(limit, context.get_remaining_time_in_millis() / 1000 - 0.7)
+        except Exception:
+            pass
+        if _PENDING and limit > 0:
+            _wait_pending(limit)
+
+
+def _handle(event: dict, context) -> dict:
     """
     Chat API для Nova мессенджера.
     Actions: register, get_me, get_users, get_chats, get_or_create_chat,
