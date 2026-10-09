@@ -43,6 +43,7 @@ const VerificationPanel = lazyWithRetry(() => import("@/components/messenger/Ver
 const BannedScreen = lazyWithRetry(() => import("@/components/messenger/BannedScreen"));
 import { type Contact } from "@/lib/api";
 import { restoreAuthToken, setAuthToken, onAuthExpired } from "@/lib/authToken";
+import ResetApprovalPrompt from "@/components/messenger/ResetApprovalPrompt";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
@@ -411,6 +412,7 @@ export default function Index() {
 
       {/* Подсказка о включении push-уведомлений */}
       {currentUser && <EnableNotificationsBanner userId={currentUser.id} />}
+      {currentUser && <ResetApprovalPrompt userId={currentUser.id} />}
 
       <IndexOverlays
         currentUser={currentUser}

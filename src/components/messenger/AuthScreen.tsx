@@ -2,9 +2,11 @@ import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
+import ResetWaiting, { loadResetTicket, saveResetTicket, type ResetTicket } from "./ResetWaiting";
 
 export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) => void }) {
-  const [step, setStep] = useState<"phone" | "password" | "name" | "reset">("phone");
+  const [ticket, setTicket] = useState<ResetTicket | null>(() => loadResetTicket());
+  const [step, setStep] = useState<"phone" | "password" | "name" | "reset" | "waiting">(() => (loadResetTicket() ? "waiting" : "phone"));
   const [showPolicy, setShowPolicy] = useState(false);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -85,13 +87,16 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
   const handleResetSubmit = async () => {
     const digits = phone.replace(/\D/g, "");
     if (resetName.trim().length < 2) { setErrorMsg("Укажите имя аккаунта"); triggerShake(); return; }
-    if (resetPassword.length < 4) { setErrorMsg("Новый пароль не короче 4 символов"); triggerShake(); return; }
+    if (resetPassword.length < 6) { setErrorMsg("Новый пароль не короче 6 символов"); triggerShake(); return; }
     setLoading(true);
     setErrorMsg("");
     try {
-      const data = await api("reset_password", { phone: digits, name: resetName.trim(), new_password: resetPassword });
-      if (data.user) {
-        onDone(data.user, data.token);
+      const data = await api("reset_request", { phone: digits, name: resetName.trim(), new_password: resetPassword });
+      if (data.request_id && data.poll_key) {
+        const t: ResetTicket = { request_id: data.request_id, poll_key: data.poll_key, route: data.route };
+        saveResetTicket(t);
+        setTicket(t);
+        setStep("waiting");
       } else {
         setErrorMsg(data.error || "Не удалось восстановить доступ");
         triggerShake();
@@ -232,7 +237,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 <Icon name="ChevronLeft" size={16} /> Назад
               </button>
               <h2 className="text-xl font-bold mb-1">Восстановление доступа</h2>
-              <p className="text-sm text-muted-foreground">Для номера {formatPhone(phone)}. Подтвердите имя аккаунта и задайте новый пароль.</p>
+              <p className="text-sm text-muted-foreground">Для номера {formatPhone(phone)}. Укажите имя аккаунта и новый пароль — смену нужно будет подтвердить на устройстве, где вы уже вошли.</p>
             </div>
             <div className={`flex items-center gap-3 glass rounded-2xl px-4 py-4 border ${shake ? "border-red-500/50" : "border-white/0 focus-within:border-violet-500/40"} transition-colors`}>
               <Icon name="User" size={18} className="text-muted-foreground" />
@@ -250,7 +255,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 value={resetPassword}
                 onChange={e => setResetPassword(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleResetSubmit()}
-                placeholder="Новый пароль"
+                placeholder="Новый пароль (от 6 символов)"
                 className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
                 type={showPassword ? "text" : "password"}
               />
@@ -267,10 +272,18 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
               {loading ? (
                 <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Сохраняем...</>
               ) : (
-                <>Сбросить пароль <Icon name="KeyRound" size={18} /></>
+                <>Запросить смену пароля <Icon name="KeyRound" size={18} /></>
               )}
             </button>
           </div>
+        )}
+
+        {step === "waiting" && ticket && (
+          <ResetWaiting
+            ticket={ticket}
+            onDone={onDone}
+            onCancel={() => { setTicket(null); setStep("phone"); setErrorMsg(""); }}
+          />
         )}
 
         {/* Name step */}

@@ -36,6 +36,7 @@ def get_conn():
 # Все таблицы, в которых хранятся данные пользователя.
 # Порядок важен: сначала зависимые, потом сам users.
 USER_DATA_TABLES = [
+    ("password_resets", "user_id"),
     ("message_reactions", "user_id"),
     ("group_message_reactions", "user_id"),
     ("group_message_views", "user_id"),

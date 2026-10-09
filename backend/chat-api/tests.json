@@ -19,11 +19,7 @@
         "phone": "79990000001",
         "name": "TestBot"
       },
-      "expectedStatus": 200,
-      "bodyMatcher": "partial",
-      "expectedBody": {
-        "deprecated": true
-      }
+      "expectedStatus": 200
     },
     {
       "name": "create_group requires X-User-Id",
@@ -233,11 +229,11 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "reset_password rejects bad phone",
+      "name": "reset_request rejects bad phone",
       "method": "POST",
       "path": "/",
       "body": {
-        "action": "reset_password",
+        "action": "reset_request",
         "phone": "123",
         "name": "Test",
         "new_password": "secret"
@@ -246,11 +242,11 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "reset_password requires name",
+      "name": "reset_request requires name",
       "method": "POST",
       "path": "/",
       "body": {
-        "action": "reset_password",
+        "action": "reset_request",
         "phone": "79991112233",
         "new_password": "secret"
       },
@@ -258,14 +254,14 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "reset_password rejects short password",
+      "name": "reset_request rejects short password",
       "method": "POST",
       "path": "/",
       "body": {
-        "action": "reset_password",
+        "action": "reset_request",
         "phone": "79991112233",
         "name": "Test",
-        "new_password": "1"
+        "new_password": "12345"
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
@@ -324,6 +320,31 @@
       },
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "reset_status с неверным ключом",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "reset_status",
+        "request_id": 1,
+        "poll_key": "wrong"
+      },
+      "expectedStatus": 404
+    },
+    {
+      "name": "reset_decide без ключа сессии",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "1"
+      },
+      "body": {
+        "action": "reset_decide",
+        "request_id": 1,
+        "approve": true
+      },
+      "expectedStatus": 403
     }
   ]
 }

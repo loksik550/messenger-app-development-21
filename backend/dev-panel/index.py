@@ -41,7 +41,7 @@ ROLES = {
 CONFIRM_ACTIONS = {
     "delete_user", "delete_chat", "bulk_action", "team_update", "team_remove",
     "wallet_set", "payment_refund", "settings_save", "broadcast_send",
-    "channel_delete", "create_invite", "auth_strict_save",
+    "channel_delete", "create_invite", "auth_strict_save", "reset_decide",
 }
 
 ACTION_PERMS = {
@@ -78,6 +78,7 @@ ACTION_PERMS = {
     "user_billing": "users", "wallet_set": "settings",
     "twofa_get": "dashboard", "twofa_save": "dashboard",
     "auth_strict_get": "dashboard", "auth_strict_save": "settings",
+    "resets_list": "support", "reset_decide": "user_write",
     "trends": "dashboard", "expiring_soon": "dashboard",
     "live_feed": "dashboard", "system_health": "dashboard", "spark": "dashboard",
     "funnel": "dashboard", "retention": "dashboard",
@@ -1989,6 +1990,47 @@ def handler(event: dict, context) -> dict:
             audit(cur, admin, "twofa_save",
                   "Включена защита входа кодом" if enabled else "Отключена защита входа", ip)
             return ok({"success": True, "enabled": enabled})
+
+        if action == "resets_list":
+            now = int(time.time())
+            cur.execute(
+                f"UPDATE {SCHEMA}.password_resets SET status = 'expired' WHERE status = 'pending' AND expires_at < %s",
+                (now,),
+            )
+            cur.execute(
+                f"SELECT r.id, r.user_id, u.name, u.phone, r.route, r.status, r.device_name, r.ip_addr, r.created_at, "
+                f"(SELECT MAX(created_at) FROM {SCHEMA}.login_events le WHERE le.user_id = r.user_id) "
+                f"FROM {SCHEMA}.password_resets r JOIN {SCHEMA}.users u ON u.id = r.user_id "
+                f"WHERE r.route = 'admin' ORDER BY (r.status = 'pending') DESC, r.id DESC LIMIT 50"
+            )
+            items = [{
+                "id": x[0], "user_id": x[1], "name": x[2], "phone": x[3], "route": x[4], "status": x[5],
+                "device": x[6], "ip": x[7], "created_at": int(x[8]), "last_login": int(x[9]) if x[9] else None,
+            } for x in cur.fetchall()]
+            return ok({"items": items, "pending": sum(1 for i in items if i["status"] == "pending")})
+
+        if action == "reset_decide":
+            rid = int(body.get("id") or 0)
+            approve = bool(body.get("approve"))
+            now = int(time.time())
+            cur.execute(
+                f"SELECT user_id, new_password_hash FROM {SCHEMA}.password_resets "
+                f"WHERE id = %s AND status = 'pending' AND route = 'admin' AND expires_at > %s",
+                (rid, now),
+            )
+            r = cur.fetchone()
+            if not r:
+                return err("Заявка не найдена или устарела", 404)
+            if approve:
+                cur.execute(f"UPDATE {SCHEMA}.users SET password_hash = %s WHERE id = %s", (r[1], r[0]))
+                cur.execute(f"UPDATE {SCHEMA}.user_sessions SET revoked = TRUE WHERE user_id = %s", (r[0],))
+            cur.execute(
+                f"UPDATE {SCHEMA}.password_resets SET status = %s, decided_at = %s, decided_by = %s WHERE id = %s",
+                ("approved" if approve else "rejected", now, f"admin:{admin['id']}", rid),
+            )
+            audit(cur, admin, "reset_decide",
+                  f"{'Одобрен' if approve else 'Отклонён'} сброс пароля пользователя ID {r[0]}", ip)
+            return ok({"success": True})
 
         if action == "auth_strict_get":
             cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'auth_strict'")

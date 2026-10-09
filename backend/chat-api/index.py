@@ -7,6 +7,7 @@ import urllib.request
 import threading
 import psycopg2
 import nova_auth
+import secrets as _secrets
 
 
 def _hash_password(password: str) -> str:
@@ -478,7 +479,7 @@ def _handle(event: dict, context) -> dict:
     # Забаненный пользователь не может пользоваться приложением: разрешаем только
     # чтение статуса бана и выход, всё остальное отклоняем с кодом 403.
     BAN_ALLOWED = {"register", "auth_password", "auth_code", "send_code",
-                   "reset_password", "ban_status", "logout"}
+                   "reset_password", "reset_request", "reset_status", "ban_status", "logout"}
     if user_id and action not in BAN_ALLOWED:
         try:
             cur.execute(
@@ -501,7 +502,7 @@ def _handle(event: dict, context) -> dict:
         except (ValueError, TypeError):
             pass
 
-    AUTH_FREE = {"register", "auth_password", "reset_password", "app_status", "ping",
+    AUTH_FREE = {"register", "auth_password", "reset_password", "reset_request", "reset_status", "app_status", "ping",
                  "ban_status", "logout", "bot_get_updates", "bot_send_message"}
     if user_id and action not in AUTH_FREE and not nova_auth.check(cur, event, user_id):
         conn.close()
@@ -631,6 +632,11 @@ def _handle(event: dict, context) -> dict:
 
     # ── reset_password (восстановление доступа по имени аккаунта) ──────────────
     if action == "reset_password":
+        conn.close()
+        return ok({"deprecated": True, "error": "Обновите приложение для восстановления доступа"})
+
+    # ── reset_request — заявка на новый пароль (подтверждает владелец или админ)
+    if action == "reset_request":
         phone = (body.get("phone") or "").strip()
         name = (body.get("name") or "").strip()
         new_password = (body.get("new_password") or "")
@@ -638,43 +644,125 @@ def _handle(event: dict, context) -> dict:
         if not digits or len(digits) < 11:
             conn.close()
             return err("Введите корректный номер телефона")
-        if not name:
+        if len(new_password) < 6:
             conn.close()
-            return err("Укажите имя аккаунта")
-        if len(new_password) < 4:
-            conn.close()
-            return err("Пароль должен быть не короче 4 символов")
-
-        # Rate-limit по IP: защита от перебора
+            return err("Новый пароль должен быть не короче 6 символов")
         ip = (event.get("requestContext", {}) or {}).get("identity", {}).get("sourceIp", "anon")
-        if not _rate_limit(cur, f"reset:{ip}", 10):
+        if not _rate_limit(cur, f"reset:{ip}", 5) or not _rate_limit(cur, f"reset:ph:{digits}", 3):
             conn.close()
             return err("Слишком много попыток, подождите минуту", 429)
-
         cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE phone = %s", (digits,))
         found = cur.fetchone()
-        if not found:
+        if not found or (found[1] or "").strip().lower() != name.strip().lower():
             conn.close()
-            return err("Аккаунт с таким номером не найден")
-        user_id_db, real_name = found
-        # Имя должно совпадать (без учёта регистра и пробелов) — контрольная проверка
-        if (real_name or "").strip().lower() != name.strip().lower():
-            conn.close()
-            return err("Имя аккаунта не совпадает")
+            return err("Номер или имя аккаунта не совпадают")
+        uid = int(found[0])
+        now = int(time.time())
         cur.execute(
-            f"UPDATE {SCHEMA}.users SET password_hash = %s, last_seen = %s WHERE id = %s",
-            (_hash_password(new_password), int(time.time()), user_id_db)
+            f"SELECT COUNT(*) FROM {SCHEMA}.user_sessions "
+            f"WHERE user_id = %s AND revoked = FALSE AND token_hash IS NOT NULL AND last_active_at > %s",
+            (uid, now - 30 * 86400),
         )
-        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (user_id_db,))
+        has_device = int(cur.fetchone()[0]) > 0
+        route = "device" if has_device else "admin"
+        cur.execute(
+            f"UPDATE {SCHEMA}.password_resets SET status = 'replaced' WHERE user_id = %s AND status = 'pending'",
+            (uid,),
+        )
+        poll_key = _secrets.token_urlsafe(24)
+        headers = event.get("headers", {}) or {}
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.password_resets "
+            f"(user_id, new_password_hash, poll_key_hash, route, device_name, ip_addr, created_at, expires_at) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (uid, _hash_password(new_password), nova_auth.hash_token(poll_key), route,
+             _device_name(headers), ip[:64], now, now + (900 if route == "device" else 3 * 86400)),
+        )
+        rid = int(cur.fetchone()[0])
+        if route == "device":
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) VALUES (%s, 'security', %s, %s)",
+                (uid, "Запрос на смену пароля",
+                 f"С устройства «{_device_name(headers)}» просят сменить пароль. Откройте Настройки → Безопасность, чтобы подтвердить или отклонить."),
+            )
+            push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+            if push_url:
+                _fire_and_forget_http(push_url, json.dumps({
+                    "action": "send", "recipient_id": uid, "sender_name": "Безопасность Nova",
+                    "message": "Кто-то просит сменить пароль. Если это не вы — отклоните запрос.",
+                    "tag": f"reset_{rid}",
+                }).encode("utf-8"), timeout=5.0)
+        conn.close()
+        return ok({"request_id": rid, "poll_key": poll_key, "route": route})
+
+    # ── reset_status — ждём подтверждения; при одобрении сразу входим
+    if action == "reset_status":
+        rid = int(body.get("request_id") or 0)
+        poll_key = str(body.get("poll_key") or "")
+        cur.execute(
+            f"SELECT user_id, status, expires_at, poll_key_hash, route FROM {SCHEMA}.password_resets WHERE id = %s",
+            (rid,),
+        )
+        r = cur.fetchone()
+        if not r or not poll_key or not _secrets.compare_digest(r[3], nova_auth.hash_token(poll_key)):
+            conn.close()
+            return err("Заявка не найдена", 404)
+        uid, status, expires_at, _, route = int(r[0]), r[1], int(r[2]), r[3], r[4]
+        if status == "pending" and expires_at < int(time.time()):
+            status = "expired"
+            cur.execute(f"UPDATE {SCHEMA}.password_resets SET status = 'expired' WHERE id = %s", (rid,))
+        if status != "approved":
+            conn.close()
+            return ok({"status": status, "route": route})
+        cur.execute(f"UPDATE {SCHEMA}.password_resets SET status = 'used' WHERE id = %s", (rid,))
+        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (uid,))
         row = cur.fetchone()
-        cur.execute(
-            f"UPDATE {SCHEMA}.user_sessions SET revoked = TRUE WHERE user_id = %s AND token_hash IS NOT NULL",
-            (user_id_db,),
-        )
-        track_login(cur, int(user_id_db), event)
-        res = _login_reply(cur, event, row, {"reset": True})
+        track_login(cur, uid, event)
+        res = _login_reply(cur, event, row, {"status": "approved"})
         conn.close()
         return res
+
+    # ── reset_pending — на вошедшем устройстве: есть ли заявки на смену пароля
+    if action == "reset_pending":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        cur.execute(
+            f"SELECT id, device_name, ip_addr, created_at FROM {SCHEMA}.password_resets "
+            f"WHERE user_id = %s AND status = 'pending' AND route = 'device' AND expires_at > %s ORDER BY id DESC",
+            (int(user_id), int(time.time())),
+        )
+        items = [{"id": x[0], "device_name": x[1], "ip": x[2], "created_at": int(x[3])} for x in cur.fetchall()]
+        conn.close()
+        return ok({"items": items})
+
+    # ── reset_decide — владелец подтверждает или отклоняет со своего устройства
+    if action == "reset_decide":
+        if not user_id or not nova_auth.get_token(event):
+            conn.close(); return err("Подтвердить можно только с устройства, где вы вошли", 403)
+        rid = int(body.get("request_id") or 0)
+        approve = bool(body.get("approve"))
+        now = int(time.time())
+        cur.execute(
+            f"SELECT new_password_hash FROM {SCHEMA}.password_resets "
+            f"WHERE id = %s AND user_id = %s AND status = 'pending' AND expires_at > %s",
+            (rid, int(user_id), now),
+        )
+        r = cur.fetchone()
+        if not r:
+            conn.close(); return err("Заявка не найдена или устарела", 404)
+        if approve:
+            cur.execute(f"UPDATE {SCHEMA}.users SET password_hash = %s WHERE id = %s", (r[0], int(user_id)))
+            my_sid = nova_auth.current_session_id(cur, event, user_id) or 0
+            cur.execute(
+                f"UPDATE {SCHEMA}.user_sessions SET revoked = TRUE WHERE user_id = %s AND id <> %s",
+                (int(user_id), my_sid),
+            )
+        cur.execute(
+            f"UPDATE {SCHEMA}.password_resets SET status = %s, decided_at = %s, decided_by = 'owner' WHERE id = %s",
+            ("approved" if approve else "rejected", now, rid),
+        )
+        conn.close()
+        return ok({"ok": True, "status": "approved" if approve else "rejected"})
 
     # ── get_me ────────────────────────────────────────────────────────────────
     if action == "get_me":
@@ -3934,7 +4022,6 @@ def _handle(event: dict, context) -> dict:
         me = cur.fetchone()
         if not me or me[0] not in ('owner', 'admin'):
             conn.close(); return err("Только владелец или админ может перегенерировать ссылку", 403)
-        import secrets as _secrets
         invite = _secrets.token_urlsafe(12)
         cur.execute(
             f"UPDATE {SCHEMA}.groups SET invite_link=%s WHERE id=%s",
@@ -5453,7 +5540,6 @@ def _handle(event: dict, context) -> dict:
         cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE bot_owner_id=%s", (int(user_id),))
         if int(cur.fetchone()[0]) >= 10:
             conn.close(); return err("Нельзя иметь больше 10 ботов")
-        import secrets as _secrets
         token = f"{int(user_id)}:{_secrets.token_urlsafe(32)}"
         # У бота телефон-заглушка с префиксом @bot для уникальности
         bot_phone = f"bot_{username}_{int(time.time())}"
@@ -5523,7 +5609,6 @@ def _handle(event: dict, context) -> dict:
         rr = cur.fetchone()
         if not rr or int(rr[0]) != int(user_id):
             conn.close(); return err("Нет доступа", 403)
-        import secrets as _secrets
         new_token = f"{bot_id}:{_secrets.token_urlsafe(32)}"
         cur.execute(f"UPDATE {SCHEMA}.users SET bot_token=%s WHERE id=%s", (new_token, bot_id))
         conn.close()

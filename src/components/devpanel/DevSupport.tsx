@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
+import DevPasswordResets from "./DevPasswordResets";
 
 interface Ticket {
   id: number;
@@ -96,6 +97,8 @@ export default function DevSupport() {
   if (error) return <ErrorBox text={error} onRetry={load} />;
 
   return (
+    <>
+    <DevPasswordResets />
     <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4">
       <div className="bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between">
@@ -241,5 +244,6 @@ export default function DevSupport() {
         )}
       </div>
     </div>
+    </>
   );
 }
