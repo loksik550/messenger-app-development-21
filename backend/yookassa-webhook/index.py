@@ -73,9 +73,8 @@ def handler(event, context):
         method_obj = verified.get('payment_method') or {}
         payment_method = method_obj.get('type', '')
     else:
-        status = payment_object.get('status', '')
-        amount = float((payment_object.get('amount') or {}).get('value', 0))
-        payment_method = ((payment_object.get('payment_method') or {}).get('type', ''))
+        print('[webhook] YOOKASSA keys missing — payment not verified, ignored')
+        return {'statusCode': 503, 'headers': HEADERS, 'body': json.dumps({'error': 'Payment verification unavailable'})}
 
     S = get_schema()
     conn = get_conn()

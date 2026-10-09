@@ -244,6 +244,39 @@ def auth_admin(cur, event):
             "title": row[4], "avatar_url": row[5] or ""}
 
 
+
+def _send_login_sms(phone: str, code: str) -> bool:
+    """Отправить код входа в Dev-панель через SMSC."""
+    import urllib.parse as _up
+    import urllib.request as _ur
+    login = os.environ.get("SMSC_LOGIN", "")
+    password = os.environ.get("SMSC_PASSWORD", "")
+    sender = os.environ.get("SMSC_SENDER", "")
+    digits = "".join(c for c in (phone or "") if c.isdigit())
+    if not login or not password or len(digits) < 10:
+        print("[dev-sms] SMSC не настроен или неверный номер")
+        return False
+
+    def _send(with_sender: bool):
+        p = {"login": login, "psw": password, "phones": digits,
+             "mes": f"Nova Dev: код входа {code}", "fmt": 3, "charset": "utf-8"}
+        if with_sender and sender:
+            p["sender"] = sender
+        r = _ur.urlopen(f"https://smsc.ru/sys/send.php?{_up.urlencode(p)}", timeout=4)
+        return json.loads(r.read().decode("utf-8"))
+
+    try:
+        res = _send(True)
+        if res.get("error") and sender:
+            res = _send(False)
+        if res.get("error"):
+            print(f"[dev-sms] SMSC error code={res.get('error_code')}")
+            return False
+        return True
+    except Exception as e:
+        print(f"[dev-sms] failed: {e}")
+        return False
+
 def handler(event: dict, context) -> dict:
     """Nova Dev Panel — вход по коду-приглашению, статистика, пользователи, логи, поддержка."""
     if event.get("httpMethod") == "OPTIONS":

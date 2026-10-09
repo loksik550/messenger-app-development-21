@@ -62,6 +62,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
     stopDialTone();
   };
 
+  const cleanupRef = useRef(cleanup);
+  cleanupRef.current = cleanup;
+  useEffect(() => () => { endedRef.current = true; cleanupRef.current(); }, []);
+
   const sendSignal = async (type: string, payload?: unknown) => {
     try {
       await api("call_signal", { call_id: callId, to_user_id: remoteUserId, type, payload }, currentUser.id);
@@ -144,6 +148,10 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         : err.name === "NotFoundError" ? "Микрофон/камера не найдены"
         : `Не удалось получить доступ: ${err.message || err.name}`
       );
+      return null;
+    }
+    if (endedRef.current) {
+      stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
       return null;
     }
     localStreamRef.current = stream;

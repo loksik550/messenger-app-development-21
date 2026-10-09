@@ -148,6 +148,12 @@ def handler(event: dict, context) -> dict:
         sent_ids = []
         for row in due:
             sid, chat_id, text, media_url, media_type, file_name, file_size, duration = row
+            cur.execute(
+                f"UPDATE {SCHEMA}.scheduled_messages SET sent_at=%s WHERE id=%s AND sent_at IS NULL RETURNING id",
+                (now, sid),
+            )
+            if not cur.fetchone():
+                continue
             try:
                 cur.execute(
                     f"""INSERT INTO {SCHEMA}.messages
@@ -170,9 +176,10 @@ def handler(event: dict, context) -> dict:
                     (now, msg_id, sid),
                 )
                 sent_ids.append(sid)
-            except Exception:
-                conn.rollback()
+            except Exception as e:
+                print(f"[scheduled] send failed id={sid}: {e}")
                 cur = conn.cursor()
+                cur.execute(f"UPDATE {SCHEMA}.scheduled_messages SET sent_at=NULL WHERE id=%s", (sid,))
                 continue
         conn.close()
         return ok({"sent": len(sent_ids), "ids": sent_ids})

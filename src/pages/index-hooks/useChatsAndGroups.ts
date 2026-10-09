@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { api, type Chat, type User, type Group } from "@/lib/api";
 import { playMessageSound } from "@/lib/sounds";
 import { native } from "@/lib/native";
@@ -53,6 +53,9 @@ export function useChatsAndGroups({
   setRealChats: Dispatch<SetStateAction<Chat[]>>;
   setGroups: Dispatch<SetStateAction<Group[]>>;
 }) {
+  const selectedChatRef = useRef(selectedChat);
+  selectedChatRef.current = selectedChat;
+
   // Загрузка чатов
   useEffect(() => {
     if (!currentUser) return;
@@ -69,7 +72,7 @@ export function useChatsAndGroups({
           for (const c of mapped) {
             const before = prevUnread.get(c.id) || 0;
             const now = c.unread || 0;
-            const isActiveOpen = selectedChat?.id === c.id && document.visibilityState === "visible";
+            const isActiveOpen = selectedChatRef.current?.id === c.id && document.visibilityState === "visible";
             if (now > before && !c.muted && !isActiveOpen) {
               playMessageSound();
               native.localNotify.show(c.name, c.lastMsg || "Новое сообщение");
