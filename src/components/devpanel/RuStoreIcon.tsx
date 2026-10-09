@@ -73,6 +73,21 @@ export default function RuStoreIcon({ icon, onChange }: Props) {
     }
   };
 
+  const useReady = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const blob = await fetch("/rustore-icon-512.png", { cache: "no-store" }).then((r) => {
+        if (!r.ok) throw new Error("Не удалось открыть готовую иконку");
+        return r.blob();
+      });
+      await upload(new File([blob], "nova-icon.png", { type: "image/png" }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось загрузить иконку");
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     setBusy(true);
     setError("");
@@ -115,9 +130,12 @@ export default function RuStoreIcon({ icon, onChange }: Props) {
           <div className={`mt-2 text-xs ${icon ? "text-emerald-300" : "text-slate-500"}`}>
             {icon ? "Готово: при отправке новой версии эта иконка заменит текущую." : "Новая иконка не выбрана — в RuStore останется текущая."}
           </div>
-          <div className="mt-3 flex gap-3 text-sm">
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm">
             <button onClick={() => inputRef.current?.click()} disabled={busy} className="text-sky-400 hover:text-sky-300 disabled:opacity-50">
               {icon ? "Заменить" : "Загрузить иконку"}
+            </button>
+            <button onClick={useReady} disabled={busy} className="text-violet-300 hover:text-violet-200 disabled:opacity-50">
+              Взять готовую иконку Nova
             </button>
             {icon && (
               <button onClick={remove} disabled={busy} className="text-red-400 hover:text-red-300 disabled:opacity-50">
