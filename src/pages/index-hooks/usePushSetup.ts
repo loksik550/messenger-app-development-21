@@ -47,7 +47,7 @@ export function usePushSetup({
 
   useEffect(() => {
     if (!currentUser) return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") return;
     const uid = currentUser.id;
 
     // Если уже granted — подписываемся сразу. Иначе ждём первого пользовательского жеста,
