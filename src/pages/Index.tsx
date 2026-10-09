@@ -311,6 +311,7 @@ export default function Index() {
 
   if (!currentUser) return (
     <>
+      <ConnectionBanner variant="auth" />
       <AuthScreen onDone={login} />
     </>
   );

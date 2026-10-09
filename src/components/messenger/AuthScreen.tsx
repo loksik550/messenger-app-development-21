@@ -56,7 +56,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
         triggerShake();
       }
     } catch {
-      setErrorMsg("Нет соединения, попробуйте позже");
+      setErrorMsg("Нет связи с сервером Nova. Проверьте интернет или подключитесь к Wi-Fi");
       triggerShake();
     } finally {
       setLoading(false);
@@ -77,7 +77,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
         triggerShake();
       }
     } catch {
-      setErrorMsg("Нет соединения");
+      setErrorMsg("Нет связи с сервером Nova. Проверьте интернет или подключитесь к Wi-Fi");
       triggerShake();
     } finally {
       setLoading(false);
@@ -102,7 +102,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
         triggerShake();
       }
     } catch {
-      setErrorMsg("Нет соединения, попробуйте позже");
+      setErrorMsg("Нет связи с сервером Nova. Проверьте интернет или подключитесь к Wi-Fi");
       triggerShake();
     } finally {
       setLoading(false);

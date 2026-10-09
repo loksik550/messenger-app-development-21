@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { useOnline } from "@/lib/connection";
 
-export default function ConnectionBanner() {
+export default function ConnectionBanner({ variant = "chat" }: { variant?: "chat" | "auth" }) {
   const online = useOnline();
   const [showRestored, setShowRestored] = useState(false);
   const wasOffline = useRef(false);
@@ -21,7 +21,7 @@ export default function ConnectionBanner() {
 
   return (
     <div
-      className="fixed left-1/2 -translate-x-1/2 z-[60] animate-fade-in pointer-events-none"
+      className="fixed left-1/2 -translate-x-1/2 z-[60] animate-fade-in pointer-events-none w-max max-w-[calc(100vw-1.5rem)]"
       style={{ top: "calc(0.5rem + env(safe-area-inset-top))" }}
     >
       <div className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium shadow-lg ${
@@ -30,7 +30,9 @@ export default function ConnectionBanner() {
         {online ? (
           <><Icon name="Wifi" size={14} /> Связь восстановлена</>
         ) : (
-          <><Icon name="WifiOff" size={14} /> Нет связи. Сообщения отправятся позже</>
+          <><Icon name="WifiOff" size={14} /> {variant === "auth"
+            ? "Нет связи с сервером Nova. Попробуйте Wi-Fi"
+            : "Нет связи. Сообщения отправятся позже"}</>
         )}
       </div>
     </div>

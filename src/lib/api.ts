@@ -138,11 +138,18 @@ export async function api(action: string, body: Record<string, unknown> = {}, us
 }
 
 export async function smsApi(action: string, body: Record<string, unknown> = {}) {
-  const res = await fetchWithRetry(SMS_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, ...body }),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithRetry(SMS_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...body }),
+    });
+  } catch (e) {
+    reportNetworkError();
+    throw e;
+  }
+  reportNetworkOk();
   try {
     return await res.json();
   } catch {
@@ -151,11 +158,18 @@ export async function smsApi(action: string, body: Record<string, unknown> = {})
 }
 
 export async function pushApi(action: string, body: Record<string, unknown> = {}, userId?: number) {
-  const res = await fetchWithRetry(PUSH_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(userId) },
-    body: JSON.stringify({ action, ...body }),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithRetry(PUSH_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders(userId) },
+      body: JSON.stringify({ action, ...body }),
+    });
+  } catch (e) {
+    reportNetworkError();
+    throw e;
+  }
+  reportNetworkOk();
   try {
     return await res.json();
   } catch {
