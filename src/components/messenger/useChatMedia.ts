@@ -110,7 +110,7 @@ export function useChatMedia({
         if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
         setRecording(false);
         if (recordCancelledRef.current) return; // отмена — не отправляем
-        const realType = mr.mimeType || mime || "audio/webm";
+        const realType = (mr.mimeType || mime || "audio/webm").split(";")[0].trim() || "audio/webm";
         const ext = realType.includes("mp4") ? "m4a" : realType.includes("ogg") ? "ogg" : "webm";
         const blob = new Blob(audioChunks.current, { type: realType });
         if (blob.size < 500) return; // совсем пустая запись

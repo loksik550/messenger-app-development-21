@@ -105,7 +105,7 @@ export function VideoCircleRecorder({
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
     rec.onstop = () => {
       // Берём реальный тип от рекордера (на iOS это будет video/mp4, а не webm)
-      const realType = rec.mimeType || mime || "video/webm";
+      const realType = (rec.mimeType || mime || "video/webm").split(";")[0].trim() || "video/webm";
       const ext = realType.includes("mp4") ? "mp4" : realType.includes("quicktime") ? "mov" : "webm";
       const blob = new Blob(chunksRef.current, { type: realType });
       const file = new File([blob], `circle_${Date.now()}.${ext}`, { type: realType });

@@ -62,11 +62,14 @@ export async function uploadMedia(file: File, userId: number): Promise<UploadRes
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const base64 = (reader.result as string).split(",")[1];
+        const dataUrl = reader.result as string;
+        const marker = dataUrl.indexOf(";base64,");
+        const base64 = marker >= 0 ? dataUrl.slice(marker + 8) : dataUrl.slice(dataUrl.lastIndexOf(",") + 1);
+        const mime = (file.type || "application/octet-stream").split(";")[0].trim();
         const res = await fetch(UPLOAD_API, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders(userId) },
-          body: JSON.stringify({ data: base64, mime: file.type, file_name: file.name, file_size: file.size }),
+          body: JSON.stringify({ data: base64, mime, file_name: file.name, file_size: file.size }),
         });
         if (res.status === 413) { reject(new Error("Файл слишком большой для отправки")); return; }
         if (!res.ok) { reject(new Error(`Ошибка загрузки (${res.status})`)); return; }

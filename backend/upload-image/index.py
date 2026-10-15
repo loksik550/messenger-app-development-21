@@ -56,9 +56,17 @@ def handler(event: dict, context) -> dict:
     if not data_b64:
         return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Нет данных"})}
 
+    if "base64," in data_b64:
+        data_b64 = data_b64.split("base64,", 1)[1]
+    data_b64 = "".join(data_b64.split())
+    pad = len(data_b64) % 4
+    if pad:
+        data_b64 += "=" * (4 - pad)
+
     try:
         file_data = base64.b64decode(data_b64, validate=True)
     except Exception:
+        print(f"[upload] bad base64 mime={mime} len={len(data_b64)} head={data_b64[:30]!r}")
         return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Неверный base64"})}
 
     # Лимит размера файла: 5 МБ. Даёт понятную ошибку вместо обрыва на прокси.

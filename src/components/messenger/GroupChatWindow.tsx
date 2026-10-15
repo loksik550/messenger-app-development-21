@@ -358,7 +358,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
 
       {/* Video circle */}
       <VideoCircleRecorder open={showVideoCircle} onClose={() => setShowVideoCircle(false)}
-        onRecorded={file => sendFile(file)} />
+        onRecorded={(file, duration) => sendFile(file, { duration, mediaTypeOverride: "video" })} />
 
       {/* Avatar fullscreen viewer */}
       {avatarOpen && group.avatar_url && (
