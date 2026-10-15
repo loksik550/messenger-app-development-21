@@ -149,6 +149,7 @@ export default function MessageList({
 
           const url = msg.text ? extractFirstUrl(msg.text) : null;
           const showText = !!msg.text && !isMediaPlaceholder(msg.text);
+          const isCircle = msg.media_type === "video" && (msg.file_name || "").startsWith("circle_") && !showText;
 
           nodes.push(
             <SwipeableMessage key={msg.id} out={msg.out} onReply={() => onReply(msg.id)}>
@@ -158,11 +159,13 @@ export default function MessageList({
                 style={{ animationDelay: `${Math.min(i, 10) * 0.03}s` }}
               >
                 <div
-                  className={`relative max-w-[78%] w-fit min-w-[44px] rounded-[18px] text-[14px] leading-snug overflow-hidden select-none transition-shadow ${
-                    msg.out
-                      ? "msg-bubble-out text-white rounded-tr-md"
-                      : "msg-bubble-in text-foreground rounded-tl-md"
-                  } ${highlightId === msg.id ? "ring-2 ring-violet-400" : ""}`}
+                  className={`relative w-fit select-none transition-shadow ${
+                    isCircle
+                      ? "text-foreground"
+                      : `max-w-[78%] min-w-[44px] rounded-[18px] text-[14px] leading-snug overflow-hidden ${msg.out
+                        ? "msg-bubble-out text-white rounded-tr-md"
+                        : "msg-bubble-in text-foreground rounded-tl-md"}`
+                  } ${highlightId === msg.id ? (isCircle ? "scale-[1.02]" : "ring-2 ring-violet-400") : ""}`}
                   onMouseDown={() => onStartHold(msg.id, msg.out)}
                   onMouseUp={onCancelHold}
                   onMouseLeave={onCancelHold}
@@ -217,7 +220,7 @@ export default function MessageList({
                     </div>
                   )}
                   {(msg.media_url || msg.image_url) && (
-                    <div className="p-1">
+                    <div className={isCircle ? "" : "p-1"}>
                       <MediaMessage msg={msg} gallery={mediaGallery} galleryIndex={galleryIndex} out={msg.out} />
                     </div>
                   )}
@@ -250,7 +253,10 @@ export default function MessageList({
                       </div>
                     </a>
                   )}
-                  <div className={`absolute bottom-1 right-2 flex items-center gap-0.5 pointer-events-none whitespace-nowrap ${showText ? "" : "px-2 pb-1 relative bottom-auto right-auto justify-end"}`}>
+                  <div className={`flex items-center gap-0.5 pointer-events-none whitespace-nowrap ${
+                    isCircle
+                      ? "absolute bottom-1 right-1 px-2 py-0.5 rounded-full bg-black/55 backdrop-blur-sm [&_span]:!text-white/90 [&_svg]:!text-white/90"
+                      : showText ? "absolute bottom-1 right-2" : "px-2 pb-1 justify-end"}`}>
                     {msg.edited_at && (
                       <span className={`text-[10px] italic ${msg.out ? "text-white/70" : "text-muted-foreground"}`}>изм.</span>
                     )}

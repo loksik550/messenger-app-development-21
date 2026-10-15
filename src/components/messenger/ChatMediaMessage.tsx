@@ -162,15 +162,15 @@ function VideoCircleMessage({ url, duration }: { url: string; duration?: number 
 
   return (
     <div
-      className="relative w-52 h-52 select-none cursor-pointer"
+      className="relative w-52 h-52 flex-shrink-0 select-none cursor-pointer rounded-full shadow-lg shadow-black/40"
       onClick={toggle}
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
       <video
         ref={videoRef}
-        src={url}
-        className="w-52 h-52 rounded-full object-cover bg-black"
+        src={url.includes("#") ? url : `${url}#t=0.1`}
+        className="w-full h-full rounded-full object-cover bg-black"
         playsInline
         preload="metadata"
         onPlay={() => setPlaying(true)}
@@ -183,13 +183,13 @@ function VideoCircleMessage({ url, duration }: { url: string; duration?: number 
       />
       {/* Прогресс по кругу */}
       <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r={R} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2.5" />
-        <circle
+        <circle cx="50" cy="50" r={R} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="2.5" />
+        {progress > 0 && <circle
           cx="50" cy="50" r={R}
           fill="none" stroke="#a78bfa" strokeWidth="2.5" strokeLinecap="round"
           strokeDasharray={circ}
           strokeDashoffset={circ * (1 - progress)}
-        />
+        />}
       </svg>
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -199,7 +199,7 @@ function VideoCircleMessage({ url, duration }: { url: string; duration?: number 
         </div>
       )}
       {duration != null && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/55 text-[10px] text-white tabular-nums pointer-events-none">
+        <div className="absolute bottom-1 left-1 px-2 py-0.5 rounded-full bg-black/55 backdrop-blur-sm text-[10px] text-white tabular-nums pointer-events-none">
           {fmt(duration)}
         </div>
       )}
