@@ -82,27 +82,33 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
       const d = await call<{ tag: string; version_id: number }>("publish", { whats_new: whatsNew, auto_publish: autoPublish });
       draftId = d.version_id;
       setStage("Загружаем файл приложения в RuStore…");
-      let up: { pending?: boolean };
-      try {
-        up = await call<{ pending?: boolean }>("publish_upload", { version_id: d.version_id });
-      } catch (e) {
-        if (!(e instanceof RuStoreNetworkError)) throw e;
-        up = { pending: true };
-      }
+      let uploadError: unknown = null;
+      const upload = call<{ pending?: boolean }>("publish_upload", { version_id: d.version_id }).catch((e) => {
+        if (!(e instanceof RuStoreNetworkError)) uploadError = e;
+        return { pending: true };
+      });
+      const up = await Promise.race([
+        upload,
+        new Promise<{ pending: boolean }>((res) => setTimeout(() => res({ pending: true }), 20000)),
+      ]);
+      if (uploadError) throw uploadError;
       setStage("Отправляем на модерацию…");
       let r: { ok: boolean; retry?: boolean; message?: string; tag: string; version_id: number; screens: number; icon: boolean } | null = null;
       const tries = up.pending ? 20 : 6;
+      let mediaDone = false;
       for (let i = 0; i < tries; i++) {
         if (i > 0) {
           setStage(`RuStore обрабатывает файл… (${i * 15} сек)`);
           await new Promise((res) => setTimeout(res, 15000));
         }
+        if (uploadError) throw uploadError;
         try {
-          r = await call("publish_commit", { version_id: d.version_id, tag: d.tag, skip_media: i > 0 });
+          r = await call("publish_commit", { version_id: d.version_id, tag: d.tag, skip_media: mediaDone });
         } catch (e) {
           if (!(e instanceof RuStoreNetworkError)) throw e;
           r = null;
         }
+        if (r && r.message !== "Файл ещё загружается в RuStore") mediaDone = true;
         if (r?.ok) { committed = true; break; }
       }
       if (!r?.ok) throw new Error(`RuStore ещё обрабатывает файл. Через 5 минут обновите страницу — версия ${d.tag} будет в списке ниже, отправку можно завершить в консоли RuStore.`);

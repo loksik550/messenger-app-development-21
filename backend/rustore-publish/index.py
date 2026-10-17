@@ -410,6 +410,25 @@ def do_preflight(body):
     return ok({"checks": checks, "ready": all(c["ok"] for c in checks), "tag": rel.get("tag")})
 
 
+def _up_state(version_id, value=None):
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn.autocommit = True
+    cur = conn.cursor()
+    key = f"rustore_upload_{int(version_id)}"
+    if value is None:
+        cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = %s", (key,))
+        r = cur.fetchone()
+        conn.close()
+        return r[0] if r else ""
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at) VALUES (%s, %s, %s) "
+        f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+        (key, value[:500], int(time.time())),
+    )
+    conn.close()
+    return value
+
+
 def do_upload(body):
     version_id = int(body.get("version_id") or 0)
     if not version_id:
@@ -418,22 +437,31 @@ def do_upload(body):
     if not rel.get("aab_url"):
         return err("В релизе нет файла .aab")
     tok = token()
-    file_resp = requests.get(rel["aab_url"], timeout=(10, 25))
-    if file_resp.status_code != 200 or len(file_resp.content) < 100000:
-        raise RuStoreError("Не удалось скачать .aab из GitHub")
+    cur_state = _up_state(version_id)
+    if cur_state.startswith("uploading") or cur_state in ("done", "committed"):
+        return ok({"ok": True, "stage": "uploaded", "pending": cur_state.startswith("uploading")})
+    _up_state(version_id, f"uploading:{int(time.time())}")
+    t0 = time.time()
     try:
+        file_resp = requests.get(rel["aab_url"], timeout=(10, 25))
+        if file_resp.status_code != 200 or len(file_resp.content) < 100000:
+            raise RuStoreError("Не удалось скачать .aab из GitHub")
         rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
-           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 45))
+           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 80))
     except requests.exceptions.ReadTimeout:
-        print(f"[upload] {version_id}: RuStore ещё обрабатывает файл")
+        print(f"[upload] {version_id}: RuStore не ответил за {int(time.time() - t0)} сек, файл обрабатывается")
+        _up_state(version_id, "done")
         return ok({"ok": True, "stage": "uploaded", "pending": True})
     except (RuStoreError, requests.exceptions.RequestException) as e:
         print(f"[upload] {version_id}: {e}")
+        _up_state(version_id, f"error:{e}")
         try:
             rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{version_id}", tok)
         except Exception:
             pass
-        raise RuStoreError(f"RuStore не принял файл приложения: {e}. Пустой черновик удалён — попробуйте ещё раз.")
+        raise RuStoreError(f"RuStore не принял файл приложения: {e}. Черновик удалён — попробуйте ещё раз.")
+    print(f"[upload] {version_id}: загружено за {int(time.time() - t0)} сек")
+    _up_state(version_id, "done")
     return ok({"ok": True, "stage": "uploaded", "pending": False})
 
 
@@ -451,6 +479,13 @@ def do_commit(body, admin, ip):
     version_id = int(body.get("version_id") or 0)
     if not version_id:
         return err("Не указана версия")
+    st = _up_state(version_id)
+    if st.startswith("uploading"):
+        started = int(st.split(":")[1]) if ":" in st else 0
+        if time.time() - started < 150:
+            return ok({"ok": False, "retry": True, "message": "Файл ещё загружается в RuStore"})
+    if st.startswith("error:"):
+        return err(f"RuStore не принял файл приложения: {st[6:]}. Нажмите «Отправить» ещё раз.", 502)
     tok = token()
     shots, icon_sent = 0, False
     if not body.get("skip_media"):
@@ -460,10 +495,11 @@ def do_commit(body, admin, ip):
         rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/commit", tok, timeout=(10, 40))
     except RuStoreError as e:
         print(f"[commit] {version_id}: {e}")
-        return ok({"ok": False, "retry": True, "message": str(e), "screens": shots, "icon": icon_sent})
+        return ok({"ok": False, "retry": True, "message": str(e)[:200], "screens": shots, "icon": icon_sent})
     except requests.exceptions.ReadTimeout:
         return ok({"ok": False, "retry": True, "message": "RuStore долго отвечает", "screens": shots, "icon": icon_sent})
     tag = str(body.get("tag") or "")
+    _up_state(version_id, "committed")
     audit(admin, "rustore_publish",
           f"Отправлена {tag} в RuStore (версия {version_id}, скриншотов: {shots or 'прежние'}, "
           f"иконка: {'новая' if icon_sent else 'прежняя'})", ip)
