@@ -6,6 +6,7 @@ import RuStoreRating from "./RuStoreRating";
 import RuStoreScreens from "./RuStoreScreens";
 import RuStoreIcon from "./RuStoreIcon";
 import RuStoreVersions from "./RuStoreVersions";
+import RuStoreBuild from "./RuStoreBuild";
 
 const LS_AUTO_PUBLISH = "nova_rustore_auto_publish";
 const LS_WHATS_NEW = "nova_rustore_whats_new";
@@ -19,6 +20,7 @@ interface StatusData {
   store_screens?: StoreScreen[];
   icon?: SavedIcon | null;
   has_release?: boolean;
+  has_token?: boolean;
 }
 
 const call = rustoreCall;
@@ -114,6 +116,8 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
           </button>
         </div>
 
+        <RuStoreBuild hasToken={!!data.has_token} needNew={already} onReady={load} />
+
         <label className="block text-xs text-slate-400 mb-1.5">Что нового (увидят пользователи в RuStore)</label>
         <textarea
           value={whatsNew}
@@ -149,11 +153,11 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
         )}
 
         {already && (
-          <div className="mt-3 text-xs text-amber-300">Похоже, {rel?.tag} уже отправлялась в RuStore. Соберите новый релиз в GitHub перед отправкой.</div>
+          <div className="mt-3 text-xs text-amber-300">{rel?.tag} уже отправлялась в RuStore. Нажмите «Собрать» выше — новая версия соберётся сама.</div>
         )}
 
         <button
-          disabled={!data.configured || sending || !rel?.aab_name || screensBad}
+          disabled={!data.configured || sending || !rel?.aab_name || screensBad || already}
           onClick={() => setConfirm(true)}
           className="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >

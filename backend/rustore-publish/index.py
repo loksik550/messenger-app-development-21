@@ -162,7 +162,7 @@ def has_release(versions):
 
 def latest_release():
     r = requests.get(f"https://api.github.com/repos/{REPO}/releases/latest", timeout=15,
-                     headers={"Accept": "application/vnd.github+json"})
+                     headers=_gh_headers())
     if r.status_code != 200:
         raise RuStoreError("Не удалось получить последний релиз из GitHub")
     rel = r.json()
@@ -174,6 +174,80 @@ def latest_release():
         "aab_url": aab.get("browser_download_url") if aab else None,
         "aab_size": aab.get("size") if aab else 0,
     }
+
+
+def _gh_headers():
+    tok = (os.environ.get("GITHUB_RELEASE_TOKEN") or "").strip()
+    h = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if tok:
+        h["Authorization"] = f"Bearer {tok}"
+    return h
+
+
+def _parse_ver(name):
+    name = str(name or "").strip().lstrip("vV")
+    parts = name.split(".")
+    if not parts or not all(p.isdigit() for p in parts):
+        return None
+    nums = [int(p) for p in parts][:3]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)
+
+
+def next_version(rustore_names=()):
+    r = requests.get(f"https://api.github.com/repos/{REPO}/tags?per_page=100", timeout=10, headers=_gh_headers())
+    tags = [t.get("name") for t in (r.json() if r.status_code == 200 else [])]
+    known = [v for v in (_parse_ver(t) for t in list(tags) + list(rustore_names)) if v]
+    top = max(known) if known else (1, 1, 1)
+    return f"{top[0]}.{top[1]}.{top[2] + 1}", set(tags)
+
+
+def bump_release(admin, ip):
+    if not (os.environ.get("GITHUB_RELEASE_TOKEN") or "").strip():
+        return err("Добавьте ключ GITHUB_RELEASE_TOKEN в секреты проекта — без него панель не может запустить сборку")
+    names = []
+    if configured():
+        try:
+            names = [v.get("name") for v in list_versions(token(), 20)]
+        except RuStoreError as e:
+            print(f"[bump] versions: {e}")
+    ver, tags = next_version(names)
+    while f"v{ver}" in tags:
+        a, b, c = _parse_ver(ver)
+        ver = f"{a}.{b}.{c + 1}"
+    h = _gh_headers()
+    repo = requests.get(f"https://api.github.com/repos/{REPO}", timeout=10, headers=h)
+    if repo.status_code != 200:
+        return err("GitHub не пускает: проверьте ключ GITHUB_RELEASE_TOKEN (доступ к репозиторию)", 502)
+    branch = repo.json().get("default_branch") or "main"
+    ref = requests.get(f"https://api.github.com/repos/{REPO}/git/ref/heads/{branch}", timeout=10, headers=h)
+    if ref.status_code != 200:
+        return err("Не удалось получить последнюю версию кода из GitHub", 502)
+    sha = ref.json()["object"]["sha"]
+    cr = requests.post(f"https://api.github.com/repos/{REPO}/git/refs", timeout=10, headers=h,
+                       json={"ref": f"refs/tags/v{ver}", "sha": sha})
+    if cr.status_code not in (200, 201):
+        msg = (cr.json() or {}).get("message", "") if cr.headers.get("content-type", "").startswith("application/json") else ""
+        if cr.status_code in (401, 403, 404):
+            return err("У ключа GitHub нет права записи. Выдайте ему доступ Contents: Read and write", 502)
+        return err(f"GitHub не создал версию v{ver}: {msg or cr.status_code}", 502)
+    audit(admin, "rustore_bump", f"Запущена сборка версии v{ver}", ip)
+    return ok({"ok": True, "tag": f"v{ver}", "version": ver})
+
+
+def build_state(tag):
+    r = requests.get(f"https://api.github.com/repos/{REPO}/actions/runs?event=push&per_page=15",
+                     timeout=10, headers=_gh_headers())
+    if r.status_code != 200:
+        return {"state": "unknown"}
+    for run in r.json().get("workflow_runs", []):
+        if run.get("head_branch") == tag:
+            if run.get("status") != "completed":
+                return {"state": "building", "url": run.get("html_url")}
+            return {"state": "success" if run.get("conclusion") == "success" else "failed",
+                    "url": run.get("html_url")}
+    return {"state": "queued"}
 
 
 def store_screens(tok, versions):
@@ -297,9 +371,11 @@ def handler(event: dict, context) -> dict:
                 rel = {"error": str(e)}
             saved = screens.public_list()
             saved_icon = icon.public()
+            has_token = bool((os.environ.get("GITHUB_RELEASE_TOKEN") or "").strip())
             if not configured():
                 return ok({"configured": False, "release": rel, "versions": [], "rating": None,
-                           "screens": saved, "store_screens": [], "icon": saved_icon, "has_release": False})
+                           "screens": saved, "store_screens": [], "icon": saved_icon, "has_release": False,
+                           "has_token": has_token})
             tok = token()
             versions = enrich(list_versions(tok))
             rating = None
@@ -309,10 +385,26 @@ def handler(event: dict, context) -> dict:
                 rating = {"error": str(e)}
             return ok({"configured": True, "release": rel, "versions": versions, "rating": rating,
                        "screens": saved, "store_screens": store_screens(tok, versions),
-                       "icon": saved_icon, "has_release": has_release(versions)})
+                       "icon": saved_icon, "has_release": has_release(versions),
+                       "has_token": has_token})
 
         if action == "publish":
             return do_publish(body, admin, ip)
+
+        if action == "bump":
+            return bump_release(admin, ip)
+
+        if action == "build_status":
+            tag = str(body.get("tag") or "")
+            st = build_state(tag) if tag else {"state": "unknown"}
+            rel = None
+            try:
+                rel = latest_release()
+            except RuStoreError as e:
+                rel = {"error": str(e)}
+            ready = bool(rel and rel.get("tag") == tag and rel.get("aab_name"))
+            return ok({**st, "ready": ready, "release": rel,
+                       "has_token": bool((os.environ.get("GITHUB_RELEASE_TOKEN") or "").strip())})
 
         if action == "screens_add":
             new_id = screens.add(body.get("data") or "")

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs } from "@/lib/devApi";
+import { saveFile } from "@/lib/saveFile";
 
 interface ChatRow {
   id: number;
@@ -65,12 +66,7 @@ export function DevUserChatsTab({ userId, can, run }: TabProps) {
         { chat_id: chatId },
       );
       const text = r.messages.map((m) => `[${m.time}] ${m.author}: ${m.text || "—"}`).join("\n");
-      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `chat-${chatId}.txt`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      await saveFile(`chat-${chatId}.txt`, text, "text/plain;charset=utf-8");
     } catch (e) {
       alert(e instanceof Error ? e.message : "Не удалось выгрузить");
     }

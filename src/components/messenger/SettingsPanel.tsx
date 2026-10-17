@@ -9,6 +9,7 @@ import { LoginEventsList, type LoginEvent } from "@/components/messenger/setting
 import { NotificationsInfo } from "@/components/messenger/settings/NotificationsInfo";
 import { SettingsActions } from "@/components/messenger/settings/SettingsActions";
 import { VkLinkRow } from "@/components/messenger/settings/VkLinkRow";
+import { saveFile } from "@/lib/saveFile";
 
 /** Переключатель. Вынесен наружу, чтобы не пересоздавался при обновлениях. */
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -206,14 +207,10 @@ export function SettingsPanel({
         const msgs = await api("get_messages", { chat_id: ch.id, since: 0 }, currentUser.id);
         out.chats.push({ chat: ch, messages: msgs.messages || [] });
       }
-      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `nova_backup_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch { /* ignore */ }
+      await saveFile(`nova_backup_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(out, null, 2), "application/json");
+    } catch (e) {
+      alert("Не удалось сохранить копию: " + (e instanceof Error ? e.message : "попробуйте ещё раз"));
+    }
   };
 
   return (

@@ -2,6 +2,7 @@ import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
 import { Field, Inp } from "./DevPlans";
+import { saveFile } from "@/lib/saveFile";
 
 export interface Payment {
   id: number;
@@ -89,14 +90,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       lines.push(`Всего строк;${r.count}`);
 
       // BOM нужен, чтобы Excel правильно показал русские буквы
-      const blob = new Blob(["\uFEFF" + lines.join("\r\n")], {
-        type: "text/csv;charset=utf-8",
-      });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `nova-payments-${from}_${to}.csv`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      await saveFile(`nova-payments-${from}_${to}.csv`, "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
       setDone(`Готово: ${r.count} строк, ${formatNum(r.total)} ₽`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Не удалось выгрузить");

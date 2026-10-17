@@ -1,3 +1,4 @@
+import { saveFile } from "@/lib/saveFile";
 const DEV_API = "https://functions.poehali.dev/5857e852-e31f-4ac8-8426-2b483f4d2de7";
 
 const TOKEN_KEY = "nova_dev_token";
@@ -135,10 +136,5 @@ export function downloadCsv(
     for (const f of footer) lines.push(f);
   }
   // BOM нужен, чтобы Excel правильно показал русские буквы
-  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  return saveFile(filename, "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
 }

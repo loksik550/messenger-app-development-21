@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, downloadCsv } from "@/lib/devApi";
+import { saveFile } from "@/lib/saveFile";
 
 const EVENTS = [
   { key: "report", label: "Жалобы на пользователей", icon: "Flag" },
@@ -212,14 +213,11 @@ export function DevBackup() {
         counts: Record<string, number>;
       }>("backup_export");
 
-      const blob = new Blob([JSON.stringify(r.backup, null, 2)], {
-        type: "application/json",
-      });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `nova-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      await saveFile(
+        `nova-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(r.backup, null, 2),
+        "application/json",
+      );
 
       setMsg(
         `Скачано: ${r.counts.users} пользователей, ${r.counts.orders} платежей, ` +
