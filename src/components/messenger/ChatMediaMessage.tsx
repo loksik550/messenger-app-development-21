@@ -81,8 +81,9 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
           onTouchStart={(e) => e.stopPropagation()}
         >
           <video
-            src={mediaUrl}
-            className="w-full rounded-xl pointer-events-none"
+            src={mediaUrl.includes("#") ? mediaUrl : `${mediaUrl}#t=0.1`}
+            poster={NO_POSTER}
+            className="w-full min-h-[140px] rounded-xl pointer-events-none bg-zinc-900"
             style={{ maxHeight: 300 }}
             playsInline
             preload="metadata"
@@ -132,6 +133,8 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
   return null;
 }
 
+const NO_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
 // ─── VideoCircleMessage (кружок как в Telegram) ───────────────────────────────
 
 function VideoCircleMessage({ url, duration }: { url: string; duration?: number }) {
@@ -170,9 +173,12 @@ function VideoCircleMessage({ url, duration }: { url: string; duration?: number 
       <video
         ref={videoRef}
         src={url.includes("#") ? url : `${url}#t=0.1`}
-        className="w-full h-full rounded-full object-cover bg-black"
+        poster={NO_POSTER}
+        className="w-full h-full rounded-full object-cover bg-gradient-to-br from-zinc-800 to-zinc-950"
         playsInline
-        preload="metadata"
+        muted
+        preload="auto"
+        onLoadedData={(e) => { const v = e.currentTarget; if (v.paused && v.currentTime < 0.05) { try { v.currentTime = 0.1; } catch { /* ignore */ } } }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setProgress(0); }}
@@ -199,7 +205,7 @@ function VideoCircleMessage({ url, duration }: { url: string; duration?: number 
         </div>
       )}
       {duration != null && (
-        <div className="absolute bottom-1 left-1 px-2 py-0.5 rounded-full bg-black/55 backdrop-blur-sm text-[10px] text-white tabular-nums pointer-events-none">
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/55 backdrop-blur-sm text-[10px] text-white tabular-nums pointer-events-none">
           {fmt(duration)}
         </div>
       )}

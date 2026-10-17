@@ -5,6 +5,7 @@ import { Loading, ErrorBox } from "./DevDashboard";
 import DevUserCard from "./DevUserCard";
 import { Empty } from "./DevAutoRules";
 import { Pick, Box, BulkDialog } from "./DevUsersParts";
+import { DevPhoneVk } from "@/components/devpanel/DevPhoneVk";
 
 interface DevUser {
   id: number;
@@ -15,6 +16,7 @@ interface DevUser {
   avatar_url: string | null;
   online: boolean;
   verified?: boolean;
+  vk_id?: number | null;
 }
 
 interface ExportRow {
@@ -28,6 +30,7 @@ interface ExportRow {
   created_at: number;
   last_seen: number;
   banned: string;
+  vk?: string;
 }
 
 export default function DevUsers({
@@ -137,11 +140,11 @@ export default function DevUsers({
       downloadCsv(
         `nova-users-${new Date().toISOString().slice(0, 10)}.csv`,
         ["ID", "Имя", "Телефон", "Premium", "Premium до", "Кошелёк, руб",
-         "Проверен", "Регистрация", "Был в сети", "Заблокирован"],
+         "Проверен", "Регистрация", "Был в сети", "Заблокирован", "ВКонтакте"],
         r.rows.map((u) => [
           u.id, u.name, u.phone, u.premium, fmt(u.premium_until),
           String(u.wallet).replace(".", ","), u.verified,
-          fmt(u.created_at), fmt(u.last_seen), u.banned,
+          fmt(u.created_at), fmt(u.last_seen), u.banned, u.vk || "",
         ]),
         [`Всего пользователей;${r.count}`],
       );
@@ -216,6 +219,8 @@ export default function DevUsers({
                   options={[["1", "за сутки"], ["7", "за неделю"], ["30", "за месяц"]]} />
             <Pick label="Кошелёк" value={filters.has_wallet} onPick={(v) => setFilters({ ...filters, has_wallet: v })}
                   options={[["yes", "с деньгами"]]} />
+            <Pick label="ВКонтакте" value={filters.vk} onPick={(v) => setFilters({ ...filters, vk: v })}
+                  options={[["yes", "привязан"], ["no_phone", "без номера"], ["no", "не привязан"]]} />
           </div>
 
           {saved.length > 0 && (
@@ -353,7 +358,7 @@ export default function DevUsers({
                     <span className="font-medium truncate text-sm">{u.name || "Без имени"}</span>
                     {u.verified && <Icon name="BadgeCheck" size={13} className="text-sky-400 shrink-0" />}
                   </div>
-                  <div className="text-xs text-slate-500 truncate">{u.phone || `ID ${u.id}`}</div>
+                  <div className="text-xs text-slate-500 truncate"><DevPhoneVk phone={u.phone} vkId={u.vk_id} id={u.id} /></div>
                   <div className="text-[11px] text-slate-600 mt-0.5">
                     {u.online ? (
                       <span className="text-emerald-400">в сети</span>
@@ -432,7 +437,7 @@ export default function DevUsers({
                         </div>
                       </div>
                     </td>
-                    <td className={`${pad} text-slate-400 whitespace-nowrap`}>{u.phone}</td>
+                    <td className={`${pad} text-slate-400 whitespace-nowrap`}><DevPhoneVk phone={u.phone} vkId={u.vk_id} /></td>
                     {!compact && (
                       <td className={`${pad} text-slate-500 whitespace-nowrap`}>{formatTs(u.created_at)}</td>
                     )}

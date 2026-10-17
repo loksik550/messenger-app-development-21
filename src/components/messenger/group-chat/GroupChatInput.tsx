@@ -161,6 +161,12 @@ export default function GroupChatInput({
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
             placeholder={group.is_channel ? "Написать в канал..." : "Сообщение..."}
             rows={1}
+            autoComplete="off"
+            autoCorrect="on"
+            autoCapitalize="sentences"
+            spellCheck
+            inputMode="text"
+            enterKeyHint="enter"
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground resize-none max-h-32"
           />
           <div className="relative">
@@ -173,7 +179,7 @@ export default function GroupChatInput({
           </div>
         </div>
         {input.trim() ? (
-          <button onClick={onSend} className="p-2.5 rounded-xl grad-primary text-white glow-primary">
+          <button onMouseDown={e => e.preventDefault()} onTouchEnd={e => { e.preventDefault(); onSend(); }} onClick={onSend} className="p-2.5 rounded-xl grad-primary text-white glow-primary">
             <Icon name="Send" size={20} />
           </button>
         ) : (

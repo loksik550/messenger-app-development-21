@@ -611,14 +611,14 @@ def handler(event: dict, context) -> dict:
             if q:
                 like = f"%{q}%"
                 cur.execute(
-                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE) "
+                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id "
                     f"FROM {SCHEMA}.users "
-                    f"WHERE name ILIKE %s OR phone ILIKE %s ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
-                    (like, like, limit, offset),
+                    f"WHERE name ILIKE %s OR phone ILIKE %s OR CAST(vk_id AS TEXT) ILIKE %s ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
+                    (like, like, like, limit, offset),
                 )
             else:
                 cur.execute(
-                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE) "
+                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id "
                     f"FROM {SCHEMA}.users "
                     f"ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
                     (limit, offset),
@@ -633,6 +633,7 @@ def handler(event: dict, context) -> dict:
                 "created_at": r[3], "last_seen": r[4], "avatar_url": r[5],
                 "verified": bool(r[6]) if len(r) > 6 else False,
                 "online": bool(r[4] and r[4] > now - 60),
+                "vk_id": r[7], "phone_missing": str(r[2] or "").startswith("vk"),
             } for r in rows]
             return ok({"users": users, "total": total})
 
@@ -640,7 +641,7 @@ def handler(event: dict, context) -> dict:
             uid = int(body.get("user_id") or 0)
             cur.execute(
                 f"SELECT id, name, phone, created_at, last_seen, avatar_url, about, banned_until, banned_reason, "
-                f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE) FROM {SCHEMA}.users WHERE id = %s",
+                f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE), vk_id FROM {SCHEMA}.users WHERE id = %s",
                 (uid,),
             )
             r = cur.fetchone()
@@ -656,6 +657,7 @@ def handler(event: dict, context) -> dict:
                 "banned_until": r[7], "banned_reason": r[8], "wallet_balance": int(r[9] or 0),
                 "verified": bool(r[10]) if len(r) > 10 else False,
                 "messages": msg_count, "contacts": contacts,
+                "vk_id": r[11], "phone_missing": str(r[2] or "").startswith("vk"),
             }})
 
         if action == "ban_user":
@@ -2136,7 +2138,7 @@ def handler(event: dict, context) -> dict:
                 f"SELECT id, name, COALESCE(phone, ''), created_at, COALESCE(last_seen, 0), "
                 f"COALESCE(avatar_url, ''), COALESCE(about, ''), COALESCE(banned_until, 0), "
                 f"COALESCE(banned_reason, ''), COALESCE(wallet_balance, 0), "
-                f"COALESCE(verified, FALSE), COALESCE(pro_until, 0) "
+                f"COALESCE(verified, FALSE), COALESCE(pro_until, 0), vk_id "
                 f"FROM {SCHEMA}.users WHERE id = %s",
                 (uid,),
             )
@@ -2194,6 +2196,7 @@ def handler(event: dict, context) -> dict:
                     "wallet": float(u[9] or 0), "verified": bool(u[10]),
                     "pro_until": int(u[11] or 0),
                     "online": bool(u[4] and u[4] > now_ts - 300),
+                    "vk_id": u[12], "phone_missing": str(u[2] or "").startswith("vk"),
                 },
                 "stats": {
                     "messages": msgs, "paid_total": float(pay[0] or 0),
@@ -2310,10 +2313,16 @@ def handler(event: dict, context) -> dict:
                 params.append(now_ts - int(f["new_days"]) * 86400)
             if f.get("has_wallet") == "yes":
                 where.append("COALESCE(wallet_balance, 0) > 0")
+            if f.get("vk") == "yes":
+                where.append("vk_id IS NOT NULL")
+            elif f.get("vk") == "no_phone":
+                where.append("phone LIKE 'vk%%'")
+            elif f.get("vk") == "no":
+                where.append("vk_id IS NULL")
 
             sql = (f"SELECT id, name, COALESCE(phone, ''), created_at, last_seen, "
                    f"COALESCE(avatar_url, ''), COALESCE(verified, FALSE), "
-                   f"COALESCE(pro_until, 0), COALESCE(banned_until, 0) "
+                   f"COALESCE(pro_until, 0), COALESCE(banned_until, 0), vk_id "
                    f"FROM {SCHEMA}.users WHERE " + " AND ".join(where) +
                    " ORDER BY created_at DESC LIMIT 200")
             cur.execute(sql, tuple(params))
@@ -2323,6 +2332,7 @@ def handler(event: dict, context) -> dict:
                 "online": bool(r[4] and r[4] > now_ts - 300),
                 "premium": int(r[7] or 0) > now_ts,
                 "banned": int(r[8] or 0) > now_ts,
+                "vk_id": r[9], "phone_missing": str(r[2] or "").startswith("vk"),
             } for r in cur.fetchall()]
             return ok({"users": users, "total": len(users)})
 
@@ -2818,7 +2828,7 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"SELECT id, name, COALESCE(phone, ''), COALESCE(pro_until, 0), "
                 f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE), "
-                f"created_at, COALESCE(last_seen, 0), COALESCE(banned_until, 0) "
+                f"created_at, COALESCE(last_seen, 0), COALESCE(banned_until, 0), vk_id "
                 f"FROM {SCHEMA}.users ORDER BY created_at DESC LIMIT 10000"
             )
             rows = [{
@@ -2830,7 +2840,11 @@ def handler(event: dict, context) -> dict:
                 "created_at": int(r[6] or 0),
                 "last_seen": int(r[7] or 0),
                 "banned": "Да" if int(r[8] or 0) > now_ts else "Нет",
+                "vk": f"https://vk.com/id{r[9]}" if r[9] else "",
             } for r in cur.fetchall()]
+            for x in rows:
+                if str(x["phone"]).startswith("vk"):
+                    x["phone"] = "без номера"
             audit(cur, admin, "users_export", f"Выгрузка базы: {len(rows)} строк", ip)
             return ok({"rows": rows, "count": len(rows)})
 

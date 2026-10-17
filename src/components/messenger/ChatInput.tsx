@@ -203,6 +203,12 @@ export function ChatInput({
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
               placeholder="Сообщение..."
               rows={1}
+              autoComplete="off"
+              autoCorrect="on"
+              autoCapitalize="sentences"
+              spellCheck
+              inputMode="text"
+              enterKeyHint="enter"
               className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder-muted-foreground resize-none max-h-32"
             />
             <div className="relative">
@@ -221,7 +227,9 @@ export function ChatInput({
           </div>
           {input.trim() ? (
             <button
+              onMouseDown={e => e.preventDefault()}
               onClick={onSend}
+              onTouchEnd={e => { e.preventDefault(); onSend(); }}
               className="p-2.5 rounded-xl transition-all grad-primary text-white glow-primary animate-scale-in"
             >
               <Icon name="Send" size={20} />

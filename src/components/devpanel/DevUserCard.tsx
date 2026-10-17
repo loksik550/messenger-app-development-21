@@ -4,6 +4,7 @@ import { devApi, formatTs, timeAgo, formatNum } from "@/lib/devApi";
 import DevUserBilling from "@/components/devpanel/DevUserBilling";
 import DevUserHistory from "./DevUserHistory";
 import { DevUserChatsTab, DevUserMediaTab } from "./DevUserTabs";
+import { DevPhoneVk } from "@/components/devpanel/DevPhoneVk";
 
 const BAN_REASONS = [
   "Спам и массовые рассылки",
@@ -27,6 +28,7 @@ interface UserDetail {
   contacts: number;
   wallet_balance?: number;
   verified?: boolean;
+  vk_id?: number | null;
 }
 
 interface Device {
@@ -153,7 +155,7 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
               )}
             </div>
           )}
-          <p className="text-sm text-slate-400 mt-0.5">{user.phone}</p>
+          <p className="text-sm text-slate-400 mt-0.5"><DevPhoneVk phone={user.phone} vkId={user.vk_id} /></p>
           <p className="text-xs text-slate-600">ID {user.id}</p>
         </div>
         <button onClick={onClose} className="text-slate-500 hover:text-slate-300 shrink-0">
