@@ -223,7 +223,7 @@ def gh_diagnose():
         return {"ok": False, "reason": "read_only", "login": login,
                 "text": "У ключа есть только чтение. В настройках ключа: Permissions → Repository permissions → "
                         "Contents → выберите «Read and write», затем нажмите Update"}
-    return {"ok": True, "login": login, "text": "Ключ GitHub в порядке"}
+    return {"ok": True, "login": login, "text": "Ключ видит репозиторий"}
 
 
 def bump_release(admin, ip):
@@ -257,6 +257,10 @@ def bump_release(admin, ip):
             d = gh_diagnose()
             if not d["ok"]:
                 return err(d["text"], 502)
+            if "not accessible by personal access token" in (msg or "").lower():
+                return err("У ключа GitHub только право чтения. Откройте github.com/settings/personal-access-tokens → "
+                           "ваш ключ → Edit → Repository permissions → Contents → «Read and write» → Update. "
+                           "Ключ в секретах менять не нужно — после Update нажмите «Собрать» ещё раз.", 502)
             if "workflow" in (msg or "").lower():
                 return err("GitHub требует право Workflows. В настройках ключа: Permissions → Workflows → «Read and write»", 502)
             return err(f"GitHub отказал в создании версии: {msg or cr.status_code}. "

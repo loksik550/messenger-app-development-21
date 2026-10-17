@@ -121,7 +121,7 @@ export default function RuStoreBuild({
         </div>
       )}
       {gh?.ok && gh.login && !busy && state === "idle" && (
-        <div className="mt-2 text-[11px] text-emerald-300/80">Ключ GitHub работает (аккаунт {gh.login})</div>
+        <div className="mt-2 text-[11px] text-emerald-300/80">Ключ GitHub подключён (аккаунт {gh.login})</div>
       )}
       {error && <div className="mt-2 text-xs text-red-300 break-words">{error}</div>}
     </div>
