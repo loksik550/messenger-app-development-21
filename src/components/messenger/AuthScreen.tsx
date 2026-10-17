@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
 import ResetWaiting, { loadResetTicket, saveResetTicket, type ResetTicket } from "./ResetWaiting";
+import VkLoginButton from "@/components/messenger/VkLoginButton";
 
 export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) => void }) {
   const [ticket, setTicket] = useState<ResetTicket | null>(() => loadResetTicket());
@@ -174,6 +175,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 <>Продолжить <Icon name="ArrowRight" size={18} /></>
               )}
             </button>
+            <VkLoginButton onDone={onDone} />
             <p className="text-center text-xs text-muted-foreground">
               Нажимая «Продолжить», вы соглашаетесь с{" "}
               <button type="button" onClick={() => setShowPolicy(true)} className="text-violet-400 hover:text-violet-300 underline">

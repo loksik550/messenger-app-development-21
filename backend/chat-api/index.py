@@ -4,6 +4,7 @@ import time
 import hashlib
 import hmac
 import urllib.request
+import urllib.error
 import threading
 import psycopg2
 import nova_auth
@@ -96,6 +97,53 @@ def err(msg, code=400):
 
 
 USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind"
+
+
+
+VK_REDIRECT = "https://novaa.pro/vk-callback"
+
+
+def _vk_post(url: str, fields: dict) -> dict:
+    from urllib.parse import urlencode as _ue
+    req = urllib.request.Request(url, data=_ue(fields).encode("utf-8"),
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=4) as r:
+            return json.loads(r.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode("utf-8") or "{}")
+        except Exception:
+            return {"error": f"http_{e.code}"}
+
+
+def _vk_login_user(cur, info: dict) -> int:
+    """Находит или создаёт пользователя Nova по аккаунту ВК."""
+    vk_id = int(info.get("user_id") or 0)
+    cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE vk_id = %s", (vk_id,))
+    r = cur.fetchone()
+    if r:
+        return int(r[0])
+    phone = "".join(c for c in str(info.get("phone") or "") if c.isdigit())
+    if len(phone) >= 11:
+        cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone = %s", (phone,))
+        r = cur.fetchone()
+        if r:
+            cur.execute(f"UPDATE {SCHEMA}.users SET vk_id = %s WHERE id = %s", (vk_id, int(r[0])))
+            return int(r[0])
+    else:
+        phone = f"vk{vk_id}"
+    name = (f"{info.get('first_name') or ''} {info.get('last_name') or ''}").strip() or "Пользователь ВК"
+    now = int(time.time())
+    cur.execute(
+        f"""INSERT INTO {SCHEMA}.users (phone, name, avatar_url, vk_id, last_seen, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+        (phone, name[:64], (info.get("avatar") or None), vk_id, now, now),
+    )
+    new_id = int(cur.fetchone()[0])
+    _grant_xp(cur, new_id, "registered")
+    _award_badge(cur, new_id, "newcomer")
+    return new_id
 
 
 def _is_chat_member(cur, chat_id: int, user_id: int) -> bool:
@@ -512,7 +560,7 @@ def _handle(event: dict, context) -> dict:
         except (ValueError, TypeError):
             pass
 
-    AUTH_FREE = {"register", "auth_password", "reset_password", "reset_request", "reset_status", "app_status", "ping",
+    AUTH_FREE = {"register", "auth_password", "vk_start", "vk_finish", "vk_status", "reset_password", "reset_request", "reset_status", "app_status", "ping",
                  "ban_status", "logout", "bot_get_updates", "bot_send_message"}
     if user_id and action not in AUTH_FREE and not nova_auth.check(cur, event, user_id):
         conn.close()
@@ -558,6 +606,94 @@ def _handle(event: dict, context) -> dict:
         return ok({"deprecated": True, "error": "Обновите приложение: вход по номеру и паролю"})
 
     # ── auth_password — вход/регистрация по паролю (без SMS) ───────────────────
+    # ── Вход через VK ID ──────────────────────────────────────────────────────
+    if action == "vk_start":
+        client_id = (os.environ.get("VK_CLIENT_ID") or "").strip()
+        if not client_id:
+            conn.close(); return err("Вход через ВКонтакте пока не настроен")
+        import base64 as _b64
+        from urllib.parse import urlencode as _ue
+        state = _secrets.token_urlsafe(24)
+        verifier = _secrets.token_urlsafe(48)
+        challenge = _b64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        poll_key = _secrets.token_urlsafe(24)
+        now = int(time.time())
+        cur.execute(f"DELETE FROM {SCHEMA}.vk_logins WHERE created_at < %s", (now - 3600,))
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.vk_logins (state, code_verifier, poll_key_hash, is_native, created_at) VALUES (%s, %s, %s, %s, %s)",
+            (state, verifier, nova_auth.hash_token(poll_key), bool(body.get("native")), now),
+        )
+        url = "https://id.vk.com/authorize?" + _ue({
+            "response_type": "code", "client_id": client_id, "redirect_uri": VK_REDIRECT,
+            "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
+            "scope": "vkid.personal_info phone",
+        })
+        conn.close()
+        return ok({"url": url, "state": state, "poll_key": poll_key})
+
+    if action == "vk_finish":
+        state = str(body.get("state") or "")
+        code = str(body.get("code") or "")
+        device_id = str(body.get("device_id") or "")
+        cur.execute(
+            f"SELECT id, code_verifier, status, created_at, is_native FROM {SCHEMA}.vk_logins WHERE state = %s",
+            (state,),
+        )
+        r = cur.fetchone()
+        if not r or not code or not device_id:
+            conn.close(); return err("Ссылка входа устарела, попробуйте ещё раз", 404)
+        lid, verifier, status, created_at, is_native = r
+        if status != "pending" or int(created_at) < int(time.time()) - 900:
+            conn.close(); return ok({"status": status, "native": bool(is_native)})
+        client_id = (os.environ.get("VK_CLIENT_ID") or "").strip()
+        tok = _vk_post("https://id.vk.com/oauth2/auth", {
+            "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
+            "client_id": client_id, "device_id": device_id, "redirect_uri": VK_REDIRECT, "state": state,
+        })
+        access = tok.get("access_token")
+        if not access:
+            print(f"[vk] token error: {str(tok)[:300]}")
+            cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'error', error = %s WHERE id = %s",
+                        (str(tok.get("error_description") or tok.get("error") or "token")[:200], lid))
+            conn.close(); return err("ВКонтакте не подтвердил вход, попробуйте ещё раз")
+        ui = _vk_post("https://id.vk.com/oauth2/user_info", {"client_id": client_id, "access_token": access})
+        info = ui.get("user") or {}
+        if not info.get("user_id"):
+            info["user_id"] = tok.get("user_id")
+        if not info.get("user_id"):
+            print(f"[vk] user_info error: {str(ui)[:300]}")
+            conn.close(); return err("Не удалось получить профиль ВКонтакте")
+        uid = _vk_login_user(cur, info)
+        cur.execute(f"SELECT banned_until FROM {SCHEMA}.users WHERE id = %s", (uid,))
+        b = cur.fetchone()
+        if b and b[0] and int(b[0]) > int(time.time()):
+            cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'error', error = 'banned' WHERE id = %s", (lid,))
+            conn.close(); return err("Аккаунт заблокирован", 403)
+        cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'done', user_id = %s WHERE id = %s", (uid, lid))
+        conn.close()
+        return ok({"status": "done", "native": bool(is_native)})
+
+    if action == "vk_status":
+        state = str(body.get("state") or "")
+        poll_key = str(body.get("poll_key") or "")
+        cur.execute(f"SELECT id, poll_key_hash, status, user_id, error FROM {SCHEMA}.vk_logins WHERE state = %s", (state,))
+        r = cur.fetchone()
+        if not r or not poll_key or not _secrets.compare_digest(r[1], nova_auth.hash_token(poll_key)):
+            conn.close(); return err("Заявка не найдена", 404)
+        lid, _, status, uid, error = r
+        if status != "done":
+            conn.close(); return ok({"status": status, "error": error})
+        cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'used' WHERE id = %s AND status = 'done'", (lid,))
+        if cur.rowcount != 1:
+            conn.close(); return ok({"status": "used"})
+        cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (int(time.time()), int(uid)))
+        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (int(uid),))
+        row = cur.fetchone()
+        track_login(cur, int(uid), event)
+        res = _login_reply(cur, event, row, {"status": "done"})
+        conn.close()
+        return res
+
     if action == "auth_password":
         phone = (body.get("phone") or "").strip()
         password = (body.get("password") or "")

@@ -16,6 +16,7 @@ const Shots = lazyWithRetry(() => import("./pages/Shots"));
 const Banner = lazyWithRetry(() => import("./pages/Banner"));
 const StoreAssets = lazyWithRetry(() => import("./pages/StoreAssets"));
 const Terms = lazyWithRetry(() => import("./pages/Terms"));
+const VkCallback = lazyWithRetry(() => import("./pages/VkCallback"));
 const NotFound = lazyWithRetry(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -71,6 +72,7 @@ const App = () => (
           <Route path="/shots" element={<Shots />} />
           <Route path="/banner" element={<Banner />} />
           <Route path="/store-assets" element={<StoreAssets />} />
+          <Route path="/vk-callback" element={<VkCallback />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/terms-of-service" element={<Terms />} />
           <Route path="/polzovatelskoe-soglashenie" element={<Terms />} />
