@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { Loading, ErrorBox } from "./DevDashboard";
-import { rustoreCall, fmtDate, type Rating, type Screen, type StoreScreen, type SavedIcon, type Version } from "./rustoreApi";
+import { rustoreCall, RuStoreNetworkError, fmtDate, type Rating, type Screen, type StoreScreen, type SavedIcon, type Version } from "./rustoreApi";
 import RuStoreRating from "./RuStoreRating";
 import RuStoreScreens from "./RuStoreScreens";
 import RuStoreIcon from "./RuStoreIcon";
@@ -82,15 +82,27 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
       const d = await call<{ tag: string; version_id: number }>("publish", { whats_new: whatsNew, auto_publish: autoPublish });
       draftId = d.version_id;
       setStage("Загружаем файл приложения в RuStore…");
-      const up = await call<{ pending?: boolean }>("publish_upload", { version_id: d.version_id });
+      let up: { pending?: boolean };
+      try {
+        up = await call<{ pending?: boolean }>("publish_upload", { version_id: d.version_id });
+      } catch (e) {
+        if (!(e instanceof RuStoreNetworkError)) throw e;
+        up = { pending: true };
+      }
       setStage("Отправляем на модерацию…");
       let r: { ok: boolean; retry?: boolean; message?: string; tag: string; version_id: number; screens: number; icon: boolean } | null = null;
-      for (let i = 0; i < (up.pending ? 12 : 4); i++) {
+      const tries = up.pending ? 20 : 6;
+      for (let i = 0; i < tries; i++) {
         if (i > 0) {
           setStage(`RuStore обрабатывает файл… (${i * 15} сек)`);
           await new Promise((res) => setTimeout(res, 15000));
         }
-        r = await call("publish_commit", { version_id: d.version_id, tag: d.tag, skip_media: i > 0 });
+        try {
+          r = await call("publish_commit", { version_id: d.version_id, tag: d.tag, skip_media: i > 0 });
+        } catch (e) {
+          if (!(e instanceof RuStoreNetworkError)) throw e;
+          r = null;
+        }
         if (r?.ok) { committed = true; break; }
       }
       if (!r?.ok) throw new Error(`RuStore ещё обрабатывает файл. Через 5 минут обновите страницу — версия ${d.tag} будет в списке ниже, отправку можно завершить в консоли RuStore.`);
@@ -99,7 +111,7 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
       setWhatsNew("");
       load();
     } catch (e) {
-      if (draftId && !committed) {
+      if (draftId && !committed && !(e instanceof RuStoreNetworkError)) {
         call("publish_cancel", { version_id: draftId }).catch(() => undefined);
       }
       setResult({ ok: false, text: e instanceof Error ? e.message : "Не удалось отправить" });

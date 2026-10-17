@@ -423,7 +423,7 @@ def do_upload(body):
         raise RuStoreError("Не удалось скачать .aab из GitHub")
     try:
         rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
-           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(15, 85))
+           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 45))
     except requests.exceptions.ReadTimeout:
         print(f"[upload] {version_id}: RuStore ещё обрабатывает файл")
         return ok({"ok": True, "stage": "uploaded", "pending": True})

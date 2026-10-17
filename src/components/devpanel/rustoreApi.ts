@@ -71,6 +71,8 @@ export interface Review {
   reply: Reply | null;
 }
 
+export class RuStoreNetworkError extends Error {}
+
 export async function rustoreCall<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   let res: Response;
   try {
@@ -80,7 +82,7 @@ export async function rustoreCall<T>(action: string, payload: Record<string, unk
       body: JSON.stringify({ action, ...payload }),
     });
   } catch {
-    throw new Error("Сервер не ответил вовремя. Обновите страницу через минуту и проверьте список версий ниже — возможно, отправка уже прошла.");
+    throw new RuStoreNetworkError("Сервер не ответил вовремя. Обновите страницу через минуту и проверьте список версий ниже — возможно, отправка уже прошла.");
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
