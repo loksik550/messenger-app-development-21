@@ -350,7 +350,9 @@ def do_publish(body, admin, ip):
         if v["status"] == "DRAFT":
             rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{v['version_id']}", tok)
 
-    whats_new = (body.get("whats_new") or "").strip()[:5000] or "Исправления и улучшения."
+    whats_new = (body.get("whats_new") or "").strip()[:5000]
+    if len(whats_new) < 10:
+        return err("Заполните «Что нового» — хотя бы одно предложение")
     try:
         draft = rs("POST", f"/public/v1/application/{PACKAGE}/version", tok, json={
         "whatsNew": whats_new,
@@ -370,6 +372,44 @@ def do_publish(body, admin, ip):
     return ok({"ok": True, "stage": "draft", "tag": rel["tag"], "version_id": version_id})
 
 
+def do_preflight(body):
+    checks = []
+
+    def add(ok_, title, hint=""):
+        checks.append({"ok": bool(ok_), "title": title, "hint": hint})
+    add(configured(), "Ключи RuStore добавлены", "Добавьте ключи RuStore в секреты проекта")
+    rel = latest_release()
+    tag = (rel.get("tag") or "").lstrip("v")
+    add(bool(rel.get("aab_url")), f"Файл приложения {rel.get('aab_name') or '.aab'} собран",
+        "Нажмите «Собрать» и дождитесь окончания сборки")
+    size_mb = round((rel.get("aab_size") or 0) / 1048576, 1)
+    add(0 < size_mb < 1000, f"Размер файла {size_mb} МБ", "Файл пустой или слишком большой")
+    whats = (body.get("whats_new") or "").strip()
+    add(len(whats) >= 10, "Заполнено «Что нового»", "Напишите хотя бы одно предложение — его увидят в RuStore")
+    add(len(whats) <= 5000, "«Что нового» не длиннее 5000 символов", "Сократите текст")
+    if configured():
+        tok = token()
+        versions = list_versions(tok, 20)
+        busy = [v for v in versions if v["status"] in ("MODERATION", "TAKEN_FOR_MODERATION", "AUTO_CHECK")]
+        add(not busy, "Нет версии на проверке",
+            f"Версия {busy[0]['name']} ещё на модерации — дождитесь решения" if busy else "")
+        same = next((v for v in versions if str(v.get("name") or "") == tag
+                     and v["status"] not in ("DRAFT", "DELETED_DRAFT")), None)
+        add(not same, f"Версия {tag} ещё не отправлялась", "Нажмите «Собрать», чтобы получить новую версию")
+        live = next((v for v in versions if v["status"] in ("ACTIVE", "PARTIAL_ACTIVE")), None)
+        if live:
+            add((_parse_ver(tag) or (0,)) > (_parse_ver(live["name"]) or (0,)), f"Версия {tag} новее опубликованной {live['name']}",
+                "RuStore примет только версию выше опубликованной")
+        drafts = [v for v in versions if v["status"] == "DRAFT"]
+        if drafts:
+            checks.append({"ok": True, "title": f"Старый черновик ({len(drafts)}) будет удалён автоматически", "hint": ""})
+    saved = screens.list_saved()
+    add(not (0 < len(saved) < screens.MIN_SCREENS),
+        f"Скриншоты: {len(saved) if saved else 'прежние из RuStore'}",
+        f"Нужно минимум {screens.MIN_SCREENS} скриншота или ни одного")
+    return ok({"checks": checks, "ready": all(c["ok"] for c in checks), "tag": rel.get("tag")})
+
+
 def do_upload(body):
     version_id = int(body.get("version_id") or 0)
     if not version_id:
@@ -383,11 +423,28 @@ def do_upload(body):
         raise RuStoreError("Не удалось скачать .aab из GitHub")
     try:
         rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
-           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 45))
+           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(15, 85))
     except requests.exceptions.ReadTimeout:
         print(f"[upload] {version_id}: RuStore ещё обрабатывает файл")
         return ok({"ok": True, "stage": "uploaded", "pending": True})
+    except (RuStoreError, requests.exceptions.RequestException) as e:
+        print(f"[upload] {version_id}: {e}")
+        try:
+            rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{version_id}", tok)
+        except Exception:
+            pass
+        raise RuStoreError(f"RuStore не принял файл приложения: {e}. Пустой черновик удалён — попробуйте ещё раз.")
     return ok({"ok": True, "stage": "uploaded", "pending": False})
+
+
+def do_cancel(body):
+    version_id = int(body.get("version_id") or 0)
+    if version_id:
+        try:
+            rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{version_id}", token())
+        except Exception as e:
+            print(f"[cancel] {version_id}: {e}")
+    return ok({"ok": True})
 
 
 def do_commit(body, admin, ip):
@@ -476,6 +533,12 @@ def handler(event: dict, context) -> dict:
 
         if action == "publish":
             return do_publish(body, admin, ip)
+
+        if action == "publish_check":
+            return do_preflight(body)
+
+        if action == "publish_cancel":
+            return do_cancel(body)
 
         if action == "publish_upload":
             return do_upload(body)

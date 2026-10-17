@@ -33,6 +33,22 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
   const [autoPublish, setAutoPublish] = useState(() => localStorage.getItem(LS_AUTO_PUBLISH) !== "0");
   const [sending, setSending] = useState(false);
   const [stage, setStage] = useState("");
+  const [checks, setChecks] = useState<{ ok: boolean; title: string; hint: string }[] | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const openConfirm = async () => {
+    setConfirm(true);
+    setChecks(null);
+    setChecking(true);
+    try {
+      const r = await call<{ checks: { ok: boolean; title: string; hint: string }[] }>("publish_check", { whats_new: whatsNew });
+      setChecks(r.checks);
+    } catch (e) {
+      setChecks([{ ok: false, title: "Не удалось выполнить проверку", hint: e instanceof Error ? e.message : "" }]);
+    } finally {
+      setChecking(false);
+    }
+  };
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirm, setConfirm] = useState(false);
 
@@ -59,9 +75,12 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
     setConfirm(false);
     setSending(true);
     setResult(null);
+    let draftId = 0;
+    let committed = false;
     try {
       setStage("Создаём версию в RuStore…");
       const d = await call<{ tag: string; version_id: number }>("publish", { whats_new: whatsNew, auto_publish: autoPublish });
+      draftId = d.version_id;
       setStage("Загружаем файл приложения в RuStore…");
       const up = await call<{ pending?: boolean }>("publish_upload", { version_id: d.version_id });
       setStage("Отправляем на модерацию…");
@@ -72,7 +91,7 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
           await new Promise((res) => setTimeout(res, 15000));
         }
         r = await call("publish_commit", { version_id: d.version_id, tag: d.tag, skip_media: i > 0 });
-        if (r?.ok) break;
+        if (r?.ok) { committed = true; break; }
       }
       if (!r?.ok) throw new Error(`RuStore ещё обрабатывает файл. Через 5 минут обновите страницу — версия ${d.tag} будет в списке ниже, отправку можно завершить в консоли RuStore.`);
       const shots = (r.screens ? ` Скриншоты обновлены (${r.screens} шт.).` : "") + (r.icon ? " Иконка обновлена." : "");
@@ -80,7 +99,11 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
       setWhatsNew("");
       load();
     } catch (e) {
+      if (draftId && !committed) {
+        call("publish_cancel", { version_id: draftId }).catch(() => undefined);
+      }
       setResult({ ok: false, text: e instanceof Error ? e.message : "Не удалось отправить" });
+      load();
     } finally {
       setSending(false);
       setStage("");
@@ -174,7 +197,7 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
 
         <button
           disabled={!data.configured || sending || !rel?.aab_name || screensBad || already}
-          onClick={() => setConfirm(true)}
+          onClick={openConfirm}
           className="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {sending ? (
@@ -206,12 +229,40 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setConfirm(false)}>
           <div className="w-full max-w-sm rounded-2xl bg-[#14141f] border border-white/10 p-5" onClick={(e) => e.stopPropagation()}>
             <div className="font-semibold text-white mb-2">Отправить {rel?.tag} в RuStore?</div>
+            <div className="space-y-1.5 mb-4 max-h-[50vh] overflow-y-auto">
+              {checking && (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Icon name="Loader2" size={14} className="animate-spin" /> Проверяем всё перед отправкой…
+                </div>
+              )}
+              {checks?.map((c, i) => (
+                <div key={i} className="flex gap-2 text-sm">
+                  <Icon name={c.ok ? "CheckCircle2" : "XCircle"} size={15} className={`shrink-0 mt-0.5 ${c.ok ? "text-emerald-400" : "text-red-400"}`} />
+                  <div className="min-w-0">
+                    <div className={c.ok ? "text-slate-300" : "text-red-200"}>{c.title}</div>
+                    {!c.ok && c.hint && <div className="text-xs text-slate-500 break-words">{c.hint}</div>}
+                  </div>
+                </div>
+              ))}
+              {whatsNew.trim() && (
+                <div className="mt-2 rounded-lg bg-black/30 border border-white/5 px-2.5 py-2 text-xs text-slate-300 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                  <div className="text-[10px] text-slate-500 mb-1">Что нового:</div>
+                  {whatsNew.trim()}
+                </div>
+              )}
+            </div>
             <div className="text-sm text-slate-400 mb-4">
               Версия уйдёт на модерацию{data.icon ? " вместе с новой иконкой" : ""}{screens.length >= 3 ? ` и ${screens.length} скриншотами` : ""}. {autoPublish ? "После одобрения она сразу станет доступна пользователям." : "После одобрения её нужно будет опубликовать вручную в консоли RuStore."}
             </div>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setConfirm(false)} className="px-4 py-2 rounded-xl text-sm text-slate-300 hover:bg-white/5">Отмена</button>
-              <button onClick={publish} className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-sky-500 to-blue-600 text-white">Отправить</button>
+              <button
+                onClick={publish}
+                disabled={checking || !checks || checks.some((c) => !c.ok)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-sky-500 to-blue-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Отправить
+              </button>
             </div>
           </div>
         </div>
