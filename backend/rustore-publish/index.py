@@ -463,7 +463,7 @@ def _auto_commit(version_id, tag, admin, ip, budget):
     return False
 
 
-def do_upload(body, admin=None, ip=""):
+def do_upload(body, admin=None, ip="", context=None):
     version_id = int(body.get("version_id") or 0)
     if not version_id:
         return err("Не указана версия")
@@ -474,20 +474,32 @@ def do_upload(body, admin=None, ip=""):
     cur_state = _up_state(version_id)
     if cur_state.startswith("uploading") or cur_state in ("done", "committed"):
         return ok({"ok": True, "stage": "uploaded", "pending": cur_state.startswith("uploading")})
-    _up_state(version_id, f"uploading:{int(time.time())}")
+    try:
+        left = context.get_remaining_time_in_millis() / 1000 if context else 60
+    except Exception:
+        left = 60
+    deadline = int(time.time() + left)
+    _up_state(version_id, f"uploading:{deadline}")
     t0 = time.time()
+    read_timeout = max(20, left - 15)
     try:
         file_resp = requests.get(rel["aab_url"], timeout=(10, 25))
         if file_resp.status_code != 200 or len(file_resp.content) < 100000:
             raise RuStoreError("Не удалось скачать .aab из GitHub")
         rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
-           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 55))
+           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")},
+           timeout=(10, read_timeout - (time.time() - t0)))
     except requests.exceptions.ReadTimeout:
-        print(f"[upload] {version_id}: RuStore не ответил за {int(time.time() - t0)} сек, файл обрабатывается")
-        _up_state(version_id, "done")
-        if admin:
-            _auto_commit(version_id, rel.get("tag") or "", admin, ip, 20)
-        return ok({"ok": True, "stage": "uploaded", "pending": True})
+        waited = int(time.time() - t0)
+        print(f"[upload] {version_id}: RuStore не ответил за {waited} сек — загрузка прервана")
+        msg = (f"RuStore не успел принять файл за {waited} сек. Увеличьте таймаут функции rustore-publish "
+               f"до 300 секунд (Ядро → Функции → rustore-publish → Настройки) и нажмите «Отправить» ещё раз.")
+        _up_state(version_id, f"error:{msg}")
+        try:
+            rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{version_id}", tok)
+        except Exception:
+            pass
+        return err(msg, 504)
     except (RuStoreError, requests.exceptions.RequestException) as e:
         print(f"[upload] {version_id}: {e}")
         _up_state(version_id, f"error:{e}")
@@ -499,7 +511,12 @@ def do_upload(body, admin=None, ip=""):
     print(f"[upload] {version_id}: загружено за {int(time.time() - t0)} сек")
     _up_state(version_id, "done")
     if admin:
-        _auto_commit(version_id, rel.get("tag") or "", admin, ip, 20)
+        try:
+            rest = context.get_remaining_time_in_millis() / 1000 - 8 if context else 15
+        except Exception:
+            rest = 15
+        if rest > 5:
+            _auto_commit(version_id, rel.get("tag") or "", admin, ip, rest)
     return ok({"ok": True, "stage": "uploaded", "pending": False})
 
 
@@ -522,9 +539,11 @@ def do_commit(body, admin, ip):
         return ok({"ok": True, "stage": "done", "tag": str(body.get("tag") or ""), "version_id": version_id,
                    "screens": 0, "icon": False})
     if st.startswith("uploading"):
-        started = int(st.split(":")[1]) if ":" in st else 0
-        if time.time() - started < 150:
+        deadline = int(st.split(":")[1]) if ":" in st else 0
+        if time.time() < deadline + 20:
             return ok({"ok": False, "retry": True, "message": "Файл ещё загружается в RuStore"})
+        return err("Загрузка файла в RuStore оборвалась. Увеличьте таймаут функции rustore-publish до 300 секунд "
+                   "(Ядро → Функции → rustore-publish → Настройки) и нажмите «Отправить» ещё раз.", 504)
     if st.startswith("error:"):
         return err(f"RuStore не принял файл приложения: {st[6:]}. Нажмите «Отправить» ещё раз.", 502)
     tok = token()
@@ -618,7 +637,7 @@ def handler(event: dict, context) -> dict:
             return do_cancel(body)
 
         if action == "publish_upload":
-            return do_upload(body, admin, ip)
+            return do_upload(body, admin, ip, context)
 
         if action == "publish_commit":
             return do_commit(body, admin, ip)

@@ -2,6 +2,7 @@ import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type Message, type IconName } from "@/lib/api";
 import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
+import { useAutoGrow } from "@/hooks/useAutoGrow";
 
 export function ChatInput({
   input,
@@ -61,6 +62,7 @@ export function ChatInput({
   scheduledCount?: number;
 }) {
   const [showEmoji, setShowEmoji] = useState(false);
+  const taRef = useAutoGrow(input);
   return (
     <div className="px-3 pt-1.5 pb-1 glass-strong border-t border-white/5 relative" style={{ paddingBottom: "calc(0.25rem + env(safe-area-inset-bottom))" }}>
       <input
@@ -198,6 +200,7 @@ export function ChatInput({
           </button>
           <div className="flex-1 flex items-end glass rounded-2xl px-4 py-2 gap-2">
             <textarea
+              ref={taRef}
               value={input}
               onChange={e => { setInput(e.target.value); onNotifyTyping(); }}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
@@ -209,7 +212,7 @@ export function ChatInput({
               spellCheck
               inputMode="text"
               enterKeyHint="enter"
-              className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder-muted-foreground resize-none max-h-32"
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 text-foreground placeholder-muted-foreground resize-none break-words"
             />
             <div className="relative">
               <button

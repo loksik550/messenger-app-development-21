@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import Icon from "@/components/ui/icon";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
+import { useAutoGrow } from "@/hooks/useAutoGrow";
 import type { Group, GroupMessage, GroupMember } from "@/lib/api";
 
 interface Props {
@@ -61,6 +62,7 @@ export default function GroupChatInput({
   onStopRecording,
   onCancelRecording,
 }: Props) {
+  const taRef = useAutoGrow(input);
   if (!canWrite) {
     return (
       <div className="px-4 py-4 border-t border-white/5 text-center text-sm text-muted-foreground"
@@ -156,6 +158,7 @@ export default function GroupChatInput({
         </button>
         <div className="flex-1 flex items-end glass rounded-2xl px-4 py-2.5 gap-2">
           <textarea
+            ref={taRef}
             value={input}
             onChange={e => onInputChange(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
@@ -167,7 +170,7 @@ export default function GroupChatInput({
             spellCheck
             inputMode="text"
             enterKeyHint="enter"
-            className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground resize-none max-h-32"
+            className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 placeholder:text-muted-foreground resize-none break-words"
           />
           <div className="relative">
             <button onClick={onToggleEmoji}
