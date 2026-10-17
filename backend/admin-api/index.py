@@ -15,6 +15,14 @@ CORS = {
 }
 
 
+
+_PUSH_FALLBACK = "https://functions.poehali.dev/c9d141ca-3552-433f-a968-ac1e92da00af"
+
+
+def _push_notify_url() -> str:
+    return _PUSH_FALLBACK
+
+
 def get_conn():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     conn.autocommit = True
@@ -483,7 +491,7 @@ def handler(event: dict, context) -> dict:
         conn.close()
 
         # Push-уведомление пользователю
-        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        push_url = _push_notify_url()
         if push_url:
             try:
                 push_body = json.dumps({
@@ -552,7 +560,7 @@ def handler(event: dict, context) -> dict:
         conn.close()
 
         # Один общий push-вызов на массовую рассылку — push-notify сам разошлёт всем
-        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        push_url = _push_notify_url()
         if push_url:
             try:
                 push_body = json.dumps({
@@ -669,7 +677,7 @@ def handler(event: dict, context) -> dict:
         )
         conn.close()
         # Push юзеру
-        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        push_url = _push_notify_url()
         if push_url:
             try:
                 push_body = json.dumps({

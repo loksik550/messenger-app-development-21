@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 
-const MAX_SECONDS = 12;
-const MAX_CIRCLE_BYTES = 4 * 1024 * 1024;
+const MAX_SECONDS = 60;
+const MAX_CIRCLE_BYTES = 4.4 * 1024 * 1024;
 
 export function VideoCircleRecorder({
   open,
@@ -93,7 +93,7 @@ export function VideoCircleRecorder({
     }
 
     // Ограничиваем битрейт, чтобы кружок гарантированно влезал в лимит загрузки
-    const opts: MediaRecorderOptions = { videoBitsPerSecond: 500_000, audioBitsPerSecond: 32_000 };
+    const opts: MediaRecorderOptions = { videoBitsPerSecond: 350_000, audioBitsPerSecond: 32_000 };
     if (mime) opts.mimeType = mime;
     let rec: MediaRecorder;
     try {
@@ -117,7 +117,7 @@ export function VideoCircleRecorder({
         return;
       }
       if (file.size > MAX_CIRCLE_BYTES) {
-        alert(`Кружок получился большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Запиши покороче — до 8 секунд.`);
+        alert(`Кружок получился большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Запиши покороче.`);
         return;
       }
       onRecorded(file, dur);
@@ -157,7 +157,7 @@ export function VideoCircleRecorder({
         {err
           ? err
           : recording
-            ? `Запись… ${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")} / 00:${String(MAX_SECONDS).padStart(2, "0")}`
+            ? `Запись… ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} / ${Math.floor(MAX_SECONDS / 60)}:${String(MAX_SECONDS % 60).padStart(2, "0")}`
             : "Видео-сообщение"}
       </div>
 
@@ -205,7 +205,7 @@ export function VideoCircleRecorder({
       </div>
 
       <p className="text-xs text-white/60 mt-6 text-center max-w-xs">
-        Нажми кнопку для старта записи. Максимум {MAX_SECONDS} секунд.
+        Нажми кнопку для старта записи. Максимум 1 минута.
       </p>
     </div>
   );

@@ -10,6 +10,14 @@ import nova_auth
 import secrets as _secrets
 
 
+
+_PUSH_FALLBACK = "https://functions.poehali.dev/c9d141ca-3552-433f-a968-ac1e92da00af"
+
+
+def _push_notify_url() -> str:
+    return _PUSH_FALLBACK
+
+
 def _hash_password(password: str) -> str:
     """Хеширует пароль с солью через PBKDF2 (надёжно, без внешних зависимостей)."""
     salt = os.urandom(16)
@@ -31,7 +39,7 @@ def _verify_password(password: str, stored: str) -> bool:
 
 def _json_headers(url: str) -> dict:
     h = {"Content-Type": "application/json"}
-    if url and url == os.environ.get("PUSH_NOTIFY_URL", ""):
+    if url and url == _push_notify_url():
         h["X-Internal-Key"] = nova_auth.internal_key()
     return h
 
@@ -42,8 +50,8 @@ def _fire_and_forget_http(url: str, body: bytes, timeout: float = 3.0) -> None:
         try:
             req = urllib.request.Request(url, data=body, headers=_json_headers(url))
             urllib.request.urlopen(req, timeout=timeout)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[bg-http] {url[-12:]} failed: {e}")
     try:
         t = threading.Thread(target=_run, daemon=True)
         t.start()
@@ -405,7 +413,7 @@ def track_login(cur, uid: int, event: dict) -> None:
         if not row or not row[0]:
             return
 
-        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        push_url = _push_notify_url()
         if push_url:
             _fire_and_forget_http(push_url, json.dumps({
                 "action": "send",
@@ -685,7 +693,7 @@ def _handle(event: dict, context) -> dict:
                 (uid, "Запрос на смену пароля",
                  f"С устройства «{_device_name(headers)}» просят сменить пароль. Откройте Настройки → Безопасность, чтобы подтвердить или отклонить."),
             )
-            push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+            push_url = _push_notify_url()
             if push_url:
                 _fire_and_forget_http(push_url, json.dumps({
                     "action": "send", "recipient_id": uid, "sender_name": "Безопасность Nova",
@@ -2067,7 +2075,7 @@ def _handle(event: dict, context) -> dict:
                 }).encode("utf-8")
                 _fire_and_forget_http(bot_webhook_url, wh_body, timeout=3.0)
             # Push-уведомление — в фоне
-            push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+            push_url = _push_notify_url()
             if push_url:
                 _preview = (text or "").strip()[:100]
                 if not _preview:
@@ -2922,7 +2930,7 @@ def _handle(event: dict, context) -> dict:
             cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
             caller = cur.fetchone()
             conn.close()
-            push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+            push_url = _push_notify_url()
             if push_url and caller:
                 push_body = json.dumps({
                     "action": "send",
@@ -2991,7 +2999,7 @@ def _handle(event: dict, context) -> dict:
                     missed_caller_name = cn[0] if cn else "Кто-то"
                     missed_recipient_id = int(callee_id)
             conn.close()
-            _push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+            _push_url = _push_notify_url()
             if _push_url:
                 _fire_and_forget_http(_push_url, json.dumps({
                     "action": "cancel_call",
@@ -3000,7 +3008,7 @@ def _handle(event: dict, context) -> dict:
                 }).encode("utf-8"))
             # Push «Пропущенный звонок» — если получатель не отвечал и звонящий повесил трубку
             if missed_recipient_id and missed_caller_name:
-                push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+                push_url = _push_notify_url()
                 if push_url:
                     try:
                         push_body = json.dumps({
@@ -3699,7 +3707,7 @@ def _handle(event: dict, context) -> dict:
         conn.close()
 
         # Push-уведомления участникам группы — в фоне, чтобы не задерживать ответ
-        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        push_url = _push_notify_url()
         if push_url:
             push_body = json.dumps({
                 "action": "send_group",
@@ -5503,7 +5511,7 @@ def _handle(event: dict, context) -> dict:
         sender_name = sender_row[0] if sender_row else "Кто-то"
         conn.close()
         # Push автору истории
-        push_url = os.environ.get("PUSH_NOTIFY_URL", "")
+        push_url = _push_notify_url()
         if push_url:
             try:
                 push_payload = json.dumps({

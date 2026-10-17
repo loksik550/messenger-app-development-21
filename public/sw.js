@@ -1,4 +1,5 @@
-const SW_VERSION = "nova-sw-18";
+const SW_VERSION = "nova-sw-19";
+const IS_APPLE = /iphone|ipad|ipod|macintosh/i.test(self.navigator.userAgent || "");
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;
 
@@ -85,6 +86,15 @@ self.addEventListener("push", (e) => {
     (async () => {
       const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const visible = list.find((c) => c.visibilityState === "visible" && c.focused);
+      // На iPhone/iPad при блокировке экрана окно может считаться «видимым».
+      // Apple требует показывать уведомление на каждый пуш, иначе отключает подписку.
+      if (IS_APPLE) {
+        if (visible) visible.postMessage(isCall
+          ? { type: "incoming_call", call_id: data.call_id }
+          : { type: "in_app_message", chat_id: data.chat_id, title: data.title || "Nova", body: options.body });
+        await self.registration.showNotification(data.title || "Nova", options);
+        return;
+      }
       if (visible) {
         if (isCall) {
           // Приложение открыто — сразу показываем экран входящего вызова внутри приложения
