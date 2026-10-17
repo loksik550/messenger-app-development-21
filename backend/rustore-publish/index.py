@@ -347,6 +347,17 @@ def do_publish(body, admin, ip):
                    f"Добавьте ещё или удалите все — тогда останутся прежние.")
 
     for v in versions:
+        if v["status"] == "DRAFT" and _up_state(v["version_id"]) == "done":
+            res = do_commit({"version_id": v["version_id"], "tag": rel.get("tag") or ""}, admin, ip)
+            try:
+                data = json.loads(res.get("body") or "{}")
+            except Exception:
+                data = {}
+            if res.get("statusCode") == 200 and data.get("ok"):
+                print(f"[publish] черновик {v['version_id']} с загруженным файлом отправлен на модерацию")
+                return ok({"ok": True, "stage": "done", "already_done": True, "tag": rel.get("tag"),
+                           "version_id": v["version_id"], "screens": data.get("screens", 0), "icon": data.get("icon", False)})
+    for v in versions:
         if v["status"] == "DRAFT":
             rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{v['version_id']}", tok)
 
@@ -429,7 +440,30 @@ def _up_state(version_id, value=None):
     return value
 
 
-def do_upload(body):
+def _auto_commit(version_id, tag, admin, ip, budget):
+    """После загрузки файла сразу пробуем отправить версию на модерацию прямо на сервере."""
+    t_end = time.time() + budget
+    first = True
+    while time.time() < t_end:
+        if _up_state(version_id) == "committed":
+            return True
+        res = do_commit({"version_id": version_id, "tag": tag, "skip_media": not first}, admin, ip)
+        first = False
+        try:
+            data = json.loads(res.get("body") or "{}")
+        except Exception:
+            data = {}
+        if res.get("statusCode") == 200 and data.get("ok"):
+            print(f"[auto_commit] {version_id}: отправлено на модерацию")
+            return True
+        print(f"[auto_commit] {version_id}: {data.get('message') or data.get('error')}")
+        if res.get("statusCode") != 200:
+            return False
+        time.sleep(10)
+    return False
+
+
+def do_upload(body, admin=None, ip=""):
     version_id = int(body.get("version_id") or 0)
     if not version_id:
         return err("Не указана версия")
@@ -447,10 +481,12 @@ def do_upload(body):
         if file_resp.status_code != 200 or len(file_resp.content) < 100000:
             raise RuStoreError("Не удалось скачать .aab из GitHub")
         rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
-           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 80))
+           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 55))
     except requests.exceptions.ReadTimeout:
         print(f"[upload] {version_id}: RuStore не ответил за {int(time.time() - t0)} сек, файл обрабатывается")
         _up_state(version_id, "done")
+        if admin:
+            _auto_commit(version_id, rel.get("tag") or "", admin, ip, 20)
         return ok({"ok": True, "stage": "uploaded", "pending": True})
     except (RuStoreError, requests.exceptions.RequestException) as e:
         print(f"[upload] {version_id}: {e}")
@@ -462,6 +498,8 @@ def do_upload(body):
         raise RuStoreError(f"RuStore не принял файл приложения: {e}. Черновик удалён — попробуйте ещё раз.")
     print(f"[upload] {version_id}: загружено за {int(time.time() - t0)} сек")
     _up_state(version_id, "done")
+    if admin:
+        _auto_commit(version_id, rel.get("tag") or "", admin, ip, 20)
     return ok({"ok": True, "stage": "uploaded", "pending": False})
 
 
@@ -480,6 +518,9 @@ def do_commit(body, admin, ip):
     if not version_id:
         return err("Не указана версия")
     st = _up_state(version_id)
+    if st == "committed":
+        return ok({"ok": True, "stage": "done", "tag": str(body.get("tag") or ""), "version_id": version_id,
+                   "screens": 0, "icon": False})
     if st.startswith("uploading"):
         started = int(st.split(":")[1]) if ":" in st else 0
         if time.time() - started < 150:
@@ -577,7 +618,7 @@ def handler(event: dict, context) -> dict:
             return do_cancel(body)
 
         if action == "publish_upload":
-            return do_upload(body)
+            return do_upload(body, admin, ip)
 
         if action == "publish_commit":
             return do_commit(body, admin, ip)

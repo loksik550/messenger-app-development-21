@@ -81,6 +81,13 @@ export default function DevRuStore({ onOpenReviews }: { onOpenReviews?: () => vo
       setStage("Создаём версию в RuStore…");
       const d = await call<{ tag: string; version_id: number }>("publish", { whats_new: whatsNew, auto_publish: autoPublish });
       draftId = d.version_id;
+      if ((d as { already_done?: boolean }).already_done) {
+        committed = true;
+        setResult({ ok: true, text: `Версия ${d.tag} отправлена в RuStore на проверку. Обычно модерация занимает до 3 рабочих дней.` });
+        setWhatsNew("");
+        load();
+        return;
+      }
       setStage("Загружаем файл приложения в RuStore…");
       let uploadError: unknown = null;
       const upload = call<{ pending?: boolean }>("publish_upload", { version_id: d.version_id }).catch((e) => {
