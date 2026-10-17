@@ -21,6 +21,9 @@ interface Props {
   onInputChange: (v: string) => void;
   onSend: () => void;
   onSendFile: (file: File) => void;
+  onSendFiles?: (files: File[]) => void;
+  uploading?: boolean;
+  uploadLabel?: string;
   onCancelReply: () => void;
   onCancelEdit: () => void;
   onToggleAttach: () => void;
@@ -50,6 +53,9 @@ export default function GroupChatInput({
   onInputChange,
   onSend,
   onSendFile,
+  onSendFiles,
+  uploading = false,
+  uploadLabel = "Загружаем...",
   onCancelReply,
   onCancelEdit,
   onToggleAttach,
@@ -77,8 +83,19 @@ export default function GroupChatInput({
   return (
     <div className="px-4 py-3 glass-strong border-t border-white/5 flex-shrink-0 relative"
       style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-      <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip"
-        className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onSendFile(f); e.target.value = ""; }} />
+      <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip"
+        className="hidden" onChange={e => {
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          if (files.length > 1 && onSendFiles) onSendFiles(files);
+          else if (files[0]) onSendFile(files[0]);
+        }} />
+      {uploading && (
+        <div className="flex items-center gap-2 mb-2 px-1 animate-fade-in">
+          <div className="w-4 h-4 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+          <span className="text-xs text-muted-foreground">{uploadLabel}</span>
+        </div>
+      )}
 
       {replyTo && !editing && (
         <div className="flex items-center gap-2 mb-2 px-3 py-1.5 glass rounded-xl border-l-2 border-violet-400 animate-fade-in">

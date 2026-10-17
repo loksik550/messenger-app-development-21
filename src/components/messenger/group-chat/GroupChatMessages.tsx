@@ -96,7 +96,8 @@ export default function GroupChatMessages({
                         msg={{ id: msg.id, text: msg.text, time: msg.time || "", out: msg.out,
                           media_type: msg.media_type as "image"|"video"|"audio"|"file",
                           media_url: msg.media_url || undefined, file_name: msg.file_name || undefined,
-                          file_size: msg.file_size || undefined, duration: msg.duration || undefined }}
+                          file_size: msg.file_size || undefined, duration: msg.duration || undefined,
+                          payload: msg.payload || null }}
                         out={msg.out}
                       />
                     ) : (

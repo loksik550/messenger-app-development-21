@@ -33,6 +33,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
         forwarded_from_name?: string | null;
         edited_at?: number | null;
         kind?: "text" | "missed_call" | "system";
+        payload?: Message["payload"];
       }): Message => ({
         id: m.id,
         text: m.text,
@@ -42,6 +43,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
         sender_id: m.sender_id,
         sender_name: m.sender_name,
         kind: m.kind || "text",
+        payload: m.payload || null,
         created_at: m.created_at,
         image_url: m.image_url,
         media_type: m.media_type as Message["media_type"],

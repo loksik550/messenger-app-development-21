@@ -75,7 +75,7 @@ export function ChatWindow({
   const {
     uploading, uploadLabel, recording, recordSec,
     mediaRecorder, recordTimer,
-    sendFile, startRecording, stopRecording, cancelRecording,
+    sendFile, sendFiles, startRecording, stopRecording, cancelRecording,
   } = useChatMedia({ chat, currentUser, setMessages, setLastSince, setShowAttach });
 
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -309,6 +309,7 @@ export function ChatWindow({
         onStopRecording={stopRecording}
         onCancelRecording={cancelRecording}
         onFileChange={sendFile}
+        onFilesChange={sendFiles}
         onVideoCircle={() => { setShowAttach(false); setShowVideoCircle(true); }}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}

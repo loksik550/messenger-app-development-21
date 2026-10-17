@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { track } from "@/lib/track";
 import { api, uploadMedia, type Chat, type Message, type User } from "@/lib/api";
+import { uploadAlbum, MAX_ALBUM } from "@/lib/uploadAlbum";
 
 // Отправка файлов и запись голосовых сообщений.
 // Логика перенесена из ChatComponents.tsx без изменений.
@@ -76,6 +77,45 @@ export function useChatMedia({
       const reason = uploadErr instanceof Error && uploadErr.message ? `\n\nПричина: ${uploadErr.message}` : "";
       alert(`Не удалось отправить файл. Проверь интернет и попробуй ещё раз.${reason}`);
     } finally { setUploading(false); }
+  };
+
+  const sendFiles = async (files: File[]) => {
+    const list = files.filter(Boolean);
+    if (list.length === 0) return;
+    const images = list.filter(f => f.type.startsWith("image/") && !/gif|svg/i.test(f.type));
+    if (list.length === 1 || images.length < 2) {
+      for (const f of list) await sendFile(f);
+      return;
+    }
+    if (images.length > MAX_ALBUM) alert(`За раз можно отправить до ${MAX_ALBUM} фото — отправим первые ${MAX_ALBUM}.`);
+    setUploading(true);
+    setShowAttach(false);
+    setUploadLabel(`Загружаем фото 0/${Math.min(images.length, MAX_ALBUM)}...`);
+    try {
+      const { urls, failed } = await uploadAlbum(images, currentUser.id, (d, t) => setUploadLabel(`Загружаем фото ${d}/${t}...`));
+      if (urls.length === 0) throw new Error("Ни одно фото не загрузилось");
+      const payload = urls.length > 1 ? { album: urls.map(url => ({ url })) } : undefined;
+      const data = await api("send_message", {
+        chat_id: chat.id, media_type: "image", media_url: urls[0],
+        payload, file_name: "photo.jpg",
+      }, currentUser.id);
+      if (!data?.id) throw new Error(data?.error || "Сервер не принял сообщение");
+      track("msg_photo");
+      const timeStr = new Date(data.created_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
+      setMessages(prev => prev.some(m => m.id === data.id) ? prev : [...prev, {
+        id: data.id, text: "📷 Фото", time: timeStr, out: true,
+        created_at: data.created_at, media_type: "image", media_url: urls[0], image_url: urls[0],
+        payload: payload || null, reactions: [],
+      }]);
+      setLastSince(data.created_at);
+      if (failed > 0) alert(`Не загрузилось фото: ${failed}. Остальные отправлены.`);
+    } catch (e) {
+      console.error(e);
+      alert(`Не удалось отправить фото. Проверь интернет и попробуй ещё раз.${e instanceof Error && e.message ? `\n\nПричина: ${e.message}` : ""}`);
+    } finally {
+      setUploading(false);
+      setUploadLabel("Загружаем...");
+    }
   };
 
   const startRecording = async () => {
@@ -170,7 +210,7 @@ export function useChatMedia({
   return {
     uploading, uploadLabel, recording, recordSec,
     mediaRecorder, recordTimer,
-    sendFile, startRecording, stopRecording, cancelRecording,
+    sendFile, sendFiles, startRecording, stopRecording, cancelRecording,
   };
 }
 

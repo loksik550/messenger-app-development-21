@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, uploadMedia, type User, type Group, type GroupMessage } from "@/lib/api";
+import { uploadAlbum, MAX_ALBUM } from "@/lib/uploadAlbum";
 
 interface Params {
   group: Group;
@@ -12,7 +13,8 @@ interface Params {
 
 /** Отправка файлов и запись голосовых сообщений в группе/канале. */
 export function useGroupMedia({ group, currentUser, setMessages, setLastSince, setShowAttach, toTime }: Params) {
-  const [, setUploading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadLabel, setUploadLabel] = useState("Загружаем...");
   const [recording, setRecording] = useState(false);
   const [recordSec, setRecordSec] = useState(0);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
@@ -148,5 +150,42 @@ export function useGroupMedia({ group, currentUser, setMessages, setLastSince, s
     }
   };
 
-  return { recording, recordSec, sendFile, startRecording, stopRecording, cancelRecording };
+  const sendFiles = async (files: File[]) => {
+    const list = files.filter(Boolean);
+    if (list.length === 0) return;
+    const images = list.filter(f => f.type.startsWith("image/") && !/gif|svg/i.test(f.type));
+    if (list.length === 1 || images.length < 2) {
+      for (const f of list) await sendFile(f);
+      return;
+    }
+    if (images.length > MAX_ALBUM) alert(`За раз можно отправить до ${MAX_ALBUM} фото — отправим первые ${MAX_ALBUM}.`);
+    setUploading(true); setShowAttach(false);
+    setUploadLabel(`Загружаем фото 0/${Math.min(images.length, MAX_ALBUM)}...`);
+    try {
+      const { urls, failed } = await uploadAlbum(images, currentUser.id, (d, t) => setUploadLabel(`Загружаем фото ${d}/${t}...`));
+      if (urls.length === 0) throw new Error("Ни одно фото не загрузилось");
+      const payload = urls.length > 1 ? { album: urls.map(url => ({ url })) } : null;
+      const d = await api("send_group_message", {
+        group_id: group.id, media_type: "image", media_url: urls[0], file_name: "photo.jpg",
+        payload: payload || undefined,
+      }, currentUser.id);
+      if (!d?.id) throw new Error(d?.error || "Сервер не принял сообщение");
+      setMessages(prev => prev.some(m => m.id === d.id) ? prev : [...prev, {
+        id: d.id, sender_id: currentUser.id, sender_name: currentUser.name,
+        sender_avatar: currentUser.avatar_url, text: "", created_at: d.created_at,
+        time: toTime(d.created_at), out: true, kind: "text",
+        media_type: "image", media_url: urls[0], payload,
+      }]);
+      setLastSince(d.created_at);
+      if (failed > 0) alert(`Не загрузилось фото: ${failed}. Остальные отправлены.`);
+    } catch (e) {
+      console.error(e);
+      alert(`Не удалось отправить фото. Проверь интернет и попробуй ещё раз.${e instanceof Error && e.message ? `\n\nПричина: ${e.message}` : ""}`);
+    } finally {
+      setUploading(false);
+      setUploadLabel("Загружаем...");
+    }
+  };
+
+  return { recording, recordSec, sendFile, sendFiles, uploading, uploadLabel, startRecording, stopRecording, cancelRecording };
 }

@@ -616,16 +616,19 @@ def handler(event: dict, context) -> dict:
                 except ValueError:
                     return (0,)
             cur.execute(
-                f"SELECT id, COALESCE(name, ''), COALESCE(avatar_url, ''), app_version, "
-                f"COALESCE(last_seen, 0), COALESCE(app_version_at, 0), COALESCE(update_nudged_version, '') "
-                f"FROM {SCHEMA}.users WHERE COALESCE(app_platform, '') = 'android' AND app_version IS NOT NULL "
-                f"AND COALESCE(is_service, FALSE) = FALSE"
+                f"SELECT id, COALESCE(name, ''), COALESCE(avatar_url, ''), COALESCE(app_version, ''), "
+                f"COALESCE(last_seen, 0), COALESCE(app_version_at, 0), COALESCE(update_nudged_version, ''), "
+                f"COALESCE(app_platform, '') "
+                f"FROM {SCHEMA}.users WHERE COALESCE(is_service, FALSE) = FALSE "
+                f"AND COALESCE(name, '') <> 'Удалённый аккаунт' AND COALESCE(app_platform, '') <> 'web' "
+                f"AND (app_platform = 'android' OR app_version IS NULL)"
             )
             only = str(body.get("version") or "").strip()
             users = []
-            for uid, name, avatar, ver, seen, ver_at, nudged in cur.fetchall():
-                if not latest or key(ver) >= key(latest):
+            for uid, name, avatar, ver, seen, ver_at, nudged, plat in cur.fetchall():
+                if ver and latest and key(ver) >= key(latest):
                     continue
+                ver = ver or "неизвестна"
                 if only and ver != only:
                     continue
                 users.append({
@@ -645,19 +648,27 @@ def handler(event: dict, context) -> dict:
                 f"Вышла новая версия Nova {latest}! Обновите приложение в RuStore, чтобы получить "
                 f"новые функции и исправления: https://www.rustore.ru/catalog/app/ru.nova.messenger"
             )
-            cur.execute(
-                f"SELECT id, app_version FROM {SCHEMA}.users WHERE COALESCE(app_platform, '') = 'android' "
-                f"AND app_version IS NOT NULL AND COALESCE(is_service, FALSE) = FALSE "
-                f"AND COALESCE(banned_until, 0) < %s AND COALESCE(update_nudged_version, '') <> %s",
-                (int(time.time()), latest),
-            )
-
             def key(v):
                 try:
                     return tuple(int(x) for x in str(v).split("."))
                 except ValueError:
                     return (0,)
-            targets = [row[0] for row in cur.fetchall() if key(row[1]) < key(latest)][:500]
+            ids = [int(x) for x in (body.get("user_ids") or []) if str(x).isdigit()][:500]
+            if ids:
+                cur.execute(
+                    f"SELECT id FROM {SCHEMA}.users WHERE id = ANY(%s) AND COALESCE(is_service, FALSE) = FALSE "
+                    f"AND COALESCE(banned_until, 0) < %s AND COALESCE(name, '') <> 'Удалённый аккаунт'",
+                    (ids, int(time.time())),
+                )
+                targets = [row[0] for row in cur.fetchall()]
+            else:
+                cur.execute(
+                    f"SELECT id, app_version FROM {SCHEMA}.users WHERE COALESCE(app_platform, '') = 'android' "
+                    f"AND app_version IS NOT NULL AND COALESCE(is_service, FALSE) = FALSE "
+                    f"AND COALESCE(banned_until, 0) < %s AND COALESCE(update_nudged_version, '') <> %s",
+                    (int(time.time()), latest),
+                )
+                targets = [row[0] for row in cur.fetchall() if key(row[1]) < key(latest)][:500]
             sent = 0
             for uid in targets:
                 try:
@@ -666,7 +677,7 @@ def handler(event: dict, context) -> dict:
                     sent += 1
                 except Exception as e:
                     print(f"[nudge] {uid}: {e}")
-            audit(cur, admin, "app_update_nudge", f"Напоминание об обновлении до {latest}: {sent} чел.", ip)
+            audit(cur, admin, "app_update_nudge", f"Напоминание об обновлении до {latest}: {sent} чел." + (" (выборочно)" if ids else ""), ip)
             return ok({"success": True, "sent": sent})
 
         # ── Регистрация по коду-приглашению ──────────────────────────────

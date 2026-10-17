@@ -254,7 +254,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     setInput(prev => prev.replace(/(^|\s)@([^\s@]*)$/, (_m, p1) => `${p1}@${cleanName} `));
   };
 
-  const { recording, recordSec, sendFile, startRecording, stopRecording, cancelRecording } =
+  const { recording, recordSec, sendFile, sendFiles, uploading, uploadLabel, startRecording, stopRecording, cancelRecording } =
     useGroupMedia({ group, currentUser, setMessages, setLastSince, setShowAttach, toTime });
 
   // Группировка по датам
@@ -342,6 +342,9 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         onInputChange={setInput}
         onSend={send}
         onSendFile={(f) => sendFile(f)}
+        onSendFiles={sendFiles}
+        uploading={uploading}
+        uploadLabel={uploadLabel}
         onCancelReply={() => setReplyTo(null)}
         onCancelEdit={() => { setEditing(null); setInput(""); }}
         onToggleAttach={() => setShowAttach(v => !v)}

@@ -26,8 +26,14 @@ function fmtSeen(ts: number) {
   return d.toLocaleDateString("ru", { day: "numeric", month: "short", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" }) + ` в ${time}`;
 }
 
-export default function DevOutdatedUsers({ latest, onClose }: { latest: string; onClose: () => void }) {
+export default function DevOutdatedUsers({ latest, canSend = false, onClose, onSent }: {
+  latest: string; canSend?: boolean; onClose: () => void; onSent?: () => void;
+}) {
   const [users, setUsers] = useState<OutdatedUser[] | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [sending, setSending] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [reload, setReload] = useState(0);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -37,7 +43,7 @@ export default function DevOutdatedUsers({ latest, onClose }: { latest: string; 
     devApi<{ users: OutdatedUser[]; total: number }>("app_outdated_users", { latest })
       .then((r) => { setUsers(r.users); setTotal(r.total); })
       .catch((e) => setError(e instanceof Error ? e.message : "Не удалось загрузить список"));
-  }, [latest]);
+  }, [latest, reload]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -53,6 +59,37 @@ export default function DevOutdatedUsers({ latest, onClose }: { latest: string; 
       (!q || u.name.toLowerCase().includes(q) || String(u.id).includes(q)),
     );
   }, [users, query, version]);
+
+  const toggle = (id: number) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const allShownSelected = shown.length > 0 && shown.every((u) => selected.has(u.id));
+  const toggleAll = () => setSelected((prev) => {
+    const next = new Set(prev);
+    if (allShownSelected) shown.forEach((u) => next.delete(u.id));
+    else shown.forEach((u) => next.add(u.id));
+    return next;
+  });
+
+  const sendSelected = async () => {
+    if (!selected.size) return;
+    if (!confirm(`Отправить напоминание об обновлении до ${latest} выбранным (${selected.size} чел.)?`)) return;
+    setSending(true);
+    setMsg(null);
+    try {
+      const r = await devApi<{ sent: number }>("app_update_nudge", { latest, user_ids: Array.from(selected) });
+      setMsg({ ok: true, text: `Напоминание отправлено: ${formatNum(r.sent || 0)} чел.` });
+      setSelected(new Set());
+      setReload((x) => x + 1);
+      onSent?.();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Не удалось отправить" });
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
@@ -83,6 +120,12 @@ export default function DevOutdatedUsers({ latest, onClose }: { latest: string; 
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-3 py-2 text-sm outline-none focus:border-violet-500/50"
               />
             </div>
+            {canSend && (
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none px-1">
+                <input type="checkbox" checked={allShownSelected} onChange={toggleAll} className="w-4 h-4 accent-violet-500" />
+                Выбрать всех в списке ({formatNum(shown.length)})
+              </label>
+            )}
             {versions.length > 1 && (
               <div className="flex gap-1.5 flex-wrap">
                 {["", ...versions].map((v) => (
@@ -110,7 +153,18 @@ export default function DevOutdatedUsers({ latest, onClose }: { latest: string; 
             </div>
           ) : (
             shown.map((u) => (
-              <div key={u.id} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/[0.03]">
+              <label
+                key={u.id}
+                className={`flex items-center gap-3 px-2 py-2 rounded-xl ${canSend ? "cursor-pointer" : ""} ${selected.has(u.id) ? "bg-violet-500/10" : "hover:bg-white/[0.03]"}`}
+              >
+                {canSend && (
+                  <input
+                    type="checkbox"
+                    checked={selected.has(u.id)}
+                    onChange={() => toggle(u.id)}
+                    className="w-4 h-4 accent-violet-500 shrink-0"
+                  />
+                )}
                 {u.avatar_url ? (
                   <img src={u.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
                 ) : (
@@ -128,10 +182,35 @@ export default function DevOutdatedUsers({ latest, onClose }: { latest: string; 
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{u.version}</span>
                   {u.nudged && <span className="text-[10px] text-slate-500">напомнили</span>}
                 </div>
-              </div>
+              </label>
             ))
           )}
         </div>
+
+        {(msg || (canSend && selected.size > 0)) && (
+          <div className="p-3 border-t border-white/10 space-y-2">
+            {msg && (
+              <div className={`text-xs px-3 py-2 rounded-lg ${msg.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"}`}>
+                {msg.text}
+              </div>
+            )}
+            {canSend && selected.size > 0 && (
+              <div className="flex items-center gap-2">
+                <button onClick={() => setSelected(new Set())} className="px-3 py-2.5 rounded-xl text-xs text-slate-300 hover:bg-white/5">
+                  Снять выбор
+                </button>
+                <button
+                  onClick={sendSelected}
+                  disabled={sending}
+                  className="flex-1 px-3 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Icon name={sending ? "Loader2" : "Send"} size={15} className={sending ? "animate-spin" : ""} />
+                  Напомнить выбранным ({formatNum(selected.size)})
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

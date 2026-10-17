@@ -42,6 +42,15 @@ export interface ReplyPreview {
   media_type?: string;
 }
 
+export interface AlbumPayload {
+  album: { url: string; w?: number; h?: number }[];
+}
+
+export function getAlbum(payload: unknown): { url: string }[] | null {
+  const a = (payload as AlbumPayload | null | undefined)?.album;
+  return Array.isArray(a) && a.length > 1 ? a.filter(x => x && typeof x.url === "string") : null;
+}
+
 export interface Message {
   id: number;
   text: string;
@@ -54,6 +63,7 @@ export interface Message {
   payload?: GiftPayload | FundraiserPayload | StickerPayload
     | { buttons?: { text: string; callback_data?: string | null; url?: string | null }[][] }
     | { story_id?: number; story_media_url?: string; story_caption?: string | null; story_author_id?: number }
+    | AlbumPayload
     | null;
   created_at?: number;
   image_url?: string;
@@ -271,6 +281,7 @@ export interface GroupMessage {
   created_at: number;
   edited_at?: number | null;
   kind?: string;
+  payload?: AlbumPayload | null;
   out: boolean;
   time?: string;
   read?: boolean;

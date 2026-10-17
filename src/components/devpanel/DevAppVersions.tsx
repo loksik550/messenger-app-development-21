@@ -52,7 +52,7 @@ export default function DevAppVersions({ canSend }: { canSend: boolean }) {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-        {data.outdated > 0 && (
+        {(data.outdated > 0 || data.unknown > 0) && (
           <button
             onClick={() => setShowList(true)}
             className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-semibold flex items-center gap-1.5"
@@ -112,7 +112,7 @@ export default function DevAppVersions({ canSend }: { canSend: boolean }) {
           Ещё {formatNum(data.unknown)} чел. не заходили после обновления — их версия пока неизвестна
         </p>
       )}
-      {showList && <DevOutdatedUsers latest={data.latest} onClose={() => setShowList(false)} />}
+      {showList && <DevOutdatedUsers latest={data.latest} canSend={canSend} onClose={() => setShowList(false)} onSent={load} />}
       {msg && (
         <div className={`mt-3 text-xs px-3 py-2 rounded-lg ${msg.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"}`}>
           {msg.text}

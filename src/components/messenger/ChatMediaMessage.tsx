@@ -3,6 +3,8 @@ import Icon from "@/components/ui/icon";
 import { type Message, type Reaction } from "@/lib/api";
 import { MediaViewer, type MediaItem } from "@/components/messenger/MediaViewer";
 import { VoiceMessage } from "@/components/messenger/VoiceMessage";
+import PhotoAlbum from "@/components/messenger/PhotoAlbum";
+import { getAlbum } from "@/lib/apiTypes";
 
 // ─── QUICK_REACTIONS ──────────────────────────────────────────────────────────
 
@@ -27,6 +29,9 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
     return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
   };
+
+  const album = mediaType === "image" ? getAlbum(msg.payload) : null;
+  if (album) return <PhotoAlbum urls={album.map((a) => a.url)} />;
 
   if (mediaType === "image") {
     if (imgError) return (

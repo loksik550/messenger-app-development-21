@@ -3821,7 +3821,7 @@ def _handle(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT m.id, m.sender_id, u.name, u.avatar_url, m.text,
                        m.media_type, m.media_url, m.file_name, m.file_size, m.duration,
-                       m.reply_to_id, m.created_at, m.edited_at, m.kind
+                       m.reply_to_id, m.created_at, m.edited_at, m.kind, m.payload_json
                 FROM {SCHEMA}.group_messages m
                 JOIN {SCHEMA}.users u ON u.id = m.sender_id
                 WHERE m.group_id = %s AND m.removed_at IS NULL AND m.created_at > %s
@@ -3886,6 +3886,7 @@ def _handle(event: dict, context) -> dict:
                 "file_name": r[7], "file_size": r[8], "duration": r[9],
                 "reply_to_id": r[10], "created_at": r[11],
                 "edited_at": r[12], "kind": r[13] or "text",
+                "payload": (json.loads(r[14]) if r[14] else None),
                 "out": is_out,
                 "read": (r[0] in read_set) if is_out else False,
                 "reactions": reactions_map.get(r[0], []),
@@ -3906,6 +3907,8 @@ def _handle(event: dict, context) -> dict:
         file_size = body.get("file_size")
         duration = body.get("duration")
         reply_to_id = body.get("reply_to_id")
+        g_payload = body.get("payload")
+        g_payload_str = json.dumps(g_payload, ensure_ascii=False) if isinstance(g_payload, dict) and g_payload.get("album") else None
         if not group_id:
             conn.close()
             return err("Укажите group_id")
@@ -3948,10 +3951,10 @@ def _handle(event: dict, context) -> dict:
                 return ok({"id": _gdup[0], "created_at": _gdup[1], "duplicate": True})
         cur.execute(
             f"""INSERT INTO {SCHEMA}.group_messages
-                (group_id, sender_id, text, media_type, media_url, file_name, file_size, duration, reply_to_id, created_at, client_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (group_id, sender_id, text, media_type, media_url, file_name, file_size, duration, reply_to_id, created_at, client_id, payload_json)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (int(group_id), int(user_id), text or "", media_type, media_url,
-             file_name, file_size, duration, reply_to_id, now, g_client_id)
+             file_name, file_size, duration, reply_to_id, now, g_client_id, g_payload_str)
         )
         msg_id = cur.fetchone()[0]
         last_msg = text[:100] if text else ("[медиа]")

@@ -21,6 +21,7 @@ export function ChatInput({
   onStopRecording,
   onCancelRecording,
   onFileChange,
+  onFilesChange,
   onVideoCircle,
   replyTo,
   onCancelReply,
@@ -49,6 +50,7 @@ export function ChatInput({
   onStopRecording: () => void;
   onCancelRecording?: () => void;
   onFileChange: (file: File) => void;
+  onFilesChange?: (files: File[]) => void;
   onVideoCircle?: () => void;
   replyTo?: Message | null;
   onCancelReply?: () => void;
@@ -71,7 +73,13 @@ export function ChatInput({
         type="file"
         accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
         className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (f) onFileChange(f); e.target.value = ""; }}
+        multiple
+        onChange={e => {
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          if (files.length > 1 && onFilesChange) onFilesChange(files);
+          else if (files[0]) onFileChange(files[0]);
+        }}
       />
       {(replyTo || editing) && (
         <div className="flex items-center gap-3 mb-2 px-3 py-2 glass rounded-xl animate-fade-in border-l-2 border-violet-400">
