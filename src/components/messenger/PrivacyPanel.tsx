@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
+import { VkLinkRow } from "@/components/messenger/settings/VkLinkRow";
 
 type Vis = "everyone" | "contacts" | "nobody";
 
@@ -123,6 +124,8 @@ export default function PrivacyPanel({
         <VisRow label="Кому видно «был в сети»" value={lastSeen} onChange={(v) => { setLastSeen(v); update("last_seen_visibility", v); }} />
         <VisRow label="Кому видно фото профиля" value={photoVis} onChange={(v) => { setPhotoVis(v); update("profile_photo_visibility", v); }} />
         <VisRow label="Кому виден номер телефона" sub="«Только контакты» — самый рекомендуемый вариант" value={phoneVis} onChange={(v) => { setPhoneVis(v); update("phone_visibility", v); }} />
+
+        <VkLinkRow userId={currentUser.id} />
 
         {/* App Lock */}
         <div className="glass rounded-2xl p-4">
