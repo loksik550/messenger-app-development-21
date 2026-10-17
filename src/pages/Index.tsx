@@ -44,6 +44,7 @@ const BannedScreen = lazyWithRetry(() => import("@/components/messenger/BannedSc
 import { type Contact } from "@/lib/api";
 import { restoreAuthToken, setAuthToken, onAuthExpired } from "@/lib/authToken";
 import ResetApprovalPrompt from "@/components/messenger/ResetApprovalPrompt";
+import VkPhonePrompt from "@/components/messenger/VkPhonePrompt";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
@@ -414,6 +415,12 @@ export default function Index() {
       {/* Подсказка о включении push-уведомлений */}
       {currentUser && <EnableNotificationsBanner userId={currentUser.id} />}
       {currentUser && <ResetApprovalPrompt userId={currentUser.id} />}
+      {currentUser && (
+        <VkPhonePrompt
+          user={currentUser}
+          onUpdated={(u) => { localStorage.setItem("nova_user", JSON.stringify(u)); setCurrentUser(u); }}
+        />
+      )}
 
       <IndexOverlays
         currentUser={currentUser}

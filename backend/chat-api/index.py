@@ -723,6 +723,33 @@ def _handle(event: dict, context) -> dict:
         phone_ok = bool(r[1]) and not str(r[1]).startswith("vk")
         return ok({"linked": bool(r[0]), "can_unlink": bool(r[0]) and phone_ok and bool(r[2])})
 
+    if action == "vk_set_phone":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        digits = "".join(c for c in str(body.get("phone") or "") if c.isdigit())
+        password = str(body.get("password") or "")
+        if len(digits) == 11 and digits[0] == "8":
+            digits = "7" + digits[1:]
+        if len(digits) != 11 or digits[0] != "7":
+            conn.close(); return err("Введите номер в формате +7 (XXX) XXX-XX-XX")
+        if len(password) < 6:
+            conn.close(); return err("Пароль должен быть не короче 6 символов")
+        cur.execute(f"SELECT phone FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        me = cur.fetchone()
+        if not me or not str(me[0] or "").startswith("vk"):
+            conn.close(); return err("Номер уже указан в аккаунте")
+        cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone = %s AND id <> %s", (digits, int(user_id)))
+        if cur.fetchone():
+            conn.close(); return err("Этот номер уже занят другим аккаунтом Nova. Войдите в него по номеру и привяжите ВКонтакте в настройках.")
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET phone = %s, password_hash = %s WHERE id = %s",
+            (digits, _hash_password(password), int(user_id)),
+        )
+        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        row = cur.fetchone()
+        conn.close()
+        return ok({"ok": True, "user": serialize_user(row)})
+
     if action == "vk_unlink":
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")
