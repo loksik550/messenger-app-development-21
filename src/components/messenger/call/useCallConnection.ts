@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api, getCallAvatar, getIceServers, type User } from "@/lib/api";
 import { type CallState } from "@/components/messenger/CallScreenParts";
+import { nativeCall } from "@/lib/nativeCall";
 import { startRingtone, stopRingtone, startDialTone, stopDialTone, playHangupSound, unlockAudioContext } from "@/lib/sounds";
 
 export interface CallConnectionParams {
@@ -57,6 +58,7 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     stopRingtone();
     stopDialTone();
+    nativeCall.ended();
   };
 
   const cleanupRef = useRef(cleanup);
@@ -370,6 +372,7 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     if (startedRef.current) return;
     startedRef.current = true;
     stopRingtone(); stopDialTone();
+    nativeCall.started();
     setState("calling");
     const pc = await createPC();
     if (!pc) return;

@@ -2945,7 +2945,20 @@ def _handle(event: dict, context) -> dict:
                 }).encode("utf-8")
                 # В фоне, чтобы не задерживать установку звонка у звонящего
                 _fire_and_forget_http(push_url, push_body)
+        elif signal_type == "answer":
+            conn.close()
+            _fire_and_forget_http(_push_notify_url(), json.dumps({
+                "action": "cancel_call",
+                "recipient_id": int(user_id),
+                "call_id": call_id,
+            }).encode("utf-8"))
+            return ok({"ok": True})
         elif signal_type in ("end", "decline", "cancel", "hangup"):
+            _fire_and_forget_http(_push_notify_url(), json.dumps({
+                "action": "cancel_call",
+                "recipient_id": int(user_id),
+                "call_id": call_id,
+            }).encode("utf-8"))
             # Пропущенный звонок: если answer от вызываемого не было — создаём системное сообщение
             cur.execute(
                 f"""SELECT 1 FROM {SCHEMA}.call_signals

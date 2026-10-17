@@ -199,10 +199,10 @@ public class IncomingCallActivity extends Activity {
         open.putExtra("from_user_id", fromUser);
         open.putExtra("is_call", "1");
         open.putExtra("call_accept", "1");
-        unlockThen(() -> {
-            startActivity(open);
-            finishAndRemoveTask();
-        });
+        // Не просим пароль: главный экран сам откроется поверх блокировки,
+        // звонок продолжится, а разблокировать телефон можно потом.
+        startActivity(open);
+        finishAndRemoveTask();
     }
 
     private void unlockThen(Runnable r) {

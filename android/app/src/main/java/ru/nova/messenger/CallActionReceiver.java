@@ -155,7 +155,21 @@ public class CallActionReceiver extends BroadcastReceiver {
         }
     }
 
+    static void dismissAllCalls(Context ctx) {
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                for (android.service.notification.StatusBarNotification sbn : nm.getActiveNotifications()) {
+                    String t = sbn.getTag();
+                    if (t != null && t.startsWith("call_")) nm.cancel(t, sbn.getId());
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     static void dismiss(Context ctx, String callId) {
+        if (callId == null) { dismissAllCalls(ctx); IncomingCallActivity.finishIfShowing(null); return; }
         try {
             NotificationManagerCompat.from(ctx).cancel("call_" + callId, NovaMessagingService.NOTIF_ID);
         } catch (Exception ignored) {
