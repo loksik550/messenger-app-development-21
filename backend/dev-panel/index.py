@@ -92,7 +92,7 @@ ACTION_PERMS = {
     "vk_link_start": "dashboard", "vk_unlink": "dashboard", "vk_me": "dashboard",
     "grant_role": "team", "user_panel_role": "users",
     "app_version_get": "dashboard", "app_version_save": "services",
-    "app_versions_stats": "dashboard", "app_update_nudge": "settings",
+    "app_versions_stats": "dashboard", "app_update_nudge": "settings", "app_outdated_users": "dashboard",
     "me": "dashboard", "logout": "dashboard", "usage_stats": "dashboard",
     "promos": "dashboard", "promo_activations": "dashboard", "referrals_top": "dashboard",
     "referral_settings": "dashboard",
@@ -604,6 +604,36 @@ def handler(event: dict, context) -> dict:
             for i in items:
                 i["outdated"] = bool(latest and key(i["version"]) < key(latest))
             return ok({"latest": latest, "items": items, "outdated": outdated, "web": web, "unknown": unknown})
+
+        if action == "app_outdated_users":
+            cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'app_latest_version'")
+            r = cur.fetchone()
+            latest = str(body.get("latest") or (r[0] if r else "") or "").strip()
+
+            def key(v):
+                try:
+                    return tuple(int(x) for x in str(v).split("."))
+                except ValueError:
+                    return (0,)
+            cur.execute(
+                f"SELECT id, COALESCE(name, ''), COALESCE(avatar_url, ''), app_version, "
+                f"COALESCE(last_seen, 0), COALESCE(app_version_at, 0), COALESCE(update_nudged_version, '') "
+                f"FROM {SCHEMA}.users WHERE COALESCE(app_platform, '') = 'android' AND app_version IS NOT NULL "
+                f"AND COALESCE(is_service, FALSE) = FALSE"
+            )
+            only = str(body.get("version") or "").strip()
+            users = []
+            for uid, name, avatar, ver, seen, ver_at, nudged in cur.fetchall():
+                if not latest or key(ver) >= key(latest):
+                    continue
+                if only and ver != only:
+                    continue
+                users.append({
+                    "id": uid, "name": name or f"ID {uid}", "avatar_url": avatar or None, "version": ver,
+                    "last_seen": int(max(seen or 0, ver_at or 0)), "nudged": nudged == latest,
+                })
+            users.sort(key=lambda u: u["last_seen"], reverse=True)
+            return ok({"latest": latest, "total": len(users), "users": users[:500]})
 
         if action == "app_update_nudge":
             cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'app_latest_version'")

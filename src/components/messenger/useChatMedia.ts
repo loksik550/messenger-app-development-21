@@ -28,8 +28,11 @@ export function useChatMedia({
   const sendFile = async (file: File, extra?: { duration?: number; mediaTypeOverride?: "audio" | "video" | "image" | "file" }) => {
     // Лимит размера: тело облачной функции ограничено, а base64 раздувает на ~33%.
     // Видео-кружки сжаты при записи, для них предел выше.
-    const isVideo = extra?.mediaTypeOverride === "video";
-    const MAX_FILE_MB = isVideo ? 4.5 : 4.5;
+        const MAX_FILE_MB = 4.5;
+    if (file.type.startsWith("image/") && !extra?.mediaTypeOverride) {
+      const { compressImage } = await import("@/lib/compressImage");
+      file = await compressImage(file);
+    }
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
       alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум ${MAX_FILE_MB} МБ. Сожми файл или запиши короче.`);
       return;
@@ -70,7 +73,8 @@ export function useChatMedia({
       }
     } catch (uploadErr) {
       console.error(uploadErr);
-      alert("Не удалось отправить файл. Попробуй ещё раз или выбери файл меньшего размера.");
+      const reason = uploadErr instanceof Error && uploadErr.message ? `\n\nПричина: ${uploadErr.message}` : "";
+      alert(`Не удалось отправить файл. Проверь интернет и попробуй ещё раз.${reason}`);
     } finally { setUploading(false); }
   };
 

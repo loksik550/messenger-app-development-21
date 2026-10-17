@@ -58,6 +58,23 @@ export interface UploadResult {
 }
 
 export async function uploadMedia(file: File, userId: number): Promise<UploadResult> {
+  const { compressImage } = await import("@/lib/compressImage");
+  const prepared = await compressImage(file);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await uploadOnce(prepared, userId);
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("слишком большой") || msg.includes("(4")) break;
+      await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Ошибка загрузки");
+}
+
+function uploadOnce(file: File, userId: number): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async () => {
@@ -72,7 +89,11 @@ export async function uploadMedia(file: File, userId: number): Promise<UploadRes
           body: JSON.stringify({ data: base64, mime, file_name: file.name, file_size: file.size }),
         });
         if (res.status === 413) { reject(new Error("Файл слишком большой для отправки")); return; }
-        if (!res.ok) { reject(new Error(`Ошибка загрузки (${res.status})`)); return; }
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          reject(new Error(j?.error ? `${j.error} (${res.status})` : `Ошибка загрузки (${res.status})`));
+          return;
+        }
         const data = await res.json().catch(() => ({}));
         if (data.url) resolve(data);
         else reject(new Error(data.error || "Ошибка загрузки"));

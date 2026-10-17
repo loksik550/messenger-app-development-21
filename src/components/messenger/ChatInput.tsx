@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { type Message, type IconName } from "@/lib/api";
 import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
 import { useAutoGrow } from "@/hooks/useAutoGrow";
+import { isSendKey } from "@/lib/sendKey";
 
 export function ChatInput({
   input,
@@ -203,7 +204,7 @@ export function ChatInput({
               ref={taRef}
               value={input}
               onChange={e => { setInput(e.target.value); onNotifyTyping(); }}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+              onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); onSend(); } }}
               placeholder="Сообщение..."
               rows={1}
               autoComplete="off"
@@ -212,6 +213,7 @@ export function ChatInput({
               spellCheck
               inputMode="text"
               enterKeyHint="enter"
+              aria-label="Сообщение"
               className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 text-foreground placeholder-muted-foreground resize-none break-words"
             />
             <div className="relative">
@@ -230,9 +232,9 @@ export function ChatInput({
           </div>
           {input.trim() ? (
             <button
+              onPointerDown={e => e.preventDefault()}
               onMouseDown={e => e.preventDefault()}
               onClick={onSend}
-              onTouchEnd={e => { e.preventDefault(); onSend(); }}
               className="p-2.5 rounded-xl transition-all grad-primary text-white glow-primary animate-scale-in"
             >
               <Icon name="Send" size={20} />

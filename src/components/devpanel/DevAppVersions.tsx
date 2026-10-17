@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
+import DevOutdatedUsers from "./DevOutdatedUsers";
 
 interface Stats {
   latest: string;
@@ -14,6 +15,7 @@ export default function DevAppVersions({ canSend }: { canSend: boolean }) {
   const [data, setData] = useState<Stats | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showList, setShowList] = useState(false);
 
   const load = () =>
     devApi<Stats>("app_versions_stats").then(setData).catch(() => setData(null));
@@ -49,6 +51,16 @@ export default function DevAppVersions({ canSend }: { canSend: boolean }) {
             {data.latest && <> · последняя <span className="text-emerald-400">{data.latest}</span></>}
           </p>
         </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        {data.outdated > 0 && (
+          <button
+            onClick={() => setShowList(true)}
+            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-semibold flex items-center gap-1.5"
+          >
+            <Icon name="Users" size={13} />
+            Кто не обновился
+          </button>
+        )}
         {canSend && data.outdated > 0 && (
           <button
             onClick={nudge}
@@ -59,6 +71,7 @@ export default function DevAppVersions({ canSend }: { canSend: boolean }) {
             Напомнить {formatNum(data.outdated)}
           </button>
         )}
+        </div>
       </div>
 
       {total === 0 ? (
@@ -99,6 +112,7 @@ export default function DevAppVersions({ canSend }: { canSend: boolean }) {
           Ещё {formatNum(data.unknown)} чел. не заходили после обновления — их версия пока неизвестна
         </p>
       )}
+      {showList && <DevOutdatedUsers latest={data.latest} onClose={() => setShowList(false)} />}
       {msg && (
         <div className={`mt-3 text-xs px-3 py-2 rounded-lg ${msg.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"}`}>
           {msg.text}

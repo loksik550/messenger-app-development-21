@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
 import { useAutoGrow } from "@/hooks/useAutoGrow";
+import { isSendKey } from "@/lib/sendKey";
 import type { Group, GroupMessage, GroupMember } from "@/lib/api";
 
 interface Props {
@@ -161,7 +162,7 @@ export default function GroupChatInput({
             ref={taRef}
             value={input}
             onChange={e => onInputChange(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+            onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); onSend(); } }}
             placeholder={group.is_channel ? "Написать в канал..." : "Сообщение..."}
             rows={1}
             autoComplete="off"
@@ -182,7 +183,7 @@ export default function GroupChatInput({
           </div>
         </div>
         {input.trim() ? (
-          <button onMouseDown={e => e.preventDefault()} onTouchEnd={e => { e.preventDefault(); onSend(); }} onClick={onSend} className="p-2.5 rounded-xl grad-primary text-white glow-primary">
+          <button onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={onSend} className="p-2.5 rounded-xl grad-primary text-white glow-primary">
             <Icon name="Send" size={20} />
           </button>
         ) : (
