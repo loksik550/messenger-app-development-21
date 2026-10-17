@@ -49,7 +49,9 @@ def _fire_and_forget_http(url: str, body: bytes, timeout: float = 3.0) -> None:
     def _run():
         try:
             req = urllib.request.Request(url, data=body, headers=_json_headers(url))
-            urllib.request.urlopen(req, timeout=timeout)
+            resp = urllib.request.urlopen(req, timeout=timeout)
+            if url == _push_notify_url():
+                print(f"[push-call] status={resp.status} body={resp.read(120)!r}")
         except Exception as e:
             print(f"[bg-http] {url[-12:]} failed: {e}")
     try:
