@@ -367,23 +367,50 @@ def do_publish(body, admin, ip):
         version_id = version_id.get("versionId")
     if not version_id:
         raise RuStoreError("RuStore не создал черновик версии")
+    return ok({"ok": True, "stage": "draft", "tag": rel["tag"], "version_id": version_id})
 
-    file_resp = requests.get(rel["aab_url"], timeout=25)
+
+def do_upload(body):
+    version_id = int(body.get("version_id") or 0)
+    if not version_id:
+        return err("Не указана версия")
+    rel = latest_release()
+    if not rel.get("aab_url"):
+        return err("В релизе нет файла .aab")
+    tok = token()
+    file_resp = requests.get(rel["aab_url"], timeout=(10, 25))
     if file_resp.status_code != 200 or len(file_resp.content) < 100000:
         raise RuStoreError("Не удалось скачать .aab из GitHub")
+    try:
+        rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
+           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=(10, 45))
+    except requests.exceptions.ReadTimeout:
+        print(f"[upload] {version_id}: RuStore ещё обрабатывает файл")
+        return ok({"ok": True, "stage": "uploaded", "pending": True})
+    return ok({"ok": True, "stage": "uploaded", "pending": False})
 
-    rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
-       files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")}, timeout=60)
 
-    shots = screens.push_to_draft(tok, version_id)
-    icon_sent = icon.push_to_draft(tok, version_id)
-
-    rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/commit", tok)
-
+def do_commit(body, admin, ip):
+    version_id = int(body.get("version_id") or 0)
+    if not version_id:
+        return err("Не указана версия")
+    tok = token()
+    shots, icon_sent = 0, False
+    if not body.get("skip_media"):
+        shots = screens.push_to_draft(tok, version_id)
+        icon_sent = icon.push_to_draft(tok, version_id)
+    try:
+        rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/commit", tok, timeout=(10, 40))
+    except RuStoreError as e:
+        print(f"[commit] {version_id}: {e}")
+        return ok({"ok": False, "retry": True, "message": str(e), "screens": shots, "icon": icon_sent})
+    except requests.exceptions.ReadTimeout:
+        return ok({"ok": False, "retry": True, "message": "RuStore долго отвечает", "screens": shots, "icon": icon_sent})
+    tag = str(body.get("tag") or "")
     audit(admin, "rustore_publish",
-          f"Отправлена {rel['tag']} в RuStore (версия {version_id}, скриншотов: {shots or 'прежние'}, "
+          f"Отправлена {tag} в RuStore (версия {version_id}, скриншотов: {shots or 'прежние'}, "
           f"иконка: {'новая' if icon_sent else 'прежняя'})", ip)
-    return ok({"ok": True, "tag": rel["tag"], "version_id": version_id, "screens": shots, "icon": icon_sent})
+    return ok({"ok": True, "stage": "done", "tag": tag, "version_id": version_id, "screens": shots, "icon": icon_sent})
 
 
 def handler(event: dict, context) -> dict:
@@ -449,6 +476,12 @@ def handler(event: dict, context) -> dict:
 
         if action == "publish":
             return do_publish(body, admin, ip)
+
+        if action == "publish_upload":
+            return do_upload(body)
+
+        if action == "publish_commit":
+            return do_commit(body, admin, ip)
 
         if action == "bump":
             return bump_release(admin, ip)
@@ -547,6 +580,12 @@ def handler(event: dict, context) -> dict:
     except RuStoreError as e:
         print(f"[rustore] {action}: {e}")
         return err(str(e), 502)
+    except requests.exceptions.Timeout:
+        print(f"[rustore] {action}: timeout")
+        return err("RuStore или GitHub слишком долго отвечают. Попробуйте ещё раз через пару минут.", 504)
+    except requests.exceptions.RequestException as e:
+        print(f"[rustore] {action}: network {e}")
+        return err("Не удалось связаться с RuStore. Попробуйте ещё раз через пару минут.", 502)
     except (ValueError, TypeError) as e:
         print(f"[rustore] {action} bad input: {e}")
         return err("Неверные данные запроса")

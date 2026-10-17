@@ -80,12 +80,12 @@ export async function rustoreCall<T>(action: string, payload: Record<string, unk
       body: JSON.stringify({ action, ...payload }),
     });
   } catch {
-    throw new Error("Нет связи с сервером — проверьте интернет и попробуйте ещё раз");
+    throw new Error("Сервер не ответил вовремя. Обновите страницу через минуту и проверьте список версий ниже — возможно, отправка уже прошла.");
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 504 || (res.status === 502 && !(data as { error?: string }).error)) {
-      throw new Error("Сервер не успел ответить. Увеличьте таймаут функции rustore-publish до 120 секунд");
+      throw new Error((data as { error?: string }).error || "RuStore долго отвечает. Попробуйте ещё раз через пару минут.");
     }
     throw new Error((data as { error?: string }).error || `Ошибка запроса (${res.status})`);
   }
