@@ -45,6 +45,7 @@ import { type Contact } from "@/lib/api";
 import { restoreAuthToken, setAuthToken, onAuthExpired } from "@/lib/authToken";
 import ResetApprovalPrompt from "@/components/messenger/ResetApprovalPrompt";
 import VkPhonePrompt from "@/components/messenger/VkPhonePrompt";
+import UpdatePrompt from "@/components/messenger/UpdatePrompt";
 import { NAV_ITEMS } from "@/pages/navItems";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
@@ -415,6 +416,7 @@ export default function Index() {
       {/* Подсказка о включении push-уведомлений */}
       {currentUser && <EnableNotificationsBanner userId={currentUser.id} />}
       {currentUser && <ResetApprovalPrompt userId={currentUser.id} />}
+      {currentUser && <UpdatePrompt />}
       {currentUser && (
         <VkPhonePrompt
           user={currentUser}

@@ -20,7 +20,8 @@ CORS = {
 SESSION_TTL = 12 * 3600
 PBKDF_ROUNDS = 120000
 
-PUBLIC_ACTIONS = {"login", "register", "check_setup", "panel_info"}
+PUBLIC_ACTIONS = {"login", "register", "check_setup", "panel_info", "vk_start", "vk_poll"}
+VK_REDIRECT = "https://novaa.pro/vk-callback"
 
 # Роли и права. owner может всё, остальные — по списку.
 ROLES = {
@@ -88,6 +89,9 @@ ACTION_PERMS = {
     "filter_delete": "users", "users_filtered": "users",
     "undo_list": "dashboard", "undo_apply": "user_write",
     "backup_export": "settings", "user_full": "users",
+    "vk_link_start": "dashboard", "vk_unlink": "dashboard", "vk_me": "dashboard",
+    "grant_role": "team", "user_panel_role": "users",
+    "app_version_get": "dashboard", "app_version_save": "services",
     "tg_get": "settings", "tg_save": "settings", "tg_test": "settings",
     "users_export": "users", "bulk_action": "user_write",
     "canned_list": "support", "canned_save": "support", "canned_delete": "support",
@@ -282,6 +286,41 @@ def _send_login_sms(phone: str, code: str) -> bool:
         print(f"[dev-sms] failed: {e}")
         return False
 
+def _issue_session(cur, event, ip, admin_id):
+    now = int(time.time())
+    token = secrets.token_urlsafe(32)
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.dev_sessions (token, admin_id, expires_at, ip_addr, user_agent) "
+        f"VALUES (%s, %s, %s, %s, %s)",
+        (token, admin_id, now + SESSION_TTL, ip, ((event.get("headers") or {}).get("User-Agent") or "")[:300]),
+    )
+    cur.execute(f"UPDATE {SCHEMA}.dev_admins SET last_login = %s WHERE id = %s", (now, admin_id))
+    return token
+
+
+def _vk_auth_url(cur, purpose, admin_link_id=None):
+    client_id = (os.environ.get("VK_CLIENT_ID") or "").strip()
+    if not client_id:
+        return None, None, None
+    state = secrets.token_urlsafe(24)
+    verifier = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    poll_key = secrets.token_urlsafe(24)
+    now = int(time.time())
+    cur.execute(f"DELETE FROM {SCHEMA}.vk_logins WHERE created_at < %s", (now - 3600,))
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.vk_logins (state, code_verifier, poll_key_hash, is_native, created_at, purpose, admin_link_id) "
+        f"VALUES (%s, %s, %s, FALSE, %s, %s, %s)",
+        (state, verifier, hashlib.sha256(poll_key.encode()).hexdigest(), now, purpose, admin_link_id),
+    )
+    url = "https://id.vk.com/authorize?" + urlencode({
+        "response_type": "code", "client_id": client_id, "redirect_uri": VK_REDIRECT,
+        "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
+        "scope": "vkid.personal_info",
+    })
+    return url, state, poll_key
+
+
 def handler(event: dict, context) -> dict:
     """Nova Dev Panel — вход по коду-приглашению, статистика, пользователи, логи, поддержка."""
     if event.get("httpMethod") == "OPTIONS":
@@ -315,6 +354,151 @@ def handler(event: dict, context) -> dict:
                 prow = cur.fetchone()
                 if not confirm or not prow or not verify_password(confirm, prow[0]):
                     return err("Подтвердите паролем", 428)
+
+        # ── Вход через ВКонтакте ─────────────────────────────────────────
+        if action == "vk_start":
+            if not _rate_limit(cur, f"devvk:ip:{ip}", 10):
+                conn.commit()
+                return err("Слишком много попыток. Подождите минуту.", 429)
+            url, state, poll_key = _vk_auth_url(cur, "admin")
+            if not url:
+                return err("Вход через ВКонтакте не настроен")
+            return ok({"url": url, "state": state, "poll_key": poll_key})
+
+        if action == "vk_poll":
+            state = str(body.get("state") or "")
+            poll_key = str(body.get("poll_key") or "")
+            cur.execute(
+                f"SELECT id, poll_key_hash, status, vk_user_id, error, purpose FROM {SCHEMA}.vk_logins WHERE state = %s",
+                (state,),
+            )
+            r = cur.fetchone()
+            if not r or not poll_key or not secrets.compare_digest(r[1], hashlib.sha256(poll_key.encode()).hexdigest()):
+                return err("Заявка не найдена", 404)
+            lid, _, status, vk_id, error, purpose = r
+            if purpose == "admin_link":
+                if status == "linked":
+                    cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'used' WHERE id = %s", (lid,))
+                    return ok({"status": "linked"})
+                return ok({"status": status, "error": error})
+            if purpose != "admin":
+                return err("Заявка не найдена", 404)
+            if status != "admin_ok":
+                return ok({"status": status, "error": error})
+            cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'used' WHERE id = %s AND status = 'admin_ok'", (lid,))
+            if cur.rowcount != 1:
+                return ok({"status": "used"})
+            cur.execute(
+                f"SELECT id, email, name, role, disabled, title, avatar_url FROM {SCHEMA}.dev_admins "
+                f"WHERE vk_id = %s ORDER BY id LIMIT 1",
+                (int(vk_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                cur.execute(
+                    f"SELECT a.id, a.email, a.name, a.role, a.disabled, a.title, a.avatar_url "
+                    f"FROM {SCHEMA}.dev_admins a JOIN {SCHEMA}.users u ON u.id = a.nova_user_id "
+                    f"WHERE u.vk_id = %s ORDER BY a.id LIMIT 1",
+                    (int(vk_id),),
+                )
+                row = cur.fetchone()
+            if not row:
+                return ok({"status": "no_access",
+                           "error": "Этот ВКонтакте не привязан ни к одному сотруднику панели. Войдите по почте и привяжите ВК в настройках."})
+            if row[4]:
+                return err("Доступ заблокирован", 403)
+            token = _issue_session(cur, event, ip, row[0])
+            cur_admin = {"id": row[0], "email": row[1], "name": row[2], "role": row[3],
+                         "title": row[5] or "", "avatar_url": row[6] or "",
+                         "role_label": ROLES.get(row[3], {}).get("label", row[3])}
+            audit(cur, cur_admin, "login", "Вход в панель через ВКонтакте", ip)
+            return ok({"status": "done", "token": token, "admin": cur_admin})
+
+        if action == "vk_me":
+            cur.execute(f"SELECT vk_id FROM {SCHEMA}.dev_admins WHERE id = %s", (admin["id"],))
+            r = cur.fetchone()
+            return ok({"linked": bool(r and r[0]), "vk_id": r[0] if r else None})
+
+        if action == "vk_link_start":
+            url, state, poll_key = _vk_auth_url(cur, "admin_link", admin["id"])
+            if not url:
+                return err("Вход через ВКонтакте не настроен")
+            return ok({"url": url, "state": state, "poll_key": poll_key})
+
+        if action == "vk_unlink":
+            cur.execute(f"UPDATE {SCHEMA}.dev_admins SET vk_id = NULL WHERE id = %s", (admin["id"],))
+            audit(cur, admin, "vk_unlink", "Отвязан ВКонтакте", ip)
+            return ok({"success": True})
+
+        # ── Роль в панели для пользователя приложения ────────────────────
+        if action == "user_panel_role":
+            uid = int(body.get("user_id") or 0)
+            cur.execute(
+                f"SELECT id, role, disabled FROM {SCHEMA}.dev_admins WHERE nova_user_id = %s ORDER BY id LIMIT 1",
+                (uid,),
+            )
+            r = cur.fetchone()
+            return ok({
+                "role": (r[1] if r and not r[2] else ""),
+                "roles": [{"key": k, "label": v["label"]} for k, v in ROLES.items() if k != "owner"],
+                "can_grant": has_perm(admin, "team"),
+            })
+
+        if action == "grant_role":
+            uid = int(body.get("user_id") or 0)
+            role = (body.get("role") or "").strip()
+            if role and (role not in ROLES or role == "owner"):
+                return err("Эту роль выдать нельзя")
+            cur.execute(f"SELECT id, name, vk_id, phone FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            u = cur.fetchone()
+            if not u:
+                return err("Пользователь не найден", 404)
+            cur.execute(f"SELECT id, role FROM {SCHEMA}.dev_admins WHERE nova_user_id = %s ORDER BY id LIMIT 1", (uid,))
+            ex = cur.fetchone()
+            if ex and ex[0] == admin["id"]:
+                return err("Нельзя менять собственную роль")
+            if ex and ex[1] == "owner":
+                return err("Роль основателя менять нельзя")
+            if not role:
+                if ex:
+                    cur.execute(f"UPDATE {SCHEMA}.dev_admins SET disabled = TRUE WHERE id = %s", (ex[0],))
+                    cur.execute(f"UPDATE {SCHEMA}.dev_sessions SET expires_at = 0 WHERE admin_id = %s", (ex[0],))
+                audit(cur, admin, "grant_role", f"Снята роль у {u[1] or 'ID ' + str(uid)}", ip)
+                return ok({"success": True, "role": ""})
+            label = ROLES[role]["label"]
+            if ex:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.dev_admins SET role = %s, title = %s, disabled = FALSE, "
+                    f"vk_id = COALESCE(vk_id, %s) WHERE id = %s",
+                    (role, label, u[2], ex[0]),
+                )
+            else:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_admins (email, password_hash, name, role, title, vk_id, nova_user_id) "
+                    f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (f"user{uid}@nova.local", hash_password(secrets.token_urlsafe(24)),
+                     (u[1] or f"ID {uid}")[:60], role, label, u[2], uid),
+                )
+            audit(cur, admin, "grant_role", f"Выдана роль «{label}» пользователю {u[1] or 'ID ' + str(uid)}", ip)
+            return ok({"success": True, "role": role, "has_vk": bool(u[2])})
+
+        # ── Версия приложения для окна «Доступна новая версия» ───────────
+        if action == "app_version_get":
+            cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key IN ('app_latest_version', 'app_whats_new')")
+            kv = {k: v for k, v in cur.fetchall()}
+            return ok({"latest": kv.get("app_latest_version") or "", "whats_new": kv.get("app_whats_new") or ""})
+
+        if action == "app_version_save":
+            ver = str(body.get("version") or "").strip().lstrip("vV")[:20]
+            note = str(body.get("whats_new") or "").strip()[:1000]
+            for k, v in (("app_latest_version", ver), ("app_whats_new", note)):
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) VALUES (%s, %s, %s, %s) "
+                    f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
+                    (k, v, int(time.time()), admin["id"]),
+                )
+            audit(cur, admin, "app_version_save", f"Последняя версия приложения: {ver or 'не указана'}", ip)
+            return ok({"success": True})
 
         # ── Регистрация по коду-приглашению ──────────────────────────────
         if action == "register":
@@ -2674,6 +2858,7 @@ def handler(event: dict, context) -> dict:
                 feed.append({
                     "tag": "AUTH", "title": f"{r[1] or 'Без имени'} зарегистрировался",
                     "sub": f"ID {r[0]}", "ts": int(r[2]), "section": "users",
+                    "user_id": r[0], "user_name": r[1] or f"ID {r[0]}",
                 })
 
             cur.execute(

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, setDevToken, type DevAdmin } from "@/lib/devApi";
+import { useDevVk } from "./useDevVk";
 
 interface Props {
   onSuccess: (
@@ -26,6 +27,12 @@ export default function DevAuth({ onSuccess }: Props) {
   const [code, setCode] = useState("");
   const [needCode, setNeedCode] = useState(false);
   const [phoneHint, setPhoneHint] = useState("");
+  const vk = useDevVk((r) => {
+    if (r.token && r.admin) {
+      setDevToken(r.token);
+      onSuccess(r.admin as DevAdmin);
+    }
+  });
 
   useEffect(() => {
     devApi<{ name: string; subtitle: string; logo_url: string }>("panel_info")
@@ -206,6 +213,33 @@ export default function DevAuth({ onSuccess }: Props) {
               </>
             )}
           </button>
+
+          {mode === "login" && !needCode && (
+            <>
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-[11px] text-slate-500">или</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+              <button
+                onClick={() => vk.start("vk_start")}
+                disabled={vk.busy}
+                className="w-full py-3 rounded-xl bg-[#0077FF] hover:bg-[#0069e0] text-white font-semibold transition disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {vk.busy ? (
+                  <><Icon name="Loader2" size={18} className="animate-spin" /> Ждём подтверждения в ВК…</>
+                ) : (
+                  <><span className="w-6 h-6 rounded-md bg-white text-[#0077FF] text-[10px] font-black flex items-center justify-center">VK</span> Войти через ВКонтакте</>
+                )}
+              </button>
+              {vk.error && (
+                <div className="mt-3 flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5">
+                  <Icon name="CircleAlert" size={16} className="mt-0.5 shrink-0" />
+                  <span>{vk.error}</span>
+                </div>
+              )}
+            </>
+          )}
 
           {mode === "register" && (
             <p className="text-xs text-slate-500 text-center mt-4 leading-relaxed">

@@ -3,6 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
 import { FEED_META, StatCard, SubCard, ModCard, MiniStat, TrendCard } from "./DevDashboardCards";
+import DevRolePopover from "./DevRolePopover";
 
 interface DashboardData {
   users: { total: number; online: number; active_24h: number; new_24h: number };
@@ -36,6 +37,7 @@ interface SubsData {
 
 interface FeedItem {
   tag: string; title: string; sub: string; ts: number; section: string;
+  user_id?: number; user_name?: string;
 }
 
 export interface Trend { key: string; now: number; prev: number; delta: number | null }
@@ -48,6 +50,7 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
   const [trends, setTrends] = useState<Trend[]>([]);
   const [spark, setSpark] = useState<Record<string, number[]>>({});
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [rolePop, setRolePop] = useState<{ id: number; name: string; x: number; y: number } | null>(null);
   const [feedTag, setFeedTag] = useState("");
   const [expiring, setExpiring] = useState<Expiring[]>([]);
   const [data, setData] = useState<DashboardData | null>(null);
@@ -254,7 +257,12 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
                 return (
                   <button
                     key={i}
-                    onClick={() => onNavigate?.(f.section)}
+                    onClick={(e) => {
+                      if (f.user_id) {
+                        const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setRolePop({ id: f.user_id, name: f.user_name || f.title, x: Math.min(e.clientX || b.left + b.width / 2, b.right - 20), y: b.bottom });
+                      } else onNavigate?.(f.section);
+                    }}
                     className="w-full flex items-start gap-3 px-4 py-2.5 border-b border-white/5 last:border-0 hover:bg-white/[0.03] transition text-left"
                   >
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.bg} ${meta.fg}`}>
@@ -262,7 +270,9 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-medium truncate">{f.title}</div>
-                      <div className="text-[11px] text-slate-500 truncate">{f.sub}</div>
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {f.sub}{f.user_id ? <span className="text-violet-400"> · нажмите, чтобы выдать роль</span> : null}
+                      </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide ${meta.bg} ${meta.fg}`}>
@@ -282,6 +292,17 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
       </div>
       </div>
 
+
+      {rolePop && (
+        <DevRolePopover
+          key={rolePop.id}
+          userId={rolePop.id}
+          userName={rolePop.name}
+          anchor={{ x: rolePop.x, y: rolePop.y }}
+          onClose={() => setRolePop(null)}
+          onOpenUser={onNavigate ? () => { setRolePop(null); onNavigate("users"); } : undefined}
+        />
+      )}
 
       {subs && (
         <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">

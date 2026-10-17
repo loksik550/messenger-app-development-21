@@ -250,6 +250,30 @@ def build_state(tag):
     return {"state": "queued"}
 
 
+def sync_live_version(versions):
+    live = next((v for v in versions if v["status"] in ("ACTIVE", "PARTIAL_ACTIVE")
+                 and v.get("testing") == "RELEASE" and v.get("name")), None)
+    if not live:
+        return
+    try:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'app_latest_version'")
+        r = cur.fetchone()
+        if not r or r[0] != str(live["name"]):
+            now = int(time.time())
+            for k, v in (("app_latest_version", str(live["name"])), ("app_whats_new", (live.get("whats_new") or "")[:1000])):
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at) VALUES (%s, %s, %s) "
+                    f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+                    (k, v, now),
+                )
+        conn.close()
+    except Exception as e:
+        print(f"[live_version] {e}")
+
+
 def store_screens(tok, versions):
     active = next((v for v in versions if v["status"] in ("ACTIVE", "PARTIAL_ACTIVE")), None) \
         or next((v for v in versions if v["status"] in ("ALPHA_ACTIVE", "BETA_ACTIVE")), None)
@@ -378,6 +402,7 @@ def handler(event: dict, context) -> dict:
                            "has_token": has_token})
             tok = token()
             versions = enrich(list_versions(tok))
+            sync_live_version(versions)
             rating = None
             try:
                 rating = reviews.rating(tok)

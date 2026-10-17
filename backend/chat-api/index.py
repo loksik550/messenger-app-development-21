@@ -560,7 +560,7 @@ def _handle(event: dict, context) -> dict:
         except (ValueError, TypeError):
             pass
 
-    AUTH_FREE = {"register", "auth_password", "vk_start", "vk_finish", "vk_status", "reset_password", "reset_request", "reset_status", "app_status", "ping",
+    AUTH_FREE = {"register", "auth_password", "vk_start", "app_version", "vk_finish", "vk_status", "reset_password", "reset_request", "reset_status", "app_status", "ping",
                  "ban_status", "logout", "bot_get_updates", "bot_send_message"}
     if user_id and action not in AUTH_FREE and not nova_auth.check(cur, event, user_id):
         conn.close()
@@ -641,13 +641,13 @@ def _handle(event: dict, context) -> dict:
         code = str(body.get("code") or "")
         device_id = str(body.get("device_id") or "")
         cur.execute(
-            f"SELECT id, code_verifier, status, created_at, is_native, link_user_id FROM {SCHEMA}.vk_logins WHERE state = %s",
+            f"SELECT id, code_verifier, status, created_at, is_native, link_user_id, purpose, admin_link_id FROM {SCHEMA}.vk_logins WHERE state = %s",
             (state,),
         )
         r = cur.fetchone()
         if not r or not code or not device_id:
             conn.close(); return err("Ссылка входа устарела, попробуйте ещё раз", 404)
-        lid, verifier, status, created_at, is_native, link_uid = r
+        lid, verifier, status, created_at, is_native, link_uid, purpose, admin_link_id = r
         if status != "pending" or int(created_at) < int(time.time()) - 900:
             conn.close(); return ok({"status": status, "native": bool(is_native), "link": bool(link_uid)})
         client_id = (os.environ.get("VK_CLIENT_ID") or "").strip()
@@ -668,6 +668,20 @@ def _handle(event: dict, context) -> dict:
         if not info.get("user_id"):
             print(f"[vk] user_info error: {str(ui)[:300]}")
             conn.close(); return err("Не удалось получить профиль ВКонтакте")
+        if purpose in ("admin", "admin_link"):
+            vk_id = int(info["user_id"])
+            if purpose == "admin_link" and admin_link_id:
+                cur.execute(f"SELECT id FROM {SCHEMA}.dev_admins WHERE vk_id = %s AND id <> %s", (vk_id, int(admin_link_id)))
+                if cur.fetchone():
+                    cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'error', error = 'taken' WHERE id = %s", (lid,))
+                    conn.close(); return err("Этот ВКонтакте уже привязан к другому сотруднику панели")
+                cur.execute(f"UPDATE {SCHEMA}.dev_admins SET vk_id = %s WHERE id = %s", (vk_id, int(admin_link_id)))
+                cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'linked', vk_user_id = %s WHERE id = %s", (vk_id, lid))
+                conn.close()
+                return ok({"status": "linked", "native": False, "link": True, "admin": True})
+            cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'admin_ok', vk_user_id = %s WHERE id = %s", (vk_id, lid))
+            conn.close()
+            return ok({"status": "done", "native": False, "admin": True})
         if link_uid:
             vk_id = int(info["user_id"])
             cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE vk_id = %s AND id <> %s", (vk_id, int(link_uid)))
@@ -711,6 +725,16 @@ def _handle(event: dict, context) -> dict:
         res = _login_reply(cur, event, row, {"status": "done"})
         conn.close()
         return res
+
+    if action == "app_version":
+        cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key IN ('app_latest_version', 'app_whats_new')")
+        kv = {k: v for k, v in cur.fetchall()}
+        conn.close()
+        return ok({
+            "latest": kv.get("app_latest_version") or "",
+            "whats_new": kv.get("app_whats_new") or "",
+            "url": "https://www.rustore.ru/catalog/app/ru.nova.messenger",
+        })
 
     if action == "vk_link_info":
         if not user_id:

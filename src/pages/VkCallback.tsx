@@ -25,10 +25,10 @@ export default function VkCallback() {
             setState("native");
           } else {
             setState("done");
-            try { window.opener?.postMessage({ type: "nova_vk_done", state: st }, window.location.origin); } catch { /* ignore */ }
+            try { window.opener?.postMessage({ type: r.admin ? "nova_dev_vk_done" : "nova_vk_done", state: st }, window.location.origin); } catch { /* ignore */ }
             setTimeout(() => {
               if (window.opener) window.close();
-              else window.location.replace("/");
+              else window.location.replace(r.admin ? "/dev" : "/");
             }, 600);
           }
         } else {

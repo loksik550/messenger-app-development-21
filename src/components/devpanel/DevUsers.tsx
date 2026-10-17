@@ -6,6 +6,7 @@ import DevUserCard from "./DevUserCard";
 import { Empty } from "./DevAutoRules";
 import { Pick, Box, BulkDialog } from "./DevUsersParts";
 import { DevPhoneVk } from "@/components/devpanel/DevPhoneVk";
+import DevRolePopover from "./DevRolePopover";
 
 interface DevUser {
   id: number;
@@ -54,6 +55,13 @@ export default function DevUsers({
   const [msg, setMsg] = useState("");
 
   const canWrite = can("user_write");
+  const canTeam = can("team");
+  const [rolePop, setRolePop] = useState<{ id: number; name: string; x: number; y: number } | null>(null);
+  const openRole = (e: React.MouseEvent, u: DevUser) => {
+    e.stopPropagation();
+    const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setRolePop({ id: u.id, name: u.name || `ID ${u.id}`, x: b.left + b.width / 2, y: b.bottom });
+  };
   const pad = compact ? "px-3 py-1.5" : "px-4 py-3";
   const avatar = compact ? "w-7 h-7" : "w-9 h-9";
 
@@ -367,6 +375,15 @@ export default function DevUsers({
                     )}
                   </div>
                 </div>
+                {canTeam && (
+                  <button
+                    onClick={(e) => openRole(e, u)}
+                    className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/25 text-violet-300 shrink-0"
+                    title="Выдать роль"
+                  >
+                    <Icon name="ShieldPlus" size={15} />
+                  </button>
+                )}
                 <button
                   onClick={() => setCardId(u.id)}
                   className="p-2 rounded-lg bg-white/5 border border-white/10 shrink-0"
@@ -448,7 +465,15 @@ export default function DevUsers({
                         <span className="text-slate-500 text-xs">{timeAgo(u.last_seen)}</span>
                       )}
                     </td>
-                    <td className={`${pad} text-right`}>
+                    <td className={`${pad} text-right whitespace-nowrap`}>
+                      {canTeam && (
+                        <button
+                          onClick={(e) => openRole(e, u)}
+                          className="px-3 py-1.5 mr-1.5 rounded-lg bg-violet-500/10 border border-violet-500/25 text-violet-300 text-xs hover:bg-violet-500/20 transition"
+                        >
+                          Роль
+                        </button>
+                      )}
                       <button
                         onClick={() => setCardId(u.id)}
                         className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition"
@@ -463,6 +488,17 @@ export default function DevUsers({
           </div>
         </div>
         </>
+      )}
+
+      {rolePop && (
+        <DevRolePopover
+          key={rolePop.id}
+          userId={rolePop.id}
+          userName={rolePop.name}
+          anchor={{ x: rolePop.x, y: rolePop.y }}
+          onClose={() => setRolePop(null)}
+          onOpenUser={() => { const id = rolePop.id; setRolePop(null); setCardId(id); }}
+        />
       )}
 
       {bulkOpen && (
