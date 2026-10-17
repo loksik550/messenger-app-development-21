@@ -743,12 +743,12 @@ def _handle(event: dict, context) -> dict:
         )
         items = [{"id": x[0], "device_name": x[1], "ip": x[2], "created_at": int(x[3])} for x in cur.fetchall()]
         conn.close()
-        return ok({"items": items})
+        return ok({"items": items, "can_decide": bool(nova_auth.get_token(event))})
 
     # ── reset_decide — владелец подтверждает или отклоняет со своего устройства
     if action == "reset_decide":
         if not user_id or not nova_auth.get_token(event):
-            conn.close(); return err("Подтвердить можно только с устройства, где вы вошли", 403)
+            conn.close(); return err("Чтобы подтвердить, выйдите и войдите в Nova на этом устройстве заново", 403)
         rid = int(body.get("request_id") or 0)
         approve = bool(body.get("approve"))
         now = int(time.time())

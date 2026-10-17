@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { api } from "@/lib/api";
 
@@ -8,11 +8,15 @@ export default function ResetApprovalPrompt({ userId }: { userId: number }) {
   const [item, setItem] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
+  const [canDecide, setCanDecide] = useState(true);
+  const handledRef = useRef<Set<number>>(new Set());
 
   const load = useCallback(async () => {
     try {
       const r = await api("reset_pending", {}, userId);
-      setItem(Array.isArray(r?.items) && r.items.length ? r.items[0] : null);
+      const list: Pending[] = Array.isArray(r?.items) ? r.items : [];
+      setCanDecide(r?.can_decide !== false);
+      setItem(list.find(x => !handledRef.current.has(x.id)) || null);
     } catch { /* сеть */ }
   }, [userId]);
 
@@ -26,6 +30,7 @@ export default function ResetApprovalPrompt({ userId }: { userId: number }) {
 
   const decide = async (approve: boolean) => {
     if (!item) return;
+    handledRef.current.add(item.id);
     setBusy(true);
     const r = await api("reset_decide", { request_id: item.id, approve }, userId).catch(() => null);
     setBusy(false);
@@ -34,9 +39,9 @@ export default function ResetApprovalPrompt({ userId }: { userId: number }) {
       setItem(null);
       setTimeout(() => setDone(""), 3500);
     } else {
-      setDone(r?.error || "Не удалось, попробуйте ещё раз");
+      setItem(null);
+      setDone(r?.error || "Не удалось подтвердить. Попробуйте позже.");
       setTimeout(() => setDone(""), 3500);
-      load();
     }
   };
 
@@ -61,6 +66,19 @@ export default function ResetApprovalPrompt({ userId }: { userId: number }) {
         <p className="text-sm text-muted-foreground text-center mb-4">
           Запрос в {when} с устройства «{item.device_name || "неизвестно"}». Если это не вы — отклоните, и пароль останется прежним.
         </p>
+        {!canDecide ? (
+          <div className="space-y-2">
+            <p className="text-xs text-amber-300 text-center">
+              Чтобы подтвердить с этого устройства, выйдите из Nova и войдите заново по номеру и паролю.
+            </p>
+            <button
+              onClick={() => { handledRef.current.add(item.id); setItem(null); }}
+              className="w-full py-3 rounded-2xl glass text-foreground font-semibold text-sm"
+            >
+              Понятно
+            </button>
+          </div>
+        ) : (
         <div className="space-y-2">
           <button
             onClick={() => decide(false)}
@@ -77,6 +95,7 @@ export default function ResetApprovalPrompt({ userId }: { userId: number }) {
             Это я — подтвердить смену
           </button>
         </div>
+        )}
       </div>
     </div>
   );
