@@ -8,6 +8,7 @@ import { PinDialog, type PinFlow } from "@/components/messenger/settings/PinDial
 import { LoginEventsList, type LoginEvent } from "@/components/messenger/settings/LoginEventsList";
 import { NotificationsInfo } from "@/components/messenger/settings/NotificationsInfo";
 import { SettingsActions } from "@/components/messenger/settings/SettingsActions";
+import { VkLinkRow } from "@/components/messenger/settings/VkLinkRow";
 
 /** Переключатель. Вынесен наружу, чтобы не пересоздавался при обновлениях. */
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -267,6 +268,8 @@ export function SettingsPanel({
             <Toggle on={item.state} onToggle={item.toggle} />
           </div>
         ))}
+
+        {currentUser && <VkLinkRow userId={currentUser.id} />}
 
         {loginEvents.length > 0 && (
           <LoginEventsList loginEvents={loginEvents} showLogins={showLogins} setShowLogins={setShowLogins} />

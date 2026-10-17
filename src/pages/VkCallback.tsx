@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 
 export default function VkCallback() {
   const [state, setState] = useState<"loading" | "done" | "native" | "error">("loading");
+  const [isLink, setIsLink] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -18,7 +19,8 @@ export default function VkCallback() {
     }
     api("vk_finish", { code, state: st, device_id: deviceId })
       .then((r) => {
-        if (r?.status === "done" || r?.status === "used") {
+        if (r?.link) setIsLink(true);
+        if (r?.status === "done" || r?.status === "used" || r?.status === "linked") {
           if (r.native) {
             setState("native");
           } else {
@@ -50,13 +52,13 @@ export default function VkCallback() {
         {state === "done" && (
           <>
             <Icon name="CircleCheck" size={44} className="text-emerald-400 mx-auto mb-3" />
-            <p className="font-semibold">Готово! Открываем Nova…</p>
+            <p className="font-semibold">{isLink ? "ВКонтакте привязан!" : "Готово! Открываем Nova…"}</p>
           </>
         )}
         {state === "native" && (
           <>
             <Icon name="CircleCheck" size={44} className="text-emerald-400 mx-auto mb-3" />
-            <p className="font-semibold mb-1">Вход подтверждён</p>
+            <p className="font-semibold mb-1">{isLink ? "ВКонтакте привязан" : "Вход подтверждён"}</p>
             <p className="text-sm text-muted-foreground">Закройте это окно и вернитесь в приложение Nova.</p>
           </>
         )}

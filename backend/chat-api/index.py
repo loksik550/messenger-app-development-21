@@ -618,10 +618,15 @@ def _handle(event: dict, context) -> dict:
         challenge = _b64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
         poll_key = _secrets.token_urlsafe(24)
         now = int(time.time())
+        link_uid = None
+        if body.get("link"):
+            if not user_id or not nova_auth.get_token(event) or not nova_auth.check(cur, event, user_id):
+                conn.close(); return nova_auth.denied(CORS)
+            link_uid = int(user_id)
         cur.execute(f"DELETE FROM {SCHEMA}.vk_logins WHERE created_at < %s", (now - 3600,))
         cur.execute(
-            f"INSERT INTO {SCHEMA}.vk_logins (state, code_verifier, poll_key_hash, is_native, created_at) VALUES (%s, %s, %s, %s, %s)",
-            (state, verifier, nova_auth.hash_token(poll_key), bool(body.get("native")), now),
+            f"INSERT INTO {SCHEMA}.vk_logins (state, code_verifier, poll_key_hash, is_native, created_at, link_user_id) VALUES (%s, %s, %s, %s, %s, %s)",
+            (state, verifier, nova_auth.hash_token(poll_key), bool(body.get("native")), now, link_uid),
         )
         url = "https://id.vk.com/authorize?" + _ue({
             "response_type": "code", "client_id": client_id, "redirect_uri": VK_REDIRECT,
@@ -636,15 +641,15 @@ def _handle(event: dict, context) -> dict:
         code = str(body.get("code") or "")
         device_id = str(body.get("device_id") or "")
         cur.execute(
-            f"SELECT id, code_verifier, status, created_at, is_native FROM {SCHEMA}.vk_logins WHERE state = %s",
+            f"SELECT id, code_verifier, status, created_at, is_native, link_user_id FROM {SCHEMA}.vk_logins WHERE state = %s",
             (state,),
         )
         r = cur.fetchone()
         if not r or not code or not device_id:
             conn.close(); return err("Ссылка входа устарела, попробуйте ещё раз", 404)
-        lid, verifier, status, created_at, is_native = r
+        lid, verifier, status, created_at, is_native, link_uid = r
         if status != "pending" or int(created_at) < int(time.time()) - 900:
-            conn.close(); return ok({"status": status, "native": bool(is_native)})
+            conn.close(); return ok({"status": status, "native": bool(is_native), "link": bool(link_uid)})
         client_id = (os.environ.get("VK_CLIENT_ID") or "").strip()
         tok = _vk_post("https://id.vk.com/oauth2/auth", {
             "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
@@ -663,6 +668,16 @@ def _handle(event: dict, context) -> dict:
         if not info.get("user_id"):
             print(f"[vk] user_info error: {str(ui)[:300]}")
             conn.close(); return err("Не удалось получить профиль ВКонтакте")
+        if link_uid:
+            vk_id = int(info["user_id"])
+            cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE vk_id = %s AND id <> %s", (vk_id, int(link_uid)))
+            if cur.fetchone():
+                cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'error', error = 'taken' WHERE id = %s", (lid,))
+                conn.close(); return err("Этот ВКонтакте уже привязан к другому аккаунту Nova")
+            cur.execute(f"UPDATE {SCHEMA}.users SET vk_id = %s WHERE id = %s", (vk_id, int(link_uid)))
+            cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'linked', user_id = %s WHERE id = %s", (int(link_uid), lid))
+            conn.close()
+            return ok({"status": "linked", "native": bool(is_native), "link": True})
         uid = _vk_login_user(cur, info)
         cur.execute(f"SELECT banned_until FROM {SCHEMA}.users WHERE id = %s", (uid,))
         b = cur.fetchone()
@@ -681,6 +696,9 @@ def _handle(event: dict, context) -> dict:
         if not r or not poll_key or not _secrets.compare_digest(r[1], nova_auth.hash_token(poll_key)):
             conn.close(); return err("Заявка не найдена", 404)
         lid, _, status, uid, error = r
+        if status == "linked":
+            cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'used' WHERE id = %s", (lid,))
+            conn.close(); return ok({"status": "linked"})
         if status != "done":
             conn.close(); return ok({"status": status, "error": error})
         cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'used' WHERE id = %s AND status = 'done'", (lid,))
@@ -693,6 +711,28 @@ def _handle(event: dict, context) -> dict:
         res = _login_reply(cur, event, row, {"status": "done"})
         conn.close()
         return res
+
+    if action == "vk_link_info":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        cur.execute(f"SELECT vk_id, phone, password_hash IS NOT NULL FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        r = cur.fetchone()
+        conn.close()
+        if not r:
+            return err("Пользователь не найден", 404)
+        phone_ok = bool(r[1]) and not str(r[1]).startswith("vk")
+        return ok({"linked": bool(r[0]), "can_unlink": bool(r[0]) and phone_ok and bool(r[2])})
+
+    if action == "vk_unlink":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        cur.execute(f"SELECT phone, password_hash IS NOT NULL FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        r = cur.fetchone()
+        if not r or str(r[0] or "").startswith("vk") or not r[1]:
+            conn.close(); return err("Нельзя отвязать: у аккаунта нет входа по номеру и паролю")
+        cur.execute(f"UPDATE {SCHEMA}.users SET vk_id = NULL WHERE id = %s", (int(user_id),))
+        conn.close()
+        return ok({"ok": True})
 
     if action == "auth_password":
         phone = (body.get("phone") or "").strip()
