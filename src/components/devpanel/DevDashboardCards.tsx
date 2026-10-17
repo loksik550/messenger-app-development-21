@@ -60,7 +60,7 @@ export function StatCard({ label, value, icon, color, sub, spark, delta }: {
         <div className={`w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center ${cls.split(" ")[2]}`}>
           <Icon name={icon} size={18} />
         </div>
-        <div className="text-sm text-slate-300 text-right leading-tight max-w-[55%]">{label}</div>
+        <div className="text-sm text-slate-300 text-right leading-tight max-w-[60%] min-w-0 break-words">{label}</div>
       </div>
       <div className="text-3xl font-bold tracking-tight">{formatNum(value)}</div>
       <div className="flex items-end justify-between gap-2 mt-2">

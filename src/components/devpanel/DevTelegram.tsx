@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, downloadCsv } from "@/lib/devApi";
 import { saveFile } from "@/lib/saveFile";
+import DevToggle from "./DevToggle";
 
 const EVENTS = [
   { key: "report", label: "Жалобы на пользователей", icon: "Flag" },
@@ -91,15 +92,9 @@ export default function DevTelegram() {
           onClick={() => save(!enabled)}
           disabled={busy || (!hasToken && !token)}
           title={!hasToken && !token ? "Сначала укажите ключ бота" : ""}
-          className={`w-11 h-6 rounded-full transition relative shrink-0 disabled:opacity-40 ${
-            enabled ? "bg-sky-500" : "bg-white/10"
-          }`}
+          className="shrink-0 rounded-full disabled:opacity-40"
         >
-          <span
-            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
-              enabled ? "left-[22px]" : "left-0.5"
-            }`}
-          />
+          <DevToggle on={enabled} />
         </button>
       </div>
 

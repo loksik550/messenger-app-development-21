@@ -82,7 +82,7 @@ export default function DevReports() {
       {reports.map((r) => (
         <div key={r.id} className="bg-white/[0.03] border border-white/10 rounded-2xl p-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="flex-1 min-w-[220px]">
+            <div className="flex-1 min-w-0 basis-[200px]">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
                 <span className="text-sm font-semibold">{r.target_name}</span>
                 <span

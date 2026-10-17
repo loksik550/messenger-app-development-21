@@ -24,6 +24,7 @@ public class MainActivity extends BridgeActivity {
         NovaMessagingService.ensureChannels(this);
         handleCallIntent(getIntent());
         savePushTap(getIntent());
+        NovaAutoUpdate.check(this);
     }
 
     // Принятый звонок показываем поверх экрана блокировки:

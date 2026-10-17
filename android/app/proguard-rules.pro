@@ -80,3 +80,6 @@
 -keep class io.capawesome.capacitorjs.plugins.badge.** { *; }
 -keep class com.capacitorjs.plugins.pushnotifications.** { *; }
 -dontwarn me.leolin.shortcutbadger.**
+
+-keep class ru.rustore.sdk.** { *; }
+-dontwarn ru.rustore.sdk.**

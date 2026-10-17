@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
+import DevToggle from "./DevToggle";
 
 interface Rule {
   id: number;
@@ -229,15 +230,9 @@ export default function DevAutoRules({ can }: { can: (p: string) => boolean }) {
                           onClick={() => save({ ...r, enabled: !r.enabled })}
                           disabled={busy}
                           title={r.enabled ? "Выключить" : "Включить"}
-                          className={`w-11 h-6 rounded-full transition relative ${
-                            r.enabled ? "bg-violet-600" : "bg-white/10"
-                          }`}
+                          className="shrink-0 rounded-full disabled:opacity-50"
                         >
-                          <span
-                            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
-                              r.enabled ? "left-[22px]" : "left-0.5"
-                            }`}
-                          />
+                          <DevToggle on={r.enabled} />
                         </button>
                         <button
                           onClick={() => setEdit(r)}
@@ -423,15 +418,9 @@ function RuleDialog({
           <span className="text-xs">Включить сразу</span>
           <button
             onClick={() => setF({ ...f, enabled: !f.enabled })}
-            className={`w-11 h-6 rounded-full transition relative ${
-              f.enabled ? "bg-violet-600" : "bg-white/10"
-            }`}
+            className="shrink-0 rounded-full"
           >
-            <span
-              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
-                f.enabled ? "left-[22px]" : "left-0.5"
-              }`}
-            />
+            <DevToggle on={!!f.enabled} />
           </button>
         </div>
 

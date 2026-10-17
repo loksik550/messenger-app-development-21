@@ -168,7 +168,7 @@ export default function DevUsers({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 bg-white/[0.04] border border-white/10 rounded-xl px-3.5 py-2.5 flex-1 min-w-[240px] focus-within:border-violet-500/40 transition">
+        <div className="flex items-center gap-2 bg-white/[0.04] border border-white/10 rounded-xl px-3.5 py-2.5 flex-1 min-w-0 basis-[220px] focus-within:border-violet-500/40 transition">
           <Icon name="Search" size={16} className="text-slate-500" />
           <input
             value={query}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
+import DevToggle from "./DevToggle";
 
 interface PlanLimits {
   file_mb: number;
@@ -398,13 +399,7 @@ export function Toggle({
 }) {
   return (
     <button onClick={() => onChange(!value)} className="flex items-center gap-2 text-xs">
-      <span className={`w-9 h-5 rounded-full transition relative ${value ? "bg-violet-500" : "bg-white/10"}`}>
-        <span
-          className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-            value ? "translate-x-4" : "translate-x-0.5"
-          }`}
-        />
-      </span>
+      <DevToggle on={value} size="sm" />
       <span className="text-slate-400">{label}</span>
     </button>
   );

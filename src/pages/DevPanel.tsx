@@ -165,6 +165,11 @@ export default function DevPanel() {
   };
 
   const can = (perm: string) => perms.includes("*") || perms.includes(perm);
+  const [liveVersion, setLiveVersion] = useState("");
+  useEffect(() => {
+    if (!admin) return;
+    devApi<{ latest: string }>("app_version_get").then((r) => setLiveVersion(r.latest || "")).catch(() => undefined);
+  }, [admin]);
 
   const applySettings = (st: Record<string, string>) => {
     if (st?.panel_name) setPanelName(st.panel_name);
@@ -389,7 +394,7 @@ export default function DevPanel() {
                 </div>
               </div>
             </div>
-            <div className="relative text-[10px] text-slate-400 mt-2.5">v{APP_VERSION}</div>
+            <div className="relative text-[10px] text-slate-400 mt-2.5">v{liveVersion || APP_VERSION}</div>
           </div>
         </div>
       </aside>
@@ -409,7 +414,7 @@ export default function DevPanel() {
         />
 
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-5 lg:p-8">
-          {activeSection === "dashboard" && <DevDashboard onNavigate={go} />}
+          {activeSection === "dashboard" && <DevDashboard onNavigate={go} canSend={can("settings")} />}
           {activeSection === "users" && <DevUsers can={can} compact={compact} />}
           {activeSection === "channels" && <DevChannels can={can} />}
           {activeSection === "verification" && <DevVerification can={can} />}

@@ -110,7 +110,7 @@ export function DevLoginToast({
   }, [onClose]);
 
   return (
-    <div className="fixed bottom-16 right-4 z-[150] w-[290px] animate-in slide-in-from-bottom-4 fade-in duration-300">
+    <div className="fixed bottom-16 right-4 z-[150] w-[290px] max-w-[calc(100vw-2rem)] animate-in slide-in-from-bottom-4 fade-in duration-300">
       <div className="bg-[#12131f]/95 backdrop-blur-md border border-emerald-500/25 rounded-2xl p-4 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">

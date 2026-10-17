@@ -726,6 +726,21 @@ def _handle(event: dict, context) -> dict:
         conn.close()
         return res
 
+    if action == "report_version":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        ver = "".join(c for c in str(body.get("version") or "") if c.isdigit() or c == ".")[:20]
+        plat = str(body.get("platform") or "")[:10]
+        if plat not in ("android", "ios", "web"):
+            plat = "web"
+        if ver:
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET app_version = %s, app_platform = %s, app_version_at = %s WHERE id = %s",
+                (ver, plat, int(time.time()), int(user_id)),
+            )
+        conn.close()
+        return ok({"ok": True})
+
     if action == "app_version":
         cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key IN ('app_latest_version', 'app_whats_new')")
         kv = {k: v for k, v in cur.fetchall()}

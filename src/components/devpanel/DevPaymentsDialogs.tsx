@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
 import { Field, Inp } from "./DevPlans";
 import { saveFile } from "@/lib/saveFile";
+import DevToggle from "./DevToggle";
 
 export interface Payment {
   id: number;
@@ -155,9 +156,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <button onClick={() => setOnlyPaid(!onlyPaid)} className="flex items-center gap-2 text-xs mb-4">
-          <span className={`w-9 h-5 rounded-full transition relative ${onlyPaid ? "bg-violet-500" : "bg-white/10"}`}>
-            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${onlyPaid ? "translate-x-4" : "translate-x-0.5"}`} />
-          </span>
+          <DevToggle on={onlyPaid} size="sm" />
           <span className="text-slate-400">Только успешные платежи</span>
         </button>
 

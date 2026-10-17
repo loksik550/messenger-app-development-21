@@ -4,6 +4,7 @@ import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
 import { FEED_META, StatCard, SubCard, ModCard, MiniStat, TrendCard } from "./DevDashboardCards";
 import DevRolePopover from "./DevRolePopover";
+import DevAppVersions from "./DevAppVersions";
 
 interface DashboardData {
   users: { total: number; online: number; active_24h: number; new_24h: number };
@@ -46,7 +47,7 @@ interface Expiring {
   pro_until: number; days_left: number;
 }
 
-export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) => void } = {}) {
+export default function DevDashboard({ onNavigate, canSend = false }: { onNavigate?: (s: string) => void; canSend?: boolean } = {}) {
   const [trends, setTrends] = useState<Trend[]>([]);
   const [spark, setSpark] = useState<Record<string, number[]>>({});
   const [feed, setFeed] = useState<FeedItem[]>([]);
@@ -191,9 +192,9 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-4 items-start">
       <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-semibold">Активность за сутки</h3>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <h3 className="font-semibold truncate">Активность за сутки</h3>
             <p className="text-xs text-slate-500 mt-0.5">Сообщений в час</p>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-emerald-400">
@@ -292,6 +293,8 @@ export default function DevDashboard({ onNavigate }: { onNavigate?: (s: string) 
       </div>
       </div>
 
+
+      <DevAppVersions canSend={canSend} />
 
       {rolePop && (
         <DevRolePopover

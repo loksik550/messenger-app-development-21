@@ -92,6 +92,12 @@ ACTION_PERMS = {
     "vk_link_start": "dashboard", "vk_unlink": "dashboard", "vk_me": "dashboard",
     "grant_role": "team", "user_panel_role": "users",
     "app_version_get": "dashboard", "app_version_save": "services",
+    "app_versions_stats": "dashboard", "app_update_nudge": "settings",
+    "me": "dashboard", "logout": "dashboard", "usage_stats": "dashboard",
+    "promos": "dashboard", "promo_activations": "dashboard", "referrals_top": "dashboard",
+    "referral_settings": "dashboard",
+    "promo_save": "settings", "promo_toggle": "settings", "referral_settings_save": "settings",
+    "gift_premium": "wallet",
     "tg_get": "settings", "tg_save": "settings", "tg_test": "settings",
     "users_export": "users", "bulk_action": "user_write",
     "canned_list": "support", "canned_save": "support", "canned_delete": "support",
@@ -286,6 +292,58 @@ def _send_login_sms(phone: str, code: str) -> bool:
         print(f"[dev-sms] failed: {e}")
         return False
 
+PUSH_URL = "https://functions.poehali.dev/c9d141ca-3552-433f-a968-ac1e92da00af"
+
+
+def _nova_user_id(cur):
+    cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone = '00000000000'")
+    r = cur.fetchone()
+    if r:
+        cur.execute(f"UPDATE {SCHEMA}.users SET name = 'Nova', verified = TRUE, is_service = TRUE WHERE id = %s AND (name <> 'Nova' OR verified IS NOT TRUE)", (r[0],))
+        return int(r[0])
+    now = int(time.time())
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.users (phone, name, verified, is_service, last_seen, created_at) "
+        f"VALUES ('00000000000', 'Nova', TRUE, TRUE, %s, %s) RETURNING id",
+        (now, now),
+    )
+    return int(cur.fetchone()[0])
+
+
+def send_from_nova(cur, user_id, text):
+    """Личное сообщение пользователю от официального аккаунта Nova + push."""
+    nova = _nova_user_id(cur)
+    uid = int(user_id)
+    if uid == nova:
+        return None
+    a, b = sorted([nova, uid])
+    now = int(time.time())
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.chats (user1_id, user2_id, created_at) VALUES (%s, %s, %s) "
+        f"ON CONFLICT (user1_id, user2_id) DO UPDATE SET user1_id = EXCLUDED.user1_id RETURNING id",
+        (a, b, now),
+    )
+    chat_id = cur.fetchone()[0]
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.messages (chat_id, sender_id, text, created_at) VALUES (%s, %s, %s, %s)",
+        (chat_id, nova, text[:4000], now),
+    )
+    cur.execute(
+        f"UPDATE {SCHEMA}.chats SET last_message = %s, last_message_at = %s WHERE id = %s",
+        (text[:100], now, chat_id),
+    )
+    try:
+        key = hashlib.sha256((os.environ.get("DATABASE_URL", "") + "|nova-internal").encode()).hexdigest()
+        req = Request(PUSH_URL, data=json.dumps({
+            "action": "send", "recipient_id": uid, "sender_name": "Nova",
+            "message": text[:100], "chat_id": chat_id,
+        }).encode(), headers={"Content-Type": "application/json", "X-Internal-Key": key})
+        urlopen(req, timeout=3)
+    except Exception as e:
+        print(f"[nova_msg] push: {e}")
+    return chat_id
+
+
 def _issue_session(cur, event, ip, admin_id):
     now = int(time.time())
     token = secrets.token_urlsafe(32)
@@ -341,7 +399,7 @@ def handler(event: dict, context) -> dict:
             if not admin:
                 return err("Требуется вход", 401)
             need = ACTION_PERMS.get(action)
-            if need and not has_perm(admin, need):
+            if not need or not has_perm(admin, need):
                 return err("Недостаточно прав для этого действия", 403)
 
             # Опасные действия требуют подтверждения паролем
@@ -366,6 +424,9 @@ def handler(event: dict, context) -> dict:
             return ok({"url": url, "state": state, "poll_key": poll_key})
 
         if action == "vk_poll":
+            if not _rate_limit(cur, f"devvkpoll:ip:{ip}", 60):
+                conn.commit()
+                return err("Слишком много запросов. Подождите минуту.", 429)
             state = str(body.get("state") or "")
             poll_key = str(body.get("poll_key") or "")
             cur.execute(
@@ -480,6 +541,16 @@ def handler(event: dict, context) -> dict:
                      (u[1] or f"ID {uid}")[:60], role, label, u[2], uid),
                 )
             audit(cur, admin, "grant_role", f"Выдана роль «{label}» пользователю {u[1] or 'ID ' + str(uid)}", ip)
+            how = ("Войдите через кнопку «Войти через ВКонтакте» — пароль не нужен."
+                   if u[2] else
+                   "Чтобы войти, сначала привяжите ВКонтакте в приложении: Настройки → Вход через ВКонтакте. "
+                   "Затем нажмите в панели «Войти через ВКонтакте».")
+            try:
+                send_from_nova(cur, uid,
+                               f"Вам выдана роль «{label}» в панели Nova.\n\n"
+                               f"Вход в панель: https://novaa.pro/dev\n{how}")
+            except Exception as e:
+                print(f"[grant_role] msg: {e}")
             return ok({"success": True, "role": role, "has_vk": bool(u[2])})
 
         # ── Версия приложения для окна «Доступна новая версия» ───────────
@@ -499,6 +570,74 @@ def handler(event: dict, context) -> dict:
                 )
             audit(cur, admin, "app_version_save", f"Последняя версия приложения: {ver or 'не указана'}", ip)
             return ok({"success": True})
+
+        # ── Версии приложения у пользователей ────────────────────────────
+        if action == "app_versions_stats":
+            cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'app_latest_version'")
+            r = cur.fetchone()
+            latest = (r[0] if r else "") or ""
+            cur.execute(
+                f"SELECT COALESCE(app_version, ''), COUNT(*) FROM {SCHEMA}.users "
+                f"WHERE COALESCE(app_platform, '') = 'android' AND COALESCE(is_service, FALSE) = FALSE "
+                f"GROUP BY 1"
+            )
+            rows = cur.fetchall()
+
+            def key(v):
+                try:
+                    return tuple(int(x) for x in v.split("."))
+                except ValueError:
+                    return (0,)
+            items = sorted(({"version": v, "count": int(c)} for v, c in rows), key=lambda x: key(x["version"]), reverse=True)
+            if not latest and items:
+                latest = items[0]["version"]
+            outdated = sum(i["count"] for i in items if latest and key(i["version"]) < key(latest))
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE COALESCE(app_platform, '') = 'web' "
+                f"AND COALESCE(is_service, FALSE) = FALSE"
+            )
+            web = int(cur.fetchone()[0] or 0)
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE app_version IS NULL AND COALESCE(is_service, FALSE) = FALSE"
+            )
+            unknown = int(cur.fetchone()[0] or 0)
+            for i in items:
+                i["outdated"] = bool(latest and key(i["version"]) < key(latest))
+            return ok({"latest": latest, "items": items, "outdated": outdated, "web": web, "unknown": unknown})
+
+        if action == "app_update_nudge":
+            cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'app_latest_version'")
+            r = cur.fetchone()
+            latest = str(body.get("latest") or (r[0] if r else "") or "").strip()
+            if not latest:
+                return err("Неизвестна последняя версия — откройте раздел «Публикация в RuStore»")
+            text = (body.get("text") or "").strip() or (
+                f"Вышла новая версия Nova {latest}! Обновите приложение в RuStore, чтобы получить "
+                f"новые функции и исправления: https://www.rustore.ru/catalog/app/ru.nova.messenger"
+            )
+            cur.execute(
+                f"SELECT id, app_version FROM {SCHEMA}.users WHERE COALESCE(app_platform, '') = 'android' "
+                f"AND app_version IS NOT NULL AND COALESCE(is_service, FALSE) = FALSE "
+                f"AND COALESCE(banned_until, 0) < %s AND COALESCE(update_nudged_version, '') <> %s",
+                (int(time.time()), latest),
+            )
+
+            def key(v):
+                try:
+                    return tuple(int(x) for x in str(v).split("."))
+                except ValueError:
+                    return (0,)
+            targets = [row[0] for row in cur.fetchall() if key(row[1]) < key(latest)][:500]
+            sent = 0
+            for uid in targets:
+                try:
+                    send_from_nova(cur, uid, text)
+                    cur.execute(f"UPDATE {SCHEMA}.users SET update_nudged_version = %s WHERE id = %s", (latest, uid))
+                    sent += 1
+                except Exception as e:
+                    print(f"[nudge] {uid}: {e}")
+            audit(cur, admin, "app_update_nudge", f"Напоминание об обновлении до {latest}: {sent} чел.", ip)
+            return ok({"success": True, "sent": sent})
 
         # ── Регистрация по коду-приглашению ──────────────────────────────
         if action == "register":

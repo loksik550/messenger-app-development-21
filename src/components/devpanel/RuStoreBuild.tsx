@@ -22,6 +22,12 @@ export default function RuStoreBuild({
   const [startedAt, setStartedAt] = useState(Date.now());
   const [, force] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [gh, setGh] = useState<{ ok: boolean; text: string; login?: string } | null>(null);
+
+  useEffect(() => {
+    if (!hasToken) return;
+    rustoreCall<{ ok: boolean; text: string; login?: string }>("gh_check").then(setGh).catch(() => undefined);
+  }, [hasToken]);
 
   useEffect(() => {
     if (!tag) return;
@@ -96,7 +102,7 @@ export default function RuStoreBuild({
         ) : state !== "success" && (
           <button
             onClick={start}
-            disabled={!hasToken}
+            disabled={!hasToken || (gh !== null && !gh.ok)}
             className="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold disabled:opacity-40 flex-shrink-0"
           >
             {state === "failed" ? "Ещё раз" : "Собрать"}
@@ -108,7 +114,16 @@ export default function RuStoreBuild({
           Журнал сборки в GitHub
         </a>
       )}
-      {error && <div className="mt-2 text-xs text-red-300">{error}</div>}
+      {gh && !gh.ok && !busy && state !== "success" && (
+        <div className="mt-2.5 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-2 flex gap-2">
+          <Icon name="KeyRound" size={13} className="shrink-0 mt-0.5" />
+          <span>{gh.text}</span>
+        </div>
+      )}
+      {gh?.ok && gh.login && !busy && state === "idle" && (
+        <div className="mt-2 text-[11px] text-emerald-300/80">Ключ GitHub работает (аккаунт {gh.login})</div>
+      )}
+      {error && <div className="mt-2 text-xs text-red-300 break-words">{error}</div>}
     </div>
   );
 }

@@ -203,6 +203,29 @@ def next_version(rustore_names=()):
     return f"{top[0]}.{top[1]}.{top[2] + 1}", set(tags)
 
 
+def gh_diagnose():
+    tok = (os.environ.get("GITHUB_RELEASE_TOKEN") or "").strip()
+    if not tok:
+        return {"ok": False, "reason": "no_token", "text": "Ключ GITHUB_RELEASE_TOKEN не добавлен в секреты проекта"}
+    h = _gh_headers()
+    me = requests.get("https://api.github.com/user", timeout=10, headers=h)
+    if me.status_code == 401:
+        return {"ok": False, "reason": "bad_token",
+                "text": "GitHub не принял ключ: он неверный или истёк. Создайте новый и замените GITHUB_RELEASE_TOKEN"}
+    login = (me.json() or {}).get("login", "") if me.status_code == 200 else ""
+    repo = requests.get(f"https://api.github.com/repos/{REPO}", timeout=10, headers=h)
+    if repo.status_code == 404:
+        return {"ok": False, "reason": "no_repo", "login": login,
+                "text": f"Ключ не видит репозиторий {REPO}. В настройках ключа: Repository access → "
+                        f"Only select repositories → выберите {REPO.split('/')[1]}"}
+    perms = (repo.json() or {}).get("permissions") or {}
+    if perms and not perms.get("push"):
+        return {"ok": False, "reason": "read_only", "login": login,
+                "text": "У ключа есть только чтение. В настройках ключа: Permissions → Repository permissions → "
+                        "Contents → выберите «Read and write», затем нажмите Update"}
+    return {"ok": True, "login": login, "text": "Ключ GitHub в порядке"}
+
+
 def bump_release(admin, ip):
     if not (os.environ.get("GITHUB_RELEASE_TOKEN") or "").strip():
         return err("Добавьте ключ GITHUB_RELEASE_TOKEN в секреты проекта — без него панель не может запустить сборку")
@@ -229,8 +252,15 @@ def bump_release(admin, ip):
                        json={"ref": f"refs/tags/v{ver}", "sha": sha})
     if cr.status_code not in (200, 201):
         msg = (cr.json() or {}).get("message", "") if cr.headers.get("content-type", "").startswith("application/json") else ""
+        print(f"[bump] create tag {cr.status_code}: {cr.text[:300]}")
         if cr.status_code in (401, 403, 404):
-            return err("У ключа GitHub нет права записи. Выдайте ему доступ Contents: Read and write", 502)
+            d = gh_diagnose()
+            if not d["ok"]:
+                return err(d["text"], 502)
+            if "workflow" in (msg or "").lower():
+                return err("GitHub требует право Workflows. В настройках ключа: Permissions → Workflows → «Read and write»", 502)
+            return err(f"GitHub отказал в создании версии: {msg or cr.status_code}. "
+                       f"Проверьте, что у ключа Contents = Read and write и нет защиты тегов в репозитории", 502)
         return err(f"GitHub не создал версию v{ver}: {msg or cr.status_code}", 502)
     audit(admin, "rustore_bump", f"Запущена сборка версии v{ver}", ip)
     return ok({"ok": True, "tag": f"v{ver}", "version": ver})
@@ -418,6 +448,9 @@ def handler(event: dict, context) -> dict:
 
         if action == "bump":
             return bump_release(admin, ip)
+
+        if action == "gh_check":
+            return ok(gh_diagnose())
 
         if action == "build_status":
             tag = str(body.get("tag") or "")

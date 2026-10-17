@@ -115,9 +115,9 @@ export default function DevBroadcast({ can }: { can: (p: string) => boolean }) {
                     : "bg-white/[0.03] border-white/8 text-slate-400 hover:bg-white/[0.06]"
                 }`}
               >
-                <span className="flex items-center gap-1.5 text-xs font-medium">
-                  <Icon name={a.icon} size={13} />
-                  {a.label}
+                <span className="flex items-center gap-1.5 text-xs font-medium min-w-0">
+                  <Icon name={a.icon} size={13} className="shrink-0" />
+                  <span className="truncate">{a.label}</span>
                 </span>
                 <span className="block text-[10px] text-slate-600 mt-0.5 leading-tight">
                   {a.hint}
