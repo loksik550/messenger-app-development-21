@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Icon from "@/components/ui/icon";
 import { saveMedia, shareMedia } from "@/lib/saveMedia";
+import ForwardMediaDialog from "@/components/messenger/ForwardMediaDialog";
 
 export interface MediaItem {
   url: string;
@@ -34,6 +35,8 @@ export function MediaViewer({
 
   const current = items[index];
   const [menuOpen, setMenuOpen] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const canForward = !!localStorage.getItem("nova_user");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
@@ -85,6 +88,7 @@ export function MediaViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (forwardOpen) return;
       if (e.key === "Escape") close();
       if (e.key === "ArrowRight") { setIndex(i => Math.min(items.length - 1, i + 1)); bumpChrome(); }
       if (e.key === "ArrowLeft") { setIndex(i => Math.max(0, i - 1)); bumpChrome(); }
@@ -97,7 +101,7 @@ export function MediaViewer({
       document.body.style.overflow = prevOverflow;
       if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
     };
-  }, [close, items.length, bumpChrome]);
+  }, [close, items.length, bumpChrome, forwardOpen]);
 
   // Сброс zoom при смене медиа
   useEffect(() => {
@@ -228,6 +232,12 @@ export function MediaViewer({
                 <Icon name="Download" size={18} className="text-white/80" />
                 Сохранить в галерею
               </button>
+              {canForward && (
+                <button onClick={() => { setMenuOpen(false); setForwardOpen(true); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/10 active:bg-white/15 text-left">
+                  <Icon name="Forward" size={18} className="text-white/80" />
+                  Переслать
+                </button>
+              )}
               <button onClick={share} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/10 active:bg-white/15 text-left">
                 <Icon name="Share2" size={18} className="text-white/80" />
                 Поделиться
@@ -257,6 +267,15 @@ export function MediaViewer({
           <Icon name={saving ? "Loader2" : "Download"} size={18} className={saving ? "animate-spin" : ""} />
           {saving ? "Сохраняем…" : "Скачать"}
         </button>
+        {canForward && (
+          <button
+            onClick={() => setForwardOpen(true)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 backdrop-blur text-white text-sm font-medium active:scale-95 transition"
+          >
+            <Icon name="Forward" size={18} />
+            Переслать
+          </button>
+        )}
         <button
           onClick={share}
           className="w-11 h-11 rounded-full bg-white/15 backdrop-blur flex items-center justify-center text-white active:scale-95 transition"
@@ -265,6 +284,15 @@ export function MediaViewer({
           <Icon name="Share2" size={18} />
         </button>
       </div>}
+
+      {forwardOpen && (
+        <ForwardMediaDialog
+          url={current.url}
+          type={current.type}
+          onClose={() => setForwardOpen(false)}
+          onDone={(name) => { setForwardOpen(false); showToast(`Отправлено: ${name}`); }}
+        />
+      )}
 
       {toast && (
         <div

@@ -3778,11 +3778,12 @@ def _handle(event: dict, context) -> dict:
                                  SELECT 1 FROM {SCHEMA}.group_message_views v
                                  WHERE v.message_id = m.id AND v.user_id = %s
                              )
-                       ) AS unread_count
+                       ) AS unread_count,
+                       gm.role AS my_role
                 FROM {SCHEMA}.groups g
                 JOIN {SCHEMA}.group_members gm ON gm.group_id = g.id AND gm.user_id = %s AND gm.role <> 'removed'
                 JOIN {SCHEMA}.group_members gm2 ON gm2.group_id = g.id
-                GROUP BY g.id, gm.cleared_at
+                GROUP BY g.id, gm.cleared_at, gm.role
                 ORDER BY g.last_message_at DESC NULLS LAST""",
             (int(user_id), int(user_id), int(user_id))
         )
@@ -3793,7 +3794,8 @@ def _handle(event: dict, context) -> dict:
                 "id": r[0], "name": r[1], "description": r[2], "avatar_url": r[3],
                 "owner_id": r[4], "is_channel": r[5], "last_message": r[6] or "",
                 "last_message_at": r[7], "invite_link": r[8], "members_count": r[9],
-                "unread_count": r[10] or 0
+                "unread_count": r[10] or 0,
+                "my_role": r[11],
             })
         conn.close()
         return ok({"groups": groups})
