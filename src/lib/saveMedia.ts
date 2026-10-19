@@ -36,7 +36,10 @@ export type SaveResult = "saved" | "shared" | "downloaded";
 export async function saveMedia(url: string, kind: "image" | "video" = "image"): Promise<SaveResult> {
   const blob = await fetchBlob(url);
   const ext = extFrom(url, blob.type);
-  const name = `Nova_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}.${ext}`;
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const name = `Nova_${stamp}.${ext}`;
 
   if (Capacitor.isNativePlatform()) {
     const data = await blobToBase64(blob);
