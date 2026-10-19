@@ -5,11 +5,13 @@ import hmac
 import hashlib
 import base64
 import urllib.request
+import psycopg2
+import nova_auth
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token",
 }
 
 
@@ -72,6 +74,21 @@ def handler(event: dict, context) -> dict:
     """
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
+
+    user_id = (event.get("headers") or {}).get("X-User-Id") or ""
+    try:
+        if int(user_id) <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return nova_auth.denied(CORS)
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn.autocommit = True
+    try:
+        allowed = nova_auth.check(conn.cursor(), event, user_id)
+    finally:
+        conn.close()
+    if not allowed:
+        return nova_auth.denied(CORS)
 
     ice_servers = []
 

@@ -32,12 +32,12 @@ const FALLBACK_ICE: RTCIceServer[] = [
     credential: "ymS3tZmVQ0kR6Xt3",
   },
 ];
-export async function getIceServers(): Promise<RTCIceServer[]> {
+export async function getIceServers(userId?: number): Promise<RTCIceServer[]> {
   try {
     // Таймаут: если сервер не ответил быстро — не тормозим звонок, берём запасной набор
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 2500);
-    const res = await fetch(ICE_API, { method: "GET", signal: ctrl.signal });
+    const res = await fetch(ICE_API, { method: "GET", signal: ctrl.signal, headers: authHeaders(userId) });
     clearTimeout(t);
     const data = await res.json();
     if (Array.isArray(data.iceServers) && data.iceServers.length) {

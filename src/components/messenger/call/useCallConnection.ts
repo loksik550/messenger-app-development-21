@@ -160,7 +160,7 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
       localVideoRef.current.play().catch(() => { /* ignore */ });
     }
 
-    const iceServers = iceServersRef.current || await getIceServers();
+    const iceServers = iceServersRef.current || await getIceServers(currentUser.id);
     const turnCount = iceServers.filter(s => {
       const u = Array.isArray(s.urls) ? s.urls.join(",") : String(s.urls);
       return u.includes("turn:") || u.includes("turns:");
@@ -385,13 +385,13 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
   // ── Запуск при монтировании ───────────────────────────────────────────────
   useEffect(() => {
     unlockAudioContext();
-    getIceServers().then(s => { iceServersRef.current = s; }).catch(() => { /* fallback */ });
+    getIceServers(currentUser.id).then(s => { iceServersRef.current = s; }).catch(() => { /* fallback */ });
     if (isIncoming) {
       startRingtone();
     } else {
       startDialTone();
       // Дожидаемся ICE-серверов, затем стартуем исходящий звонок
-      getIceServers()
+      getIceServers(currentUser.id)
         .then(s => { iceServersRef.current = s; startOutgoing(); })
         .catch(() => startOutgoing());
     }

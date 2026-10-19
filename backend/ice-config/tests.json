@@ -1,16 +1,7 @@
 {
   "tests": [
-    {
-      "name": "OPTIONS CORS preflight",
-      "method": "OPTIONS",
-      "path": "/",
-      "expectedStatus": 200
-    },
-    {
-      "name": "GET возвращает iceServers",
-      "method": "GET",
-      "path": "/",
-      "expectedStatus": 200
-    }
+    {"name": "OPTIONS CORS preflight", "method": "OPTIONS", "path": "/", "expectedStatus": 200},
+    {"name": "GET без входа отклоняется", "method": "GET", "path": "/", "expectedStatus": 401},
+    {"name": "GET с поддельным ключом отклоняется", "method": "GET", "path": "/", "headers": {"X-User-Id": "1", "X-Auth-Token": "1.fake"}, "expectedStatus": 401}
   ]
 }

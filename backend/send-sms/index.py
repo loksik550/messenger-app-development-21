@@ -11,11 +11,23 @@ import psycopg2  # requires psycopg2-binary
 # Эти номера НЕ отправляют реальные СМС и принимают только указанный код.
 # Модератор сторов может проверить полный функционал без доступа к реальным
 # телефонам. Удалить нельзя — без них модерация может не пройти.
-TEST_ACCOUNTS = {
-    "79991234567": "1234",   # Основной тестовый аккаунт для RuStore
-    "79990000001": "1234",   # Запасной #1
-    "79990000002": "1234",   # Запасной #2
-}
+# Номера и коды хранятся в секрете SMS_TEST_ACCOUNTS в формате
+# "79991234567:5821,79990000001:7740" — в коде их нет.
+def _load_test_accounts() -> dict:
+    raw = os.environ.get("SMS_TEST_ACCOUNTS", "")
+    out = {}
+    for part in raw.split(","):
+        if ":" not in part:
+            continue
+        phone, code = part.split(":", 1)
+        phone = "".join(c for c in phone if c.isdigit())
+        code = code.strip()
+        if len(phone) >= 10 and len(code) >= 4:
+            out[phone] = code
+    return out
+
+
+TEST_ACCOUNTS = _load_test_accounts()
 
 
 def is_test_phone(digits: str) -> bool:

@@ -829,12 +829,11 @@ def _handle(event: dict, context) -> dict:
                     conn.close()
                     return err("Неверный пароль")
             else:
-                # Старый пользователь без пароля (например из SMS-эпохи) —
-                # задаём пароль при первом входе.
-                cur.execute(
-                    f"UPDATE {SCHEMA}.users SET password_hash = %s WHERE id = %s",
-                    (_hash_password(password), user_id_db)
-                )
+                # Аккаунт без пароля (старый SMS-вход, бот, служебный) — пароль
+                # по номеру не назначаем: иначе любой, кто знает номер, займёт
+                # аккаунт. Владелец восстанавливает доступ через «Забыли пароль?».
+                conn.close()
+                return err("Для этого аккаунта пароль ещё не задан. Нажмите «Забыли пароль?», чтобы восстановить доступ.", 403)
             # Забаненного не пускаем внутрь — показываем причину
             cur.execute(
                 f"SELECT banned_until, banned_reason FROM {SCHEMA}.users WHERE id = %s",
