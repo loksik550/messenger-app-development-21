@@ -9,6 +9,10 @@ function extFrom(url: string, mime: string) {
   if (mime.includes("webp")) return "webp";
   if (mime.includes("mp4")) return "mp4";
   if (mime.includes("webm")) return "webm";
+  if (mime.includes("ogg")) return "ogg";
+  if (mime.includes("mpeg")) return "mp3";
+  if (mime.includes("audio/mp4")) return "m4a";
+  if (mime.includes("pdf")) return "pdf";
   return "jpg";
 }
 
@@ -33,7 +37,7 @@ async function fetchBlob(url: string): Promise<Blob> {
 export type SaveResult = "saved" | "shared" | "downloaded";
 
 /** Сохраняет фото/видео из чата на устройство. */
-export async function saveMedia(url: string, kind: "image" | "video" = "image"): Promise<SaveResult> {
+export async function saveMedia(url: string, kind: "image" | "video" | "audio" | "file" = "image"): Promise<SaveResult> {
   const blob = await fetchBlob(url);
   const ext = extFrom(url, blob.type);
   const d = new Date();
@@ -43,7 +47,7 @@ export async function saveMedia(url: string, kind: "image" | "video" = "image"):
 
   if (Capacitor.isNativePlatform()) {
     const data = await blobToBase64(blob);
-    const folder = kind === "video" ? "Movies/Nova" : "Pictures/Nova";
+    const folder = kind === "video" ? "Movies/Nova" : kind === "audio" ? "Music/Nova" : kind === "file" ? "Download/Nova" : "Pictures/Nova";
     try {
       await Filesystem.writeFile({ path: `${folder}/${name}`, data, directory: Directory.ExternalStorage, recursive: true });
       return "saved";
@@ -59,7 +63,7 @@ export async function saveMedia(url: string, kind: "image" | "video" = "image"):
     }
   }
 
-  const file = new File([blob], name, { type: blob.type || (kind === "video" ? "video/mp4" : "image/jpeg") });
+  const file = new File([blob], name, { type: blob.type || (kind === "video" ? "video/mp4" : kind === "audio" ? "audio/webm" : "image/jpeg") });
   const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
   const isMobile = window.matchMedia?.("(pointer: coarse)").matches;
   if (isMobile && nav.canShare?.({ files: [file] }) && navigator.share) {

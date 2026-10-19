@@ -1,7 +1,10 @@
+import { lazy, Suspense, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { native } from "@/lib/native";
 import { type User, type IconName } from "@/lib/api";
 import { useT } from "@/hooks/useT";
+
+const MyStickersPanel = lazy(() => import("@/components/messenger/MyStickersPanel"));
 
 export interface ProfileMenuActions {
   onSettings: () => void;
@@ -37,9 +40,15 @@ export function ProfileMenu({
   onOpenVerification, onOpenPromo, onOpenCalls, onOpenFavorites, onOpenInvite,
 }: Props) {
   const { t: tr } = useT();
+  const [showMyStickers, setShowMyStickers] = useState(false);
 
   return (
     <>
+    {showMyStickers && (
+      <Suspense fallback={null}>
+        <MyStickersPanel currentUser={currentUser} onClose={() => setShowMyStickers(false)} />
+      </Suspense>
+    )}
     <div className="grid grid-cols-3 gap-2 px-4 mb-4">
       {[
         { label: tr("profile.contacts"), value: String(contactsCount), icon: "Users" },
@@ -158,6 +167,7 @@ export function ProfileMenu({
         ...(onOpenProgress ? [{ icon: "Trophy", label: tr("nav.progress"), sub: `${currentUser.level ? `Уровень ${currentUser.level} · ${currentUser.xp || 0} XP` : "Уровни, бейджи, топ"}`, action: onOpenProgress }] : []),
         ...(onOpenCalls ? [{ icon: "Phone", label: "Звонки", sub: "Входящие, исходящие, пропущенные", action: onOpenCalls }] : []),
         ...(onOpenFavorites ? [{ icon: "Bookmark", label: "Избранное", sub: "Заметки, фото, видео и файлы для себя", action: onOpenFavorites }] : []),
+        { icon: "Sticker", label: "Мои стикеры", sub: "Созданные из фото: эмодзи и удаление", action: () => setShowMyStickers(true) },
         ...(onOpenSavedNotes ? [{ icon: "NotebookPen", label: "Заметки", sub: "Заметки, сохранёнки, идеи", action: onOpenSavedNotes }] : []),
         ...(onOpenPayments ? [{ icon: "ReceiptText", label: "Счета и платежи", sub: "Выставляй и оплачивай", action: onOpenPayments }] : []),
         ...(onOpenPromo ? [{ icon: "Gift", label: "Промокоды и бонусы", sub: "Premium бесплатно и приглашения", action: onOpenPromo }] : []),

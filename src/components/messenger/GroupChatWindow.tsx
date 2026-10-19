@@ -6,9 +6,9 @@ import { api, type User, type Group, type GroupMessage, type GroupMember } from 
 import VideoCircleRecorder from "@/components/messenger/VideoCircleRecorder";
 import GroupProfilePanel from "@/components/messenger/GroupProfilePanel";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
-import GroupContextMenu from "@/components/messenger/GroupContextMenu";
 import { MediaActionsContext, type MediaMessageActions } from "@/components/messenger/MediaActionsContext";
 import SelectionBar from "@/components/messenger/SelectionBar";
+import MessageActionSheet from "@/components/messenger/MessageActionSheet";
 import ForwardGroupDialog from "@/components/messenger/ForwardGroupDialog";
 import GroupChatHeader from "@/components/messenger/group-chat/GroupChatHeader";
 import GroupChatMessages from "@/components/messenger/group-chat/GroupChatMessages";
@@ -340,7 +340,6 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         isAdminHere={isAdminHere}
         scrollRef={scrollRef}
         endRef={endRef}
-        holdTimer={holdTimer}
         onUnpin={unpinMessage}
         onOpenContext={setCtxMenu}
         selectedIds={selectedIds}
@@ -351,21 +350,29 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
       />
 
       {/* Context menu */}
-      {ctxMenu && (
-        <GroupContextMenu
-          ctxMenu={ctxMenu}
-          messages={messages}
-          canModerate={isAdminHere}
-          isPinned={pinned?.id === ctxMenu.msgId}
-          onClose={() => setCtxMenu(null)}
-          onReact={reactToMessage}
-          onReply={(id) => { const m = messages.find(m => m.id === id); if (m) { setReplyTo(m); setEditing(null); } setCtxMenu(null); }}
-          onForward={forwardMessage}
-          onEdit={startEdit}
-          onPin={(id) => { if (pinned?.id === id) unpinMessage(); else pinMessage(id); }}
-          onDelete={deleteMessage}
-        />
-      )}
+      {ctxMenu && (() => {
+        const m = messages.find(x => x.id === ctxMenu.msgId);
+        if (!m) return null;
+        return (
+          <MessageActionSheet
+            msg={m}
+            actions={{
+              canDelete: m.out || isAdminHere,
+              canPin: isAdminHere,
+              isPinned: pinned?.id === m.id,
+              canEdit: m.out && !m.media_type && !!m.text,
+              onReact: (e) => reactToMessage(m.id, e),
+              onReply: () => { setReplyTo(m); setEditing(null); setCtxMenu(null); },
+              onEdit: () => startEdit(m.id),
+              onPin: () => { if (pinned?.id === m.id) { setCtxMenu(null); unpinMessage(); } else pinMessage(m.id); },
+              onDelete: () => deleteMessage(m.id),
+              onSelect: () => { setCtxMenu(null); setSelectedIds(new Set([m.id])); },
+              onForward: () => forwardMessage(m.id),
+              onClose: () => setCtxMenu(null),
+            }}
+          />
+        );
+      })()}
 
       {/* Forward dialog */}
       {forwardMsg && (

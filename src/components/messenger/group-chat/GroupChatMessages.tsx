@@ -1,5 +1,6 @@
-import type { RefObject, MutableRefObject } from "react";
+import type { RefObject } from "react";
 import Icon from "@/components/ui/icon";
+import { useHoldDelegate } from "@/hooks/useHoldDelegate";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import { MediaMessage } from "@/components/messenger/ChatMediaMessage";
 import { LinkifiedText } from "@/components/messenger/LinkifiedText";
@@ -14,7 +15,6 @@ interface Props {
   isAdminHere: boolean;
   scrollRef: RefObject<HTMLDivElement>;
   endRef: RefObject<HTMLDivElement>;
-  holdTimer: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   onUnpin: () => void;
   onOpenContext: (ctx: { msgId: number; out: boolean }) => void;
   selectedIds?: Set<number> | null;
@@ -33,7 +33,6 @@ export default function GroupChatMessages({
   isAdminHere,
   scrollRef,
   endRef,
-  holdTimer,
   onUnpin,
   onOpenContext,
   selectedIds,
@@ -42,6 +41,7 @@ export default function GroupChatMessages({
   onRetry,
   onDiscard,
 }: Props) {
+  const hold = useHoldDelegate((id, out) => onOpenContext({ msgId: id, out }), !selectedIds);
   return (
     <>
       {/* Pinned message */}
@@ -64,7 +64,7 @@ export default function GroupChatMessages({
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-1 relative">
+      <div {...hold} ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-1 relative">
         {groupedMessages.map(({ date, msgs }) => (
           <div key={date}>
             <div className="flex justify-center my-3">
@@ -80,9 +80,9 @@ export default function GroupChatMessages({
                   key={msg.id}
                   id={`gmsg-${msg.id}`}
                   className={`relative flex items-end gap-2 mb-0.5 rounded-xl transition-colors ${msg.out ? "flex-row-reverse" : "flex-row"} ${selecting ? "pl-9" : ""} ${isSel ? "bg-violet-500/15" : ""}`}
-                  onContextMenu={e => { e.preventDefault(); if (msg.id > 0 && !selecting) onOpenContext({ msgId: msg.id, out: msg.out }); }}
-                  onMouseDown={() => { if (msg.id > 0 && !selecting) holdTimer.current = setTimeout(() => onOpenContext({ msgId: msg.id, out: msg.out }), 500); }}
-                  onMouseUp={() => { if (holdTimer.current) clearTimeout(holdTimer.current); }}
+                  data-hold-id={msg.id}
+                  data-hold-out={msg.out ? "1" : "0"}
+                  style={{ WebkitTouchCallout: "none" }}
                 >
                   {selecting && msg.id > 0 && (
                     <button

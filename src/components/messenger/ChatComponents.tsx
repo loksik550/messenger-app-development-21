@@ -1,7 +1,7 @@
 import Icon from "@/components/ui/icon";
 import { useState, useRef, useEffect } from "react";
 import { api, type Chat, type Message, type User } from "@/lib/api";
-import { ChatHeader, ContextMenu, ChatInput } from "@/components/messenger/ChatWindowParts";
+import { ChatHeader, ChatInput } from "@/components/messenger/ChatWindowParts";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import StickerPicker from "@/components/messenger/StickerPicker";
 import PartnerProfilePanel from "@/components/messenger/PartnerProfilePanel";
@@ -22,6 +22,7 @@ import {
 import { ChatModals } from "@/components/messenger/ChatModals";
 import { MediaActionsContext, type MediaMessageActions } from "@/components/messenger/MediaActionsContext";
 import SelectionBar from "@/components/messenger/SelectionBar";
+import MessageActionSheet from "@/components/messenger/MessageActionSheet";
 
 // Re-export atoms so existing imports from ChatComponents still work
 export { Avatar, TypingIndicator, ChatList } from "@/components/messenger/ChatAtoms";
@@ -144,7 +145,7 @@ export function ChatWindow({
 
   const {
     highlightId, favToast,
-    deleteMessage, startHold, cancelHold, addReaction,
+    startHold, cancelHold, addReaction,
     handleReply, handleEdit, handleForward, handlePinToggle, scrollToMessage, handleFavorite,
   } = useMessageActions({
     chat, currentUser, messages, setMessages, setLastSince, setConfirm, setCtxMenu, setShowReactionPicker,
@@ -264,21 +265,37 @@ export function ChatWindow({
         />
       )}
 
-      {ctxMenu && (
-        <ContextMenu
-          ctxMenu={ctxMenu}
-          messages={messages}
-          onClose={() => { setCtxMenu(null); setShowReactionPicker(null); }}
-          onReact={addReaction}
-          onDelete={deleteMessage}
-          onReply={handleReply}
-          onForward={handleForward}
-          onEdit={handleEdit}
-          onPin={handlePinToggle}
-          isPinned={pinnedMsg?.id === ctxMenu.msgId}
-          onFavorite={chat.saved ? undefined : handleFavorite}
-        />
-      )}
+      {ctxMenu && (() => {
+        const m = messages.find(x => x.id === ctxMenu.msgId);
+        if (!m) return null;
+        const close = () => { setCtxMenu(null); setShowReactionPicker(null); };
+        const canEdit = m.out && (!m.media_type || m.media_type === "image") && !!m.text && !/^(📷|🎥|🎵|📎)/.test(m.text) && m.kind !== "sticker";
+        return (
+          <MessageActionSheet
+            msg={m}
+            actions={{
+              canDelete: m.out,
+              canPin: true,
+              isPinned: pinnedMsg?.id === m.id,
+              canEdit,
+              onReact: (e) => addReaction(m.id, e),
+              onReply: () => handleReply(m.id),
+              onEdit: () => handleEdit(m.id),
+              onPin: () => handlePinToggle(m.id),
+              onDelete: async () => {
+                close();
+                setMessages(prev => prev.filter(x => x.id !== m.id));
+                const r = await api("delete_message", { message_id: m.id }, currentUser.id).catch(() => ({ error: "net" }));
+                if (r?.error) setLastSince(0);
+              },
+              onSelect: () => { close(); setSelectedIds(new Set([m.id])); },
+              onForward: () => handleForward(m.id),
+              onFavorite: chat.saved ? undefined : () => handleFavorite(m.id),
+              onClose: close,
+            }}
+          />
+        );
+      })()}
 
       {favToast && (
         <div className="fixed left-1/2 -translate-x-1/2 bottom-28 z-[210] px-4 py-2 rounded-full glass-strong text-sm flex items-center gap-2 animate-fade-in pointer-events-none">

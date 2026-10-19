@@ -11,9 +11,9 @@ const DRAFT_KEY = "nova_auth_draft";
 // Черновик формы живёт вне компонента: если экран пересоздастся
 // (свернули приложение, сменилась ориентация, проверка тех. работ),
 // введённые номер, пароль и имя не пропадут.
-const memDraft: { step?: Step; phone?: string; password?: string; name?: string } = {};
+const memDraft: { step?: Step; phone?: string; password?: string; name?: string; resetName?: string; resetPassword?: string } = {};
 
-function loadDraft(): { step?: Step; phone?: string; name?: string } {
+function loadDraft(): { step?: Step; phone?: string; name?: string; resetName?: string } {
   try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "{}"); } catch { return {}; }
 }
 
@@ -22,11 +22,13 @@ function initialStep(): Step {
   if (memDraft.step && memDraft.step !== "waiting") return memDraft.step;
   const d = loadDraft();
   if (d.step === "name" || d.step === "password") return "password";
+  if (d.step === "reset") return "reset";
   return "phone";
 }
 
 function clearAuthDraft() {
   delete memDraft.step; delete memDraft.phone; delete memDraft.password; delete memDraft.name;
+  delete memDraft.resetName; delete memDraft.resetPassword;
   try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
 }
 
@@ -41,16 +43,17 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
   const [password, setPassword] = useState(() => memDraft.password ?? "");
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState(() => memDraft.name ?? loadDraft().name ?? "");
-  const [resetName, setResetName] = useState("");
-  const [resetPassword, setResetPassword] = useState("");
+  const [resetName, setResetName] = useState(() => memDraft.resetName ?? loadDraft().resetName ?? "");
+  const [resetPassword, setResetPassword] = useState(() => memDraft.resetPassword ?? "");
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     memDraft.step = step; memDraft.phone = phone; memDraft.password = password; memDraft.name = name;
-    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ step, phone, name })); } catch { /* ignore */ }
-  }, [step, phone, password, name]);
+    memDraft.resetName = resetName; memDraft.resetPassword = resetPassword;
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ step, phone, name, resetName })); } catch { /* ignore */ }
+  }, [step, phone, password, name, resetName, resetPassword]);
 
   const keepVisible = (e: React.FocusEvent<HTMLInputElement>) => {
     const el = e.currentTarget;
@@ -131,6 +134,7 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
   };
 
   const handleResetSubmit = async () => {
+    if (loading) return;
     const digits = phone.replace(/\D/g, "");
     if (resetName.trim().length < 2) { setErrorMsg("Укажите имя аккаунта"); triggerShake(); return; }
     if (resetPassword.length < 6) { setErrorMsg("Новый пароль не короче 6 символов"); triggerShake(); return; }
@@ -142,6 +146,7 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
         const t: ResetTicket = { request_id: data.request_id, poll_key: data.poll_key, route: data.route };
         saveResetTicket(t);
         setTicket(t);
+        setResetPassword("");
         setStep("waiting");
       } else {
         setErrorMsg(data.error || "Не удалось восстановить доступ");
@@ -285,7 +290,7 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
             </button>
             <button
               type="button"
-              onClick={() => { setStep("reset"); setErrorMsg(""); setResetName(""); setResetPassword(""); }}
+              onClick={() => { setStep("reset"); setErrorMsg(""); }}
               className="w-full text-center text-sm text-violet-400 hover:text-violet-300 transition-colors py-1"
             >
               Забыли пароль?
@@ -295,9 +300,9 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
 
         {/* Reset password step */}
         {step === "reset" && (
-          <div className="animate-fade-in space-y-4">
+          <form onSubmit={submit(handleResetSubmit)} noValidate autoComplete="off" className="animate-fade-in space-y-4">
             <div>
-              <button onClick={() => { setStep("password"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
+              <button type="button" onClick={() => { setStep("password"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
                 <Icon name="ChevronLeft" size={16} /> Назад
               </button>
               <h2 className="text-xl font-bold mb-1">Восстановление доступа</h2>
@@ -306,9 +311,17 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
             <div className={`flex items-center gap-3 glass rounded-2xl px-4 py-4 border ${shake ? "border-red-500/50" : "border-white/0 focus-within:border-violet-500/40"} transition-colors`}>
               <Icon name="User" size={18} className="text-muted-foreground" />
               <input
-                autoFocus
                 value={resetName}
-                onChange={e => setResetName(e.target.value)}
+                onChange={e => { setResetName(e.target.value); if (errorMsg) setErrorMsg(""); }}
+                onFocus={keepVisible}
+                name="nova-reset-name"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="words"
+                spellCheck={false}
+                enterKeyHint="next"
+                maxLength={64}
+                data-lpignore="true"
                 placeholder="Имя аккаунта"
                 className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
               />
@@ -317,8 +330,13 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
               <Icon name="Lock" size={18} className="text-muted-foreground" />
               <input
                 value={resetPassword}
-                onChange={e => setResetPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleResetSubmit()}
+                onChange={e => { setResetPassword(e.target.value); if (errorMsg) setErrorMsg(""); }}
+                onFocus={keepVisible}
+                autoComplete="new-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="go"
                 placeholder="Новый пароль (от 6 символов)"
                 className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
                 type={showPassword ? "text" : "password"}
@@ -329,7 +347,8 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
             </div>
             {errorMsg && <p className="text-center text-sm text-red-400 animate-fade-in">{errorMsg}</p>}
             <button
-              onClick={handleResetSubmit}
+              type="submit"
+              {...noBlur}
               disabled={loading}
               className="w-full py-4 grad-primary rounded-2xl text-white font-bold text-base glow-primary hover:opacity-90 transition-opacity disabled:opacity-70 flex items-center justify-center gap-2"
             >
@@ -339,7 +358,7 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
                 <>Запросить смену пароля <Icon name="KeyRound" size={18} /></>
               )}
             </button>
-          </div>
+          </form>
         )}
 
         {step === "waiting" && ticket && (

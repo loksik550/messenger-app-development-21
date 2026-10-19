@@ -381,6 +381,31 @@
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Мои стикеры без входа",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "stickers_personal_list"
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Удаление стикера с поддельным ключом",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "1",
+        "X-Auth-Token": "1.fake"
+      },
+      "body": {
+        "action": "stickers_personal_delete",
+        "sticker_id": 1
+      },
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }

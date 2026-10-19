@@ -12,6 +12,7 @@ import ExpiringIndicator from "@/components/messenger/ExpiringIndicator";
 import BotInlineButtons, { type InlineButton } from "@/components/messenger/BotInlineButtons";
 import { wallpaperById, wallpaperClassById } from "@/components/messenger/WallpaperPicker";
 import { isMediaPlaceholder } from "@/components/messenger/chatConstants";
+import { useHoldDelegate } from "@/hooks/useHoldDelegate";
 
 interface CtxMenuState { msgId: number; out: boolean }
 
@@ -30,8 +31,8 @@ export interface MessageListProps {
   onBackgroundClick: () => void;
   onReply: (id: number) => void;
   onScrollToMessage: (id: number) => void;
-  onStartHold: (id: number, out: boolean) => void;
-  onCancelHold: () => void;
+  onStartHold?: (id: number, out: boolean) => void;
+  onCancelHold?: () => void;
   onAddReaction: (id: number, emoji: string) => void;
   onCtxMenu: (s: CtxMenuState) => void;
   onHeartBurst: (id: number | null) => void;
@@ -49,12 +50,14 @@ export default function MessageList({
   messages, filteredMessages, chat, currentUser, wallpaper, isTyping,
   highlightId, heartBurst, messagesScrollRef, endRef,
   onScroll, onBackgroundClick, onReply, onScrollToMessage,
-  onStartHold, onCancelHold, onAddReaction, onCtxMenu, onHeartBurst, onOpenFundraiser,
+  onAddReaction, onCtxMenu, onHeartBurst, onOpenFundraiser,
   onRetry, onDiscard, hasMore, loadingOlder, onLoadOlder, selectedIds, onToggleSelect,
 }: MessageListProps) {
   const selecting = !!selectedIds;
+  const hold = useHoldDelegate((id, out) => onCtxMenu({ msgId: id, out }), !selecting);
   return (
     <div
+      {...hold}
       ref={messagesScrollRef}
       onScroll={onScroll}
       className={`flex-1 overflow-y-auto px-3 py-2 space-y-1 relative ${wallpaperClassById(wallpaper)}`}
@@ -103,7 +106,7 @@ export default function MessageList({
           // Спецсообщения: подарок ⚡ / сбор / стикер
           if (msg.kind === "gift") {
             nodes.push(
-              <div key={msg.id} id={`msg-${msg.id}`}
+              <div key={msg.id} id={`msg-${msg.id}`} data-hold-id={msg.id} data-hold-out={msg.out ? "1" : "0"}
                 className={`flex ${msg.out ? "justify-end" : "justify-start"} my-2 animate-fade-in px-2`}>
                 <GiftBubble msg={msg} />
               </div>
@@ -112,7 +115,7 @@ export default function MessageList({
           }
           if (msg.kind === "fundraiser") {
             nodes.push(
-              <div key={msg.id} id={`msg-${msg.id}`}
+              <div key={msg.id} id={`msg-${msg.id}`} data-hold-id={msg.id} data-hold-out={msg.out ? "1" : "0"}
                 className={`flex ${msg.out ? "justify-end" : "justify-start"} my-2 animate-fade-in px-2`}>
                 <FundraiserBubble msg={msg} onOpen={(id) => onOpenFundraiser?.(id)} />
               </div>
@@ -121,7 +124,7 @@ export default function MessageList({
           }
           if (msg.kind === "sticker") {
             nodes.push(
-              <div key={msg.id} id={`msg-${msg.id}`}
+              <div key={msg.id} id={`msg-${msg.id}`} data-hold-id={msg.id} data-hold-out={msg.out ? "1" : "0"}
                 className={`flex ${msg.out ? "justify-end" : "justify-start"} my-1.5 animate-fade-in px-2`}>
                 <StickerBubble msg={msg} />
               </div>
@@ -182,10 +185,9 @@ export default function MessageList({
                         ? "msg-bubble-out text-white rounded-tr-md"
                         : "msg-bubble-in text-foreground rounded-tl-md"}`
                   } ${highlightId === msg.id ? (isCircle ? "scale-[1.02]" : "ring-2 ring-violet-400") : ""}`}
-                  onMouseDown={() => onStartHold(msg.id, msg.out)}
-                  onMouseUp={onCancelHold}
-                  onMouseLeave={onCancelHold}
-                  onContextMenu={e => { e.preventDefault(); onCtxMenu({ msgId: msg.id, out: msg.out }); }}
+                  data-hold-id={msg.id}
+                  data-hold-out={msg.out ? "1" : "0"}
+                  style={{ WebkitTouchCallout: "none" }}
                   onDoubleClick={(e) => {
                     e.preventDefault();
                     try { (navigator as Navigator & { vibrate?: (p: number) => boolean }).vibrate?.(15); } catch { /* ignore */ }

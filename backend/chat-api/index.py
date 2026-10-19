@@ -5568,6 +5568,53 @@ def _handle(event: dict, context) -> dict:
         conn.close()
         return ok({"pack_id": pid, "sticker_id": sid, "image_url": img})
 
+    # ── stickers_personal_list / update / delete (мои стикеры из фото) ─────
+    if action in ("stickers_personal_list", "stickers_personal_update", "stickers_personal_delete"):
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        uid = int(user_id)
+        if action == "stickers_personal_list":
+            cur.execute(
+                f"""SELECT i.id, i.emoji, i.image_url, i.position
+                    FROM {SCHEMA}.sticker_items i
+                    JOIN {SCHEMA}.sticker_packs p ON p.id = i.pack_id
+                    WHERE p.author_id = %s AND p.is_personal = TRUE
+                    ORDER BY i.position ASC, i.id ASC""",
+                (uid,)
+            )
+            items = [{"id": r[0], "emoji": r[1] or "", "image_url": r[2], "position": int(r[3])} for r in cur.fetchall()]
+            conn.close()
+            return ok({"items": items})
+        try:
+            sid = int(body.get("sticker_id") or 0)
+        except (TypeError, ValueError):
+            sid = 0
+        cur.execute(
+            f"""SELECT i.id, i.pack_id FROM {SCHEMA}.sticker_items i
+                JOIN {SCHEMA}.sticker_packs p ON p.id = i.pack_id
+                WHERE i.id = %s AND p.author_id = %s AND p.is_personal = TRUE""",
+            (sid, uid)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close(); return err("Стикер не найден", 404)
+        if action == "stickers_personal_update":
+            emoji = (body.get("emoji") or "").strip()
+            if not emoji or len(emoji) > 8:
+                conn.close(); return err("Выберите один эмодзи")
+            cur.execute(f"UPDATE {SCHEMA}.sticker_items SET emoji = %s WHERE id = %s", (emoji, sid))
+            conn.close()
+            return ok({"ok": True, "emoji": emoji})
+        cur.execute(f"DELETE FROM {SCHEMA}.sticker_items WHERE id = %s", (sid,))
+        cur.execute(
+            f"""UPDATE {SCHEMA}.sticker_packs SET cover_url =
+                  (SELECT image_url FROM {SCHEMA}.sticker_items WHERE pack_id = %s ORDER BY position, id LIMIT 1)
+                WHERE id = %s""",
+            (int(row[1]), int(row[1]))
+        )
+        conn.close()
+        return ok({"ok": True})
+
     # ── stickers_my (мои паки) ────────────────────────────────────────────────
     if action == "stickers_my":
         if not user_id:
