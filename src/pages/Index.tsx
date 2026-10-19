@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { toast } from "@/hooks/use-toast";
 import ConnectionBanner from "@/components/messenger/ConnectionBanner";
 import { getDraft, useDraftsVersion } from "@/lib/drafts";
 import { track, setTrackUser } from "@/lib/track";
@@ -205,11 +206,12 @@ export default function Index() {
     return () => clearInterval(t);
   }, [currentUser]);
 
-  const handleStartChat = async (partnerId: number) => {
+  const handleStartChat = async (partnerId: number, known?: Pick<User, "name" | "avatar_url">) => {
     if (!currentUser) return;
     const data = await api("get_or_create_chat", { partner_id: partnerId }, currentUser.id);
+    if (data.error) { toast({ title: data.error }); return; }
     if (data.chat_id) {
-      const partner = users.find(u => u.id === partnerId);
+      const partner = users.find(u => u.id === partnerId) || known;
       const chat: Chat = {
         id: data.chat_id,
         name: partner?.name || "Пользователь",

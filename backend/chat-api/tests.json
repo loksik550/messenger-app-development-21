@@ -406,6 +406,17 @@
       },
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Поиск по ID без входа отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "get_users",
+        "query": "12345678"
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

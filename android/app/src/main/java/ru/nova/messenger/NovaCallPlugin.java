@@ -1,5 +1,9 @@
 package ru.nova.messenger;
 
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.Settings;
+
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -26,5 +30,18 @@ public class NovaCallPlugin extends Plugin {
             CallActionReceiver.dismissAllCalls(getContext());
             call.resolve();
         });
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(Uri.fromParts("package", getContext().getPackageName(), null));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("open_failed");
+        }
     }
 }

@@ -1039,6 +1039,20 @@ def _handle(event: dict, context) -> dict:
         query = (body.get("query") or params.get("query") or "").strip()[:64]
         exclude_id = int(user_id)
         qdigits = "".join(c for c in query if c.isdigit())
+        id_query = query.lower().replace("id", "").replace("#", "").replace(" ", "").replace("-", "")
+        if len(id_query) == 8 and id_query.isdigit():
+            cur.execute(
+                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color, nova_id FROM {SCHEMA}.users "
+                f"WHERE nova_id = %s AND id != %s AND COALESCE(is_bot, FALSE) = FALSE AND phone NOT LIKE 'deleted_%%' LIMIT 1",
+                (id_query, exclude_id)
+            )
+            rows = cur.fetchall()
+            conn.close()
+            return ok({"users": [{
+                "id": r[0], "name": r[1], "phone": None, "avatar_url": r[3],
+                "last_seen": 0 if r[5] else r[4],
+                "emoji_status": r[6], "name_color": r[7], "nova_id": r[8], "by_id": True,
+            } for r in rows]})
         if qdigits and len(qdigits) >= 10 and len(qdigits) == len(query.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")):
             if len(qdigits) == 10:
                 qdigits = "7" + qdigits
@@ -3268,14 +3282,17 @@ def _handle(event: dict, context) -> dict:
             missed_caller_name = None
             miss_chat_id = 0
             caller_id = 0
+            fromto = None
             if not answered and not already:
-                # Определяем from/to и chat
                 cur.execute(
                     f"""SELECT MIN(from_user_id), MIN(to_user_id) FROM {SCHEMA}.call_signals
                         WHERE call_id = %s AND type = 'offer'""",
                     (call_id,)
                 )
                 fromto = cur.fetchone()
+            # Звонок так и не начался (у звонящего не было доступа к микрофону) —
+            # получателю ничего не показываем.
+            if not answered and not already and fromto and fromto[0]:
                 caller_id = (fromto and fromto[0]) or int(user_id)
                 callee_id = (fromto and fromto[1]) or int(to_user_id)
                 u1, u2 = sorted([int(caller_id), int(callee_id)])

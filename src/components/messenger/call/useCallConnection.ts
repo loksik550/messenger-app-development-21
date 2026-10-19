@@ -22,6 +22,7 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
   const [netPoor, setNetPoor] = useState(false);
   const [duration, setDuration] = useState(0);
   const [mediaError, setMediaError] = useState<string>("");
+  const [mediaDenied, setMediaDenied] = useState(false);
   const callAvatar = getCallAvatar(remoteUserId);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -142,8 +143,11 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     } catch (e) {
       const err = e as DOMException;
       logDiag("mic_fail", { name: (e as DOMException).name });
+      setMediaDenied(err.name === "NotAllowedError" || err.name === "SecurityError");
+      stopDialTone();
       setMediaError(
-        err.name === "NotAllowedError" ? "Доступ к микрофону/камере запрещён. Разреши в настройках."
+        err.name === "NotAllowedError" || err.name === "SecurityError"
+          ? (isVideo ? "Нет доступа к микрофону и камере. Звонок не отправлен — разрешите доступ и повторите." : "Нет доступа к микрофону. Звонок не отправлен — разрешите доступ и повторите.")
         : err.name === "NotFoundError" ? "Микрофон/камера не найдены"
         : `Не удалось получить доступ: ${err.message || err.name}`
       );
@@ -154,6 +158,8 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
       return null;
     }
     localStreamRef.current = stream;
+    setMediaError("");
+    setMediaDenied(false);
     if (isVideo && localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
       localVideoRef.current.muted = true;
@@ -360,7 +366,7 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     if (startedRef.current) return;
     startedRef.current = true;
     const pc = await createPC();
-    if (!pc) return;
+    if (!pc) { startedRef.current = false; return; }
     startPolling();
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -375,7 +381,7 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     nativeCall.started();
     setState("calling");
     const pc = await createPC();
-    if (!pc) return;
+    if (!pc) { startedRef.current = false; return; }
     startPolling();
     // Жест пользователя — разблокируем воспроизведение
     unlockAudioContext();
@@ -430,8 +436,16 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAccept]);
 
+  const retryMedia = () => {
+    if (endedRef.current) return;
+    if (isIncoming) { acceptCall(); return; }
+    startDialTone();
+    startOutgoing();
+  };
+
   return {
     isVideo, state, muted, setMuted, videoOff, setVideoOff, speaker, setSpeaker, netPoor, duration, mediaError, callAvatar,
+    mediaDenied, retryMedia,
     localStreamRef, remoteAudioRef, localVideoRef, remoteVideoRef,
     endCall, acceptCall, bindRemoteMedia,
   };

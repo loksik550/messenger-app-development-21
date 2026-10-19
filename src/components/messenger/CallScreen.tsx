@@ -18,6 +18,7 @@ interface CallScreenProps {
 export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIncoming, autoAccept, onClose }: CallScreenProps) {
   const {
     isVideo, state, muted, setMuted, videoOff, setVideoOff, speaker, setSpeaker, netPoor, duration, mediaError, callAvatar,
+    mediaDenied, retryMedia,
     localStreamRef, remoteAudioRef, localVideoRef, remoteVideoRef,
     endCall, acceptCall, bindRemoteMedia,
   } = useCallConnection({ currentUser, remoteUserId, callId, isIncoming, autoAccept, onClose });
@@ -38,6 +39,8 @@ export function CallScreen({ currentUser, remoteUserId, remoteName, callId, isIn
         state={state}
         videoOff={videoOff}
         mediaError={mediaError}
+        mediaDenied={mediaDenied}
+        onRetryMedia={retryMedia}
         remoteAudioRef={remoteAudioRef}
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
