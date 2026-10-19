@@ -94,3 +94,69 @@ export async function shareMedia(url: string) {
   }
   await navigator.clipboard?.writeText(url);
 }
+function loadImg(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Не удалось открыть фото"));
+    img.src = url;
+  });
+}
+
+async function blobToImage(blob: Blob): Promise<HTMLImageElement> {
+  const obj = URL.createObjectURL(blob);
+  try { return await loadImg(obj); } finally { setTimeout(() => URL.revokeObjectURL(obj), 1000); }
+}
+
+function canvasBlob(c: HTMLCanvasElement, type: string, q?: number): Promise<Blob> {
+  return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error("Ошибка обработки"))), type, q));
+}
+
+export type CopyResult = "image" | "link";
+
+/** Копирует фото в буфер обмена (если устройство не умеет — копирует ссылку). */
+export async function copyImage(url: string): Promise<CopyResult> {
+  try {
+    const CI = (window as unknown as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+    if (CI && navigator.clipboard?.write) {
+      const png = (async () => {
+        const img = await blobToImage(await fetchBlob(url));
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext("2d")!.drawImage(img, 0, 0);
+        return canvasBlob(c, "image/png");
+      })();
+      await navigator.clipboard.write([new CI({ "image/png": png })]);
+      return "image";
+    }
+  } catch { /* fallback ниже */ }
+  const { native } = await import("@/lib/native");
+  const ok = await native.clipboard.write(url);
+  if (!ok) throw new Error("Не удалось скопировать");
+  return "link";
+}
+
+/** Делает из фото квадратный стикер 512×512 с прозрачными скруглёнными краями. */
+export async function makeStickerFile(url: string): Promise<File> {
+  const img = await blobToImage(await fetchBlob(url));
+  const S = 512;
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const sx = (img.naturalWidth - side) / 2;
+  const sy = (img.naturalHeight - side) / 2;
+  const c = document.createElement("canvas");
+  c.width = S; c.height = S;
+  const ctx = c.getContext("2d")!;
+  const r = 72;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.arcTo(S, 0, S, S, r);
+  ctx.arcTo(S, S, 0, S, r);
+  ctx.arcTo(0, S, 0, 0, r);
+  ctx.arcTo(0, 0, S, 0, r);
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, S, S);
+  const blob = await canvasBlob(c, "image/png");
+  return new File([blob], `sticker_${Date.now()}.png`, { type: "image/png" });
+}

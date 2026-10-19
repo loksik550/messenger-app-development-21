@@ -345,6 +345,17 @@
         "approve": true
       },
       "expectedStatus": 403
+    },
+    {
+      "name": "Personal sticker requires user",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "stickers_add_personal",
+        "image_url": "https://example.com/a.png"
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

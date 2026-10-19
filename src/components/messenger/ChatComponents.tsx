@@ -20,6 +20,8 @@ import {
   ConfirmDialog, EncryptionBadge, UnknownContactHint, PinnedBar, ScrollDownButton,
 } from "@/components/messenger/ChatOverlays";
 import { ChatModals } from "@/components/messenger/ChatModals";
+import { MediaActionsContext, type MediaMessageActions } from "@/components/messenger/MediaActionsContext";
+import SelectionBar from "@/components/messenger/SelectionBar";
 
 // Re-export atoms so existing imports from ChatComponents still work
 export { Avatar, TypingIndicator, ChatList } from "@/components/messenger/ChatAtoms";
@@ -81,6 +83,7 @@ export function ChatWindow({
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ msgId: number; out: boolean } | null>(null);
   const [heartBurst, setHeartBurst] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -148,12 +151,49 @@ export function ChatWindow({
     setReplyTo, setEditing, setInput, setForwardMsgId, pinnedMsg, setPinnedMsg,
   });
 
+  const mediaActions: MediaMessageActions = {
+    canDelete: (id) => !!messages.find(m => m.id === id)?.out,
+    canPin: true,
+    isPinned: (id) => pinnedMsg?.id === id,
+    showInChat: (id) => setTimeout(() => scrollToMessage(id), 250),
+    reply: (id) => handleReply(id),
+    togglePin: (id) => handlePinToggle(id),
+    deleteNow: async (id) => {
+      const r = await api("delete_message", { message_id: id }, currentUser.id);
+      if (r?.error) throw new Error(r.error);
+      setMessages(prev => prev.filter(m => m.id !== id));
+    },
+    react: (id, emoji) => addReaction(id, emoji),
+    select: (id) => setSelectedIds(new Set([id])),
+  };
+
+  const toggleSelect = (id: number) => setSelectedIds(prev => {
+    const next = new Set(prev || []);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next.size ? next : null;
+  });
+
   const filteredMessages = searchQuery.trim()
     ? messages.filter(m => (m.text || "").toLowerCase().includes(searchQuery.trim().toLowerCase()))
     : messages;
 
   return (
+    <MediaActionsContext.Provider value={mediaActions}>
     <div className="flex flex-col h-full animate-fade-in relative">
+      {selectedIds && (
+        <SelectionBar
+          selected={selectedIds}
+          messages={messages}
+          source="chat"
+          canDelete={(id) => !!messages.find(m => m.id === id)?.out}
+          onDelete={async (ids) => {
+            setMessages(prev => prev.filter(m => !ids.includes(m.id)));
+            const res = await Promise.all(ids.map(id => api("delete_message", { message_id: id }, currentUser.id).catch(() => ({ error: "x" }))));
+            if (res.some(r => r?.error)) setLastSince(0);
+          }}
+          onClear={() => setSelectedIds(null)}
+        />
+      )}
       <ChatHeader
         chat={chat}
         onBack={onBack}
@@ -271,10 +311,12 @@ export function ChatWindow({
         onBackgroundClick={() => { setShowMenu(false); setShowReactionPicker(null); }}
         onReply={handleReply}
         onScrollToMessage={scrollToMessage}
-        onStartHold={startHold}
+        onStartHold={(id, out) => { if (!selectedIds) startHold(id, out); }}
         onCancelHold={cancelHold}
         onAddReaction={addReaction}
-        onCtxMenu={(c) => { if (c.msgId > 0) setCtxMenu(c); }}
+        onCtxMenu={(c) => { if (c.msgId > 0 && !selectedIds) setCtxMenu(c); }}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
         onHeartBurst={(id) => setHeartBurst(id)}
         onOpenFundraiser={onOpenFundraiser}
         onRetry={(id) => { setMessages(prev => prev.map(m => m.id === id ? { ...m, failed: false, pending: true } : m)); retryOutbox(id); }}
@@ -373,6 +415,7 @@ export function ChatWindow({
         sendFile={sendFile}
       />
     </div>
+    </MediaActionsContext.Provider>
   );
 }
 

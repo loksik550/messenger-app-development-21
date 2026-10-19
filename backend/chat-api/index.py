@@ -5141,7 +5141,7 @@ def _handle(event: dict, context) -> dict:
     if action == "stickers_list":
         cur.execute(
             f"""SELECT id, author_id, title, description, cover_url, price, is_premium, total_sales, created_at
-                FROM {SCHEMA}.sticker_packs WHERE is_published=TRUE ORDER BY total_sales DESC, id DESC LIMIT 100"""
+                FROM {SCHEMA}.sticker_packs WHERE is_published=TRUE AND is_personal=FALSE ORDER BY total_sales DESC, id DESC LIMIT 100"""
         )
         packs = [
             {"id": r[0], "author_id": r[1], "title": r[2], "description": r[3] or "",
@@ -5197,7 +5197,7 @@ def _handle(event: dict, context) -> dict:
             pid = int(body.get("pack_id") or 0)
         except (TypeError, ValueError):
             conn.close(); return err("Неверный id")
-        cur.execute(f"SELECT author_id, title, price, is_premium FROM {SCHEMA}.sticker_packs WHERE id=%s AND is_published=TRUE", (pid,))
+        cur.execute(f"SELECT author_id, title, price, is_premium FROM {SCHEMA}.sticker_packs WHERE id=%s AND is_published=TRUE AND is_personal=FALSE", (pid,))
         r = cur.fetchone()
         if not r:
             conn.close(); return err("Пак не найден", 404)
@@ -5412,6 +5412,47 @@ def _handle(event: dict, context) -> dict:
         cur.execute(f"UPDATE {SCHEMA}.sticker_packs SET is_published=FALSE WHERE id=%s", (pid,))
         conn.close()
         return ok({"deleted": pid})
+
+    # ── stickers_add_personal (создать свой стикер из фото) ─────────────────
+    if action == "stickers_add_personal":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        img = (body.get("image_url") or "").strip()
+        if not img.startswith("https://"):
+            conn.close(); return err("Нужна ссылка на картинку")
+        emoji = (body.get("emoji") or "🙂")[:8]
+        uid = int(user_id)
+        now = int(time.time())
+        cur.execute(
+            f"SELECT id FROM {SCHEMA}.sticker_packs WHERE author_id=%s AND is_personal=TRUE ORDER BY id LIMIT 1",
+            (uid,)
+        )
+        row = cur.fetchone()
+        if row:
+            pid = row[0]
+        else:
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.sticker_packs (author_id, title, description, cover_url, price, is_premium, is_published, is_personal, created_at)
+                    VALUES (%s,'Мои стикеры','',%s,0,FALSE,TRUE,TRUE,%s) RETURNING id""",
+                (uid, img, now)
+            )
+            pid = cur.fetchone()[0]
+        cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.sticker_items WHERE pack_id=%s", (pid,))
+        cnt = int(cur.fetchone()[0])
+        if cnt >= 120:
+            conn.close(); return err("В наборе уже 120 стикеров")
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.sticker_items (pack_id, emoji, image_url, position) VALUES (%s,%s,%s,%s) RETURNING id",
+            (pid, emoji, img, cnt)
+        )
+        sid = cur.fetchone()[0]
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.user_sticker_packs (user_id, pack_id, acquired_at, acquired_via)
+                VALUES (%s,%s,%s,'personal') ON CONFLICT (user_id, pack_id) DO NOTHING""",
+            (uid, pid, now)
+        )
+        conn.close()
+        return ok({"pack_id": pid, "sticker_id": sid, "image_url": img})
 
     # ── stickers_my (мои паки) ────────────────────────────────────────────────
     if action == "stickers_my":

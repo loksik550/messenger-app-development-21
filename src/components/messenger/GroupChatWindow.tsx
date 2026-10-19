@@ -7,6 +7,8 @@ import VideoCircleRecorder from "@/components/messenger/VideoCircleRecorder";
 import GroupProfilePanel from "@/components/messenger/GroupProfilePanel";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
 import GroupContextMenu from "@/components/messenger/GroupContextMenu";
+import { MediaActionsContext, type MediaMessageActions } from "@/components/messenger/MediaActionsContext";
+import SelectionBar from "@/components/messenger/SelectionBar";
 import ForwardGroupDialog from "@/components/messenger/ForwardGroupDialog";
 import GroupChatHeader from "@/components/messenger/group-chat/GroupChatHeader";
 import GroupChatMessages from "@/components/messenger/group-chat/GroupChatMessages";
@@ -38,6 +40,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   useDraft(`g${group.id}`, input, setInput, !!editing);
   const [forwardMsg, setForwardMsg] = useState<GroupMessage | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ msgId: number; out: boolean } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number> | null>(null);
   const [pinned, setPinned] = useState<{ id: number; text: string; sender_name: string; media_type?: string } | null>(null);
   const [onlyAdminsPost, setOnlyAdminsPost] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -257,6 +260,36 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const { recording, recordSec, sendFile, sendFiles, uploading, uploadLabel, startRecording, stopRecording, cancelRecording } =
     useGroupMedia({ group, currentUser, setMessages, setLastSince, setShowAttach, toTime });
 
+  const scrollToGroupMsg = (id: number) => {
+    const el = document.getElementById(`gmsg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-violet-400");
+    setTimeout(() => el.classList.remove("ring-2", "ring-violet-400"), 1500);
+  };
+
+  const mediaActions: MediaMessageActions = {
+    canDelete: (id) => !!messages.find(m => m.id === id)?.out || isAdminHere,
+    canPin: isAdminHere,
+    isPinned: (id) => pinned?.id === id,
+    showInChat: (id) => setTimeout(() => scrollToGroupMsg(id), 250),
+    reply: (id) => { const m = messages.find(x => x.id === id); if (m) { setReplyTo(m); setEditing(null); } },
+    togglePin: async (id) => { if (pinned?.id === id) await unpinMessage(); else await pinMessage(id); },
+    deleteNow: async (id) => {
+      const r = await api("delete_group_message", { message_id: id }, currentUser.id);
+      if (r?.error) throw new Error(r.error);
+      setMessages(prev => prev.filter(m => m.id !== id));
+    },
+    react: (id, emoji) => reactToMessage(id, emoji),
+    select: (id) => setSelectedIds(new Set([id])),
+  };
+
+  const toggleSelect = (id: number) => setSelectedIds(prev => {
+    const next = new Set(prev || []);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next.size ? next : null;
+  });
+
   // Группировка по датам
   const groupedMessages = messages.reduce<{ date: string; msgs: GroupMessage[] }[]>((acc, msg) => {
     const d = new Date(msg.created_at * 1000).toLocaleDateString("ru", { day: "numeric", month: "long" });
@@ -267,7 +300,21 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   }, []);
 
   return (
+    <MediaActionsContext.Provider value={mediaActions}>
     <div className="flex flex-col h-full min-h-0 relative">
+      {selectedIds && (
+        <SelectionBar
+          selected={selectedIds}
+          messages={messages}
+          source="group"
+          canDelete={(id) => !!messages.find(m => m.id === id)?.out || isAdminHere}
+          onDelete={async (ids) => {
+            setMessages(prev => prev.filter(m => !ids.includes(m.id)));
+            await Promise.all(ids.map(id => api("delete_group_message", { message_id: id }, currentUser.id).catch(() => null)));
+          }}
+          onClear={() => setSelectedIds(null)}
+        />
+      )}
       <GroupChatHeader
         group={group}
         membersLength={members.length}
@@ -296,6 +343,8 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         holdTimer={holdTimer}
         onUnpin={unpinMessage}
         onOpenContext={setCtxMenu}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
         onReact={reactToMessage}
         onRetry={(id) => { setMessages(prev => prev.map(m => m.id === id ? { ...m, failed: false, pending: true } : m)); retryOutbox(id); }}
         onDiscard={(id) => { removeFromOutbox(id); setMessages(prev => prev.filter(m => m.id !== id)); }}
@@ -391,6 +440,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         />
       )}
     </div>
+    </MediaActionsContext.Provider>
   );
 }
 

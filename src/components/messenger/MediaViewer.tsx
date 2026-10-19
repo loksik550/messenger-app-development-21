@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Icon from "@/components/ui/icon";
-import { saveMedia, shareMedia } from "@/lib/saveMedia";
+import { saveMedia, shareMedia, copyImage, makeStickerFile } from "@/lib/saveMedia";
 import ForwardMediaDialog from "@/components/messenger/ForwardMediaDialog";
+import { useMediaActions } from "@/components/messenger/MediaActionsContext";
+import { MenuList, PhotoLongPressMenu, type PhotoMenuItem } from "@/components/messenger/MediaPhotoMenu";
+import { api, uploadMedia, type User } from "@/lib/api";
+import native from "@/lib/native";
 
 export interface MediaItem {
   url: string;
   type: "image" | "video";
+  msgId?: number;
+}
+
+function storedUser(): User | null {
+  try { return JSON.parse(localStorage.getItem("nova_user") || "null"); } catch { return null; }
 }
 
 export function MediaViewer({
@@ -38,6 +47,14 @@ export function MediaViewer({
   const [forwardOpen, setForwardOpen] = useState(false);
   const canForward = !!localStorage.getItem("nova_user");
   const [saving, setSaving] = useState(false);
+  const actions = useMediaActions();
+  const msgId = current?.msgId && current.msgId > 0 ? current.msgId : null;
+  const act = actions && msgId ? actions : null;
+  const [pressMenu, setPressMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
 
@@ -67,6 +84,106 @@ export function MediaViewer({
     try { await shareMedia(current.url); } catch { showToast("Не удалось поделиться"); }
   };
 
+  const closeMenus = () => { setMenuOpen(false); setPressMenu(false); };
+
+  const leaveThen = (fn: () => void) => {
+    closeMenus();
+    setClosing(true);
+    setTimeout(() => { onClose(); fn(); }, 200);
+  };
+
+  const copy = async () => {
+    closeMenus();
+    try {
+      const r = await copyImage(current.url);
+      showToast(r === "image" ? "Фото скопировано" : "Ссылка на фото скопирована");
+    } catch { showToast("Не удалось скопировать"); }
+  };
+
+  const createSticker = async () => {
+    closeMenus();
+    const me = storedUser();
+    if (!me) { showToast("Войдите в аккаунт"); return; }
+    if (busy) return;
+    setBusy(true);
+    showToast("Создаём стикер…");
+    try {
+      const file = await makeStickerFile(current.url);
+      const up = await uploadMedia(file, me.id);
+      const r = await api("stickers_add_personal", { image_url: up.url }, me.id);
+      if (r?.error) throw new Error(r.error);
+      native.haptic.light();
+      showToast("Стикер добавлен в «Мои стикеры»");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Не удалось создать стикер");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doDelete = async () => {
+    if (!act || !msgId) return;
+    setConfirmDelete(false);
+    closeMenus();
+    try {
+      await act.deleteNow(msgId);
+      if (items.length <= 1) close();
+      else { showToast("Удалено"); close(); }
+    } catch { showToast("Не удалось удалить"); }
+  };
+
+  const doReact = async (emoji: string) => {
+    if (!act || !msgId) return;
+    setPressMenu(false);
+    native.haptic.light();
+    try { await act.react(msgId, emoji); showToast(`Реакция ${emoji}`); } catch { showToast("Не удалось поставить реакцию"); }
+  };
+
+  const doPin = async () => {
+    if (!act || !msgId) return;
+    const wasPinned = act.isPinned(msgId);
+    closeMenus();
+    try { await act.togglePin(msgId); showToast(wasPinned ? "Откреплено" : "Закреплено"); } catch { showToast("Не удалось закрепить"); }
+  };
+
+  const isVideo = current?.type === "video";
+  const saveLabel = isVideo ? "Сохранить видео" : "Сохранить фото";
+
+  const topMenu: PhotoMenuItem[] = [
+    ...(act ? [{ key: "show", icon: "MessageSquareShare", label: "Показать в чате", onClick: () => leaveThen(() => act.showInChat(msgId!)) }] : []),
+    ...(!isVideo ? [{ key: "sticker", icon: "Sticker", label: "Создать стикер", onClick: createSticker }] : []),
+    { key: "save", icon: "CircleArrowDown", label: saveLabel, onClick: download },
+    ...(act ? [{ key: "reply", icon: "Reply", label: "Ответить", onClick: () => leaveThen(() => act.reply(msgId!)) }] : []),
+    ...(!act ? [{ key: "share", icon: "Share2", label: "Поделиться", onClick: share }] : []),
+    ...(act && act.canDelete(msgId!) ? [{ key: "del", icon: "Trash2", label: "Удалить", danger: true, onClick: () => { closeMenus(); setConfirmDelete(true); } }] : []),
+  ];
+
+  const pressItems: PhotoMenuItem[] = [
+    ...(act ? [{ key: "reply", icon: "Reply", label: "Ответить", onClick: () => leaveThen(() => act.reply(msgId!)) }] : []),
+    ...(!isVideo ? [{ key: "copy", icon: "Copy", label: "Скопировать", onClick: copy }] : []),
+    { key: "save", icon: "Download", label: saveLabel, onClick: download },
+    ...(act && act.canPin ? [{ key: "pin", icon: act.isPinned(msgId!) ? "PinOff" : "Pin", label: act.isPinned(msgId!) ? "Открепить" : "Закрепить", onClick: doPin }] : []),
+    ...(canForward ? [{ key: "fwd", icon: "Forward", label: "Переслать", onClick: () => { closeMenus(); setForwardOpen(true); } }] : []),
+    ...(act && act.canDelete(msgId!) ? [{ key: "del", icon: "Trash2", label: "Удалить", danger: true, onClick: () => { closeMenus(); setConfirmDelete(true); } }] : []),
+    ...(act ? [{ key: "select", icon: "CircleCheck", label: "Выбрать", divider: true, onClick: () => leaveThen(() => act.select(msgId!)) }] : []),
+  ];
+
+  const cancelPress = () => {
+    if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = null; }
+    pressStart.current = null;
+  };
+
+  const openPressMenu = () => {
+    cancelPress();
+    dragStartY.current = null;
+    dragStartX.current = null;
+    dragAxis.current = null;
+    setDragY(0);
+    setMenuOpen(false);
+    native.haptic.medium();
+    setPressMenu(true);
+  };
+
   const close = useCallback(() => {
     setClosing(true);
     setTimeout(onClose, 200);
@@ -89,7 +206,12 @@ export function MediaViewer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (forwardOpen) return;
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        if (confirmDelete) { setConfirmDelete(false); return; }
+        if (pressMenu || menuOpen) { setPressMenu(false); setMenuOpen(false); return; }
+        close();
+      }
+      if (pressMenu || confirmDelete) return;
       if (e.key === "ArrowRight") { setIndex(i => Math.min(items.length - 1, i + 1)); bumpChrome(); }
       if (e.key === "ArrowLeft") { setIndex(i => Math.max(0, i - 1)); bumpChrome(); }
     };
@@ -101,17 +223,25 @@ export function MediaViewer({
       document.body.style.overflow = prevOverflow;
       if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
     };
-  }, [close, items.length, bumpChrome, forwardOpen]);
+  }, [close, items.length, bumpChrome, forwardOpen, pressMenu, menuOpen, confirmDelete]);
 
   // Сброс zoom при смене медиа
   useEffect(() => {
     setScale(1); setPan({ x: 0, y: 0 }); setMenuOpen(false);
   }, [index]);
 
-  useEffect(() => () => { if (toastTimer.current) window.clearTimeout(toastTimer.current); }, []);
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+  }, []);
 
   const onTouchStart = (e: React.TouchEvent) => {
     bumpChrome();
+    cancelPress();
+    if (e.touches.length === 1 && scale === 1) {
+      pressStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      pressTimer.current = window.setTimeout(openPressMenu, 450);
+    }
     if (e.touches.length === 2 && current.type === "image") {
       const [a, b] = [e.touches[0], e.touches[1]];
       const dx = a.clientX - b.clientX;
@@ -128,6 +258,11 @@ export function MediaViewer({
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
+    if (pressStart.current && e.touches[0]) {
+      const mx = Math.abs(e.touches[0].clientX - pressStart.current.x);
+      const my = Math.abs(e.touches[0].clientY - pressStart.current.y);
+      if (mx > 10 || my > 10 || e.touches.length > 1) cancelPress();
+    }
     if (e.touches.length === 2 && pinchStart.current) {
       const [a, b] = [e.touches[0], e.touches[1]];
       const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -149,6 +284,7 @@ export function MediaViewer({
   };
 
   const onTouchEnd = (e: React.TouchEvent) => {
+    cancelPress();
     if (pinchStart.current && e.touches.length < 2) {
       pinchStart.current = null;
     }
@@ -171,6 +307,7 @@ export function MediaViewer({
   };
 
   const onContentClick = () => {
+    if (pressMenu) return;
     if (menuOpen) { setMenuOpen(false); return; }
     setShowChrome(s => !s);
     if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
@@ -199,10 +336,10 @@ export function MediaViewer({
         className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-3 bg-gradient-to-b from-black/70 to-transparent"
         style={{
           paddingTop: "calc(0.75rem + env(safe-area-inset-top))",
-          opacity: showChrome && !closing ? 1 : 0,
-          transform: showChrome && !closing ? "translateY(0)" : "translateY(-8px)",
+          opacity: (showChrome || menuOpen) && !closing ? 1 : 0,
+          transform: (showChrome || menuOpen) && !closing ? "translateY(0)" : "translateY(-8px)",
           transition: "opacity 200ms ease-out, transform 200ms ease-out",
-          pointerEvents: showChrome && !closing ? "auto" : "none",
+          pointerEvents: (showChrome || menuOpen) && !closing ? "auto" : "none",
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -227,22 +364,7 @@ export function MediaViewer({
             <Icon name="EllipsisVertical" fallback="MoreVertical" size={20} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-12 min-w-[220px] rounded-xl bg-[#1f1d2b]/95 backdrop-blur-xl border border-white/10 shadow-2xl py-1.5 animate-scale-in origin-top-right">
-              <button onClick={download} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/10 active:bg-white/15 text-left">
-                <Icon name="Download" size={18} className="text-white/80" />
-                Сохранить в галерею
-              </button>
-              {canForward && (
-                <button onClick={() => { setMenuOpen(false); setForwardOpen(true); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/10 active:bg-white/15 text-left">
-                  <Icon name="Forward" size={18} className="text-white/80" />
-                  Переслать
-                </button>
-              )}
-              <button onClick={share} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/10 active:bg-white/15 text-left">
-                <Icon name="Share2" size={18} className="text-white/80" />
-                Поделиться
-              </button>
-            </div>
+            <MenuList items={topMenu} className="absolute right-0 top-12 min-w-[250px] animate-scale-in origin-top-right" />
           )}
         </div>
       </div>
@@ -285,6 +407,34 @@ export function MediaViewer({
         </button>
       </div>}
 
+      {pressMenu && (
+        <PhotoLongPressMenu
+          url={current.url}
+          isVideo={isVideo}
+          items={pressItems}
+          onReact={act ? doReact : undefined}
+          onClose={() => setPressMenu(false)}
+        />
+      )}
+
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-[45] bg-black/60 flex items-center justify-center p-6 animate-fade-in"
+          onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
+          <div className="w-full max-w-xs rounded-3xl bg-[#232733] border border-white/10 p-5 text-white animate-scale-in" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-semibold mb-1">{isVideo ? "Удалить видео?" : "Удалить фото?"}</h3>
+            <p className="text-sm text-white/60 mb-5">Сообщение исчезнет у всех участников чата.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="px-4 py-2 rounded-xl text-sm text-white/80 hover:bg-white/10">Отмена</button>
+              <button onClick={doDelete} className="px-4 py-2 rounded-xl text-sm font-semibold bg-red-500/20 text-red-400 hover:bg-red-500/30">Удалить</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {forwardOpen && (
         <ForwardMediaDialog
           url={current.url}
@@ -325,8 +475,10 @@ export function MediaViewer({
             alt=""
             draggable={false}
             onDoubleClick={onDoubleClickImg}
+            onContextMenu={(e) => { e.preventDefault(); openPressMenu(); }}
             className="w-screen h-[100dvh] object-contain select-none"
             style={{
+              WebkitTouchCallout: "none",
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
               transition: pinchStart.current ? "none" : "transform 150ms ease-out",
             }}

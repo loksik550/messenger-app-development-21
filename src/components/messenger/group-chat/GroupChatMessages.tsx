@@ -17,6 +17,8 @@ interface Props {
   holdTimer: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   onUnpin: () => void;
   onOpenContext: (ctx: { msgId: number; out: boolean }) => void;
+  selectedIds?: Set<number> | null;
+  onToggleSelect?: (id: number) => void;
   onReact: (msgId: number, emoji: string) => void;
   onRetry?: (msgId: number) => void;
   onDiscard?: (msgId: number) => void;
@@ -34,6 +36,8 @@ export default function GroupChatMessages({
   holdTimer,
   onUnpin,
   onOpenContext,
+  selectedIds,
+  onToggleSelect,
   onReact,
   onRetry,
   onDiscard,
@@ -69,14 +73,29 @@ export default function GroupChatMessages({
             {msgs.map((msg, i) => {
               const showAvatar = !msg.out && (i === 0 || msgs[i - 1]?.sender_id !== msg.sender_id);
               const showName = !msg.out && showAvatar;
+              const selecting = !!selectedIds;
+              const isSel = selecting && selectedIds!.has(msg.id);
               return (
                 <div
                   key={msg.id}
-                  className={`flex items-end gap-2 mb-0.5 ${msg.out ? "flex-row-reverse" : "flex-row"}`}
-                  onContextMenu={e => { e.preventDefault(); if (msg.id > 0) onOpenContext({ msgId: msg.id, out: msg.out }); }}
-                  onMouseDown={() => { if (msg.id > 0) holdTimer.current = setTimeout(() => onOpenContext({ msgId: msg.id, out: msg.out }), 500); }}
+                  id={`gmsg-${msg.id}`}
+                  className={`relative flex items-end gap-2 mb-0.5 rounded-xl transition-colors ${msg.out ? "flex-row-reverse" : "flex-row"} ${selecting ? "pl-9" : ""} ${isSel ? "bg-violet-500/15" : ""}`}
+                  onContextMenu={e => { e.preventDefault(); if (msg.id > 0 && !selecting) onOpenContext({ msgId: msg.id, out: msg.out }); }}
+                  onMouseDown={() => { if (msg.id > 0 && !selecting) holdTimer.current = setTimeout(() => onOpenContext({ msgId: msg.id, out: msg.out }), 500); }}
                   onMouseUp={() => { if (holdTimer.current) clearTimeout(holdTimer.current); }}
                 >
+                  {selecting && msg.id > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onToggleSelect?.(msg.id); }}
+                      className="absolute inset-0 z-30 flex items-center pl-1.5"
+                      aria-label={isSel ? "Снять выбор" : "Выбрать"}
+                    >
+                      <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSel ? "bg-violet-500 border-violet-500" : "border-white/50 bg-black/20"}`}>
+                        {isSel && <Icon name="Check" size={14} className="text-white" />}
+                      </span>
+                    </button>
+                  )}
                   {/* Avatar (incoming) */}
                   {!msg.out && (
                     <div className="w-7 flex-shrink-0 self-end mb-1">

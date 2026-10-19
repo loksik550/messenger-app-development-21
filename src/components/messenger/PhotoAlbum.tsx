@@ -14,7 +14,7 @@ function layout(n: number): { cols: number; spans: number[] } {
   return { cols: 3, spans: Array(n).fill(1) };
 }
 
-export default function PhotoAlbum({ urls }: { urls: string[] }) {
+export default function PhotoAlbum({ urls, msgId }: { urls: string[]; msgId?: number }) {
   const [open, setOpen] = useState<number | null>(null);
   const [broken, setBroken] = useState<Set<number>>(new Set());
   const shown = urls.slice(0, MAX_TILES);
@@ -60,7 +60,7 @@ export default function PhotoAlbum({ urls }: { urls: string[] }) {
       </div>
       {open !== null && (
         <MediaViewer
-          items={urls.map((url) => ({ url, type: "image" as const }))}
+          items={urls.map((url) => ({ url, type: "image" as const, msgId }))}
           startIndex={open}
           onClose={() => setOpen(null)}
         />

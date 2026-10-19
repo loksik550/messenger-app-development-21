@@ -3,20 +3,22 @@ import { createPortal } from "react-dom";
 import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 
-type Target = { key: string; kind: "chat" | "group"; id: number; name: string; avatar_url?: string | null; saved?: boolean; channel?: boolean };
+export type ForwardTarget = { key: string; kind: "chat" | "group"; id: number; name: string; avatar_url?: string | null; saved?: boolean; channel?: boolean };
 
 function getCurrentUser(): User | null {
   try { return JSON.parse(localStorage.getItem("nova_user") || "null"); } catch { return null; }
 }
 
-export default function ForwardMediaDialog({ url, type, onClose, onDone }: {
-  url: string;
-  type: "image" | "video";
+export default function ForwardMediaDialog({ url = "", type = "image", title, sendTo, onClose, onDone }: {
+  url?: string;
+  type?: "image" | "video";
+  title?: string;
+  sendTo?: (t: ForwardTarget, me: User) => Promise<void>;
   onClose: () => void;
   onDone: (name: string) => void;
 }) {
   const me = useMemo(getCurrentUser, []);
-  const [targets, setTargets] = useState<Target[] | null>(null);
+  const [targets, setTargets] = useState<ForwardTarget[] | null>(null);
   const [query, setQuery] = useState("");
   const [sendingKey, setSendingKey] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -28,7 +30,7 @@ export default function ForwardMediaDialog({ url, type, onClose, onDone }: {
       api("get_chats", {}, me.id).catch(() => null),
       api("get_groups", {}, me.id).catch(() => null),
     ]).then(([saved, chats, groups]) => {
-      const list: Target[] = [];
+      const list: ForwardTarget[] = [];
       if (saved?.chat_id) list.push({ key: `c${saved.chat_id}`, kind: "chat", id: saved.chat_id, name: "Избранное", saved: true });
       for (const c of chats?.chats || []) {
         if (saved?.chat_id && c.id === saved.chat_id) continue;
@@ -48,12 +50,13 @@ export default function ForwardMediaDialog({ url, type, onClose, onDone }: {
     return (targets || []).filter(t => !q || t.name.toLowerCase().includes(q));
   }, [targets, query]);
 
-  const send = async (t: Target) => {
+  const send = async (t: ForwardTarget) => {
     if (!me || sendingKey) return;
     setSendingKey(t.key);
     setError("");
     const media = { media_type: type, media_url: url, file_name: type === "video" ? "video.mp4" : "photo.jpg" };
     try {
+      if (sendTo) { await sendTo(t, me); onDone(t.name); return; }
       const r = t.kind === "group"
         ? await api("send_group_message", { group_id: t.id, ...media }, me.id)
         : await api("send_message", { chat_id: t.id, ...media }, me.id);
@@ -77,7 +80,7 @@ export default function ForwardMediaDialog({ url, type, onClose, onDone }: {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-          <h3 className="font-semibold">{type === "video" ? "Переслать видео" : "Переслать фото"}</h3>
+          <h3 className="font-semibold">{title || (type === "video" ? "Переслать видео" : "Переслать фото")}</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/8 text-muted-foreground" aria-label="Закрыть">
             <Icon name="X" size={18} />
           </button>

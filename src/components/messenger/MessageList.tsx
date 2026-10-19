@@ -41,6 +41,8 @@ export interface MessageListProps {
   hasMore?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?: () => void;
+  selectedIds?: Set<number> | null;
+  onToggleSelect?: (id: number) => void;
 }
 
 export default function MessageList({
@@ -48,8 +50,9 @@ export default function MessageList({
   highlightId, heartBurst, messagesScrollRef, endRef,
   onScroll, onBackgroundClick, onReply, onScrollToMessage,
   onStartHold, onCancelHold, onAddReaction, onCtxMenu, onHeartBurst, onOpenFundraiser,
-  onRetry, onDiscard, hasMore, loadingOlder, onLoadOlder,
+  onRetry, onDiscard, hasMore, loadingOlder, onLoadOlder, selectedIds, onToggleSelect,
 }: MessageListProps) {
+  const selecting = !!selectedIds;
   return (
     <div
       ref={messagesScrollRef}
@@ -72,7 +75,7 @@ export default function MessageList({
       {(() => {
         const mediaGallery: MediaItem[] = messages
           .filter(m => (m.media_type === "image" || m.media_type === "video") && (m.media_url || m.image_url))
-          .map(m => ({ url: (m.media_url || m.image_url)!, type: m.media_type === "video" ? "video" as const : "image" as const }));
+          .map(m => ({ url: (m.media_url || m.image_url)!, type: m.media_type === "video" ? "video" as const : "image" as const, msgId: m.id }));
 
         let prevDayKey = "";
         const nodes: JSX.Element[] = [];
@@ -151,13 +154,26 @@ export default function MessageList({
           const showText = !!msg.text && !isMediaPlaceholder(msg.text);
           const isCircle = msg.media_type === "video" && (msg.file_name || "").startsWith("circle_") && !showText;
 
+          const isSel = selecting && selectedIds!.has(msg.id);
           nodes.push(
-            <SwipeableMessage key={msg.id} out={msg.out} onReply={() => onReply(msg.id)}>
+            <SwipeableMessage key={msg.id} out={msg.out} onReply={() => { if (!selecting) onReply(msg.id); }}>
               <div
                 id={`msg-${msg.id}`}
-                className={`flex flex-col ${msg.out ? "items-end" : "items-start"} animate-fade-in transition-all ${highlightId === msg.id ? "scale-[1.02]" : ""}`}
+                className={`relative flex flex-col ${msg.out ? "items-end" : "items-start"} animate-fade-in transition-all ${highlightId === msg.id ? "scale-[1.02]" : ""} ${selecting ? "pl-9 rounded-xl" : ""} ${isSel ? "bg-violet-500/15" : ""}`}
                 style={{ animationDelay: `${Math.min(i, 10) * 0.03}s` }}
               >
+                {selecting && msg.id > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onToggleSelect?.(msg.id); }}
+                    className="absolute inset-0 z-30 flex items-center pl-1.5"
+                    aria-label={isSel ? "Снять выбор" : "Выбрать"}
+                  >
+                    <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSel ? "bg-violet-500 border-violet-500" : "border-white/50 bg-black/20"}`}>
+                      {isSel && <Icon name="Check" size={14} className="text-white" />}
+                    </span>
+                  </button>
+                )}
                 <div
                   className={`relative w-fit select-none transition-shadow ${
                     isCircle

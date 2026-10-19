@@ -31,7 +31,7 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
   };
 
   const album = mediaType === "image" ? getAlbum(msg.payload) : null;
-  if (album) return <PhotoAlbum urls={album.map((a) => a.url)} />;
+  if (album) return <PhotoAlbum urls={album.map((a) => a.url)} msgId={msg.id} />;
 
   if (mediaType === "image") {
     if (imgError) return (
@@ -61,7 +61,7 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
         />
         {viewerOpen && (
           <MediaViewer
-            items={gallery.length > 0 ? gallery : [{ url: mediaUrl, type: "image" }]}
+            items={gallery.length > 0 ? gallery : [{ url: mediaUrl, type: "image", msgId: msg.id }]}
             startIndex={gallery.length > 0 ? galleryIndex : 0}
             onClose={() => setViewerOpen(false)}
           />
@@ -102,7 +102,7 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
         </div>
         {viewerOpen && (
           <MediaViewer
-            items={gallery.length > 0 ? gallery : [{ url: mediaUrl, type: "video" }]}
+            items={gallery.length > 0 ? gallery : [{ url: mediaUrl, type: "video", msgId: msg.id }]}
             startIndex={gallery.length > 0 ? galleryIndex : 0}
             onClose={() => setViewerOpen(false)}
           />

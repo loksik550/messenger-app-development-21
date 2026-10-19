@@ -16,7 +16,7 @@ function toBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null
 
 /** Уменьшает фото до разумного размера перед отправкой (как в Telegram). */
 export async function compressImage(file: File, maxSide = 2048, targetBytes = 1.5 * 1024 * 1024): Promise<File> {
-  if (!file.type.startsWith("image/") || SKIP.test(file.type)) return file;
+  if (!file.type.startsWith("image/") || SKIP.test(file.type) || file.name.startsWith("sticker_")) return file;
   if (file.size <= 400 * 1024 && /jpe?g|webp/i.test(file.type)) return file;
   try {
     const img = await loadImage(file);
