@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import uuid
 import base64
 import boto3
 import psycopg2
@@ -88,7 +89,7 @@ def handler(event: dict, context) -> dict:
 
     folder = media_type  # image / video / audio / file
     ts = int(time.time())
-    key = f"chat/{user_id}/{folder}/{ts}.{ext}"
+    key = f"chat/{user_id}/{folder}/{ts}-{uuid.uuid4().hex[:12]}.{ext}"
 
     s3 = boto3.client("s3",
         endpoint_url="https://bucket.poehali.dev",

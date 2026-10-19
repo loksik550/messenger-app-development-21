@@ -48,7 +48,10 @@ export interface AlbumPayload {
 
 export function getAlbum(payload: unknown): { url: string }[] | null {
   const a = (payload as AlbumPayload | null | undefined)?.album;
-  return Array.isArray(a) && a.length > 1 ? a.filter(x => x && typeof x.url === "string") : null;
+  if (!Array.isArray(a)) return null;
+  const seen = new Set<string>();
+  const uniq = a.filter(x => x && typeof x.url === "string" && !seen.has(x.url) && !!seen.add(x.url));
+  return uniq.length > 1 ? uniq : null;
 }
 
 export interface Message {
