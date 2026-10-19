@@ -1,23 +1,64 @@
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
 import ResetWaiting, { loadResetTicket, saveResetTicket, type ResetTicket } from "./ResetWaiting";
 import VkLoginButton from "@/components/messenger/VkLoginButton";
 
-export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) => void }) {
+type Step = "phone" | "password" | "name" | "reset" | "waiting";
+const DRAFT_KEY = "nova_auth_draft";
+
+// Черновик формы живёт вне компонента: если экран пересоздастся
+// (свернули приложение, сменилась ориентация, проверка тех. работ),
+// введённые номер, пароль и имя не пропадут.
+const memDraft: { step?: Step; phone?: string; password?: string; name?: string } = {};
+
+function loadDraft(): { step?: Step; phone?: string; name?: string } {
+  try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "{}"); } catch { return {}; }
+}
+
+function initialStep(): Step {
+  if (loadResetTicket()) return "waiting";
+  if (memDraft.step && memDraft.step !== "waiting") return memDraft.step;
+  const d = loadDraft();
+  if (d.step === "name" || d.step === "password") return "password";
+  return "phone";
+}
+
+function clearAuthDraft() {
+  delete memDraft.step; delete memDraft.phone; delete memDraft.password; delete memDraft.name;
+  try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+}
+
+const noBlur = { onPointerDown: (e: React.PointerEvent) => e.preventDefault(), onMouseDown: (e: React.MouseEvent) => e.preventDefault() };
+
+export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?: string) => void }) {
+  const onDone = (user: User, token?: string) => { clearAuthDraft(); onDoneRaw(user, token); };
   const [ticket, setTicket] = useState<ResetTicket | null>(() => loadResetTicket());
-  const [step, setStep] = useState<"phone" | "password" | "name" | "reset" | "waiting">(() => (loadResetTicket() ? "waiting" : "phone"));
+  const [step, setStep] = useState<Step>(initialStep);
   const [showPolicy, setShowPolicy] = useState(false);
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState(() => memDraft.phone ?? loadDraft().phone ?? "");
+  const [password, setPassword] = useState(() => memDraft.password ?? "");
   const [showPassword, setShowPassword] = useState(false);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => memDraft.name ?? loadDraft().name ?? "");
   const [resetName, setResetName] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    memDraft.step = step; memDraft.phone = phone; memDraft.password = password; memDraft.name = name;
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ step, phone, name })); } catch { /* ignore */ }
+  }, [step, phone, password, name]);
+
+  const keepVisible = (e: React.FocusEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    setTimeout(() => { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch { /* ignore */ } }, 300);
+  };
+
+  const submit = (fn: () => void) => (e: FormEvent) => { e.preventDefault(); fn(); };
+
   const formatPhone = (val: string) => {
     const digits = val.replace(/\D/g, "").slice(0, 11);
     if (!digits) return "";
@@ -41,6 +82,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
   };
 
   const handlePasswordSubmit = async () => {
+    if (loading) return;
     const digits = phone.replace(/\D/g, "");
     if (password.length < 4) { setErrorMsg("Пароль не короче 4 символов"); triggerShake(); return; }
     setLoading(true);
@@ -65,12 +107,15 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
   };
 
   const handleNameSubmit = async () => {
-    if (name.trim().length < 2) { triggerShake(); return; }
+    if (loading) return;
+    const clean = name.replace(/\s+/g, " ").trim().slice(0, 64);
+    if (clean.length < 2) { setErrorMsg("Имя — от 2 символов"); triggerShake(); return; }
+    if (password.length < 4) { setErrorMsg("Введите пароль ещё раз"); setStep("password"); return; }
     setLoading(true);
     setErrorMsg("");
     try {
       const digits = phone.replace(/\D/g, "");
-      const data = await api("auth_password", { phone: digits, password, name: name.trim() });
+      const data = await api("auth_password", { phone: digits, password, name: clean });
       if (data.user) {
         onDone(data.user, data.token);
       } else {
@@ -117,14 +162,16 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
   }
 
   return (
-    <div className="h-screen flex items-center justify-center relative overflow-hidden">
+    <div className="h-[100dvh] relative overflow-hidden">
+      <div className="absolute inset-0 overflow-y-auto overscroll-contain">
+      <div className="min-h-full flex items-center justify-center py-6" style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top))", paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
       <div className="mesh-bg" />
       <div className="absolute top-[-10%] right-[-10%] w-80 h-80 rounded-full bg-violet-600/20 blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 rounded-full bg-sky-600/15 blur-3xl pointer-events-none" />
 
       <div className={`w-full max-w-sm mx-4 animate-scale-in ${shake ? "animate-[shake_0.4s_ease]" : ""}`}>
         {/* Logo */}
-        <div className="text-center mb-10">
+        <div className="text-center mb-8">
           <div className="w-20 h-20 grad-primary rounded-3xl flex items-center justify-center mx-auto mb-4 glow-primary animate-float">
             <Icon name="Zap" size={36} className="text-white" />
           </div>
@@ -133,7 +180,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
         </div>
 
         {/* Step indicators */}
-        <div className="flex items-center justify-center gap-2 mb-8">
+        <div className="flex items-center justify-center gap-2 mb-6">
           {(["phone", "password", "name"] as const).map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div className={`h-2 rounded-full transition-all duration-300 ${
@@ -146,7 +193,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
 
         {/* Phone step */}
         {step === "phone" && (
-          <div className="animate-fade-in space-y-4">
+          <form onSubmit={submit(handlePhoneSubmit)} noValidate className="animate-fade-in space-y-4">
             <div>
               <h2 className="text-xl font-bold mb-1">Введите номер телефона</h2>
               <p className="text-sm text-muted-foreground">Ваш уникальный ID в Nova</p>
@@ -157,7 +204,10 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 autoFocus
                 value={phone}
                 onChange={e => setPhone(formatPhone(e.target.value))}
-                onKeyDown={e => e.key === "Enter" && handlePhoneSubmit()}
+                onFocus={keepVisible}
+                inputMode="tel"
+                autoComplete="tel"
+                enterKeyHint="next"
                 placeholder="+7 (___) ___-__-__"
                 className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
                 type="tel"
@@ -165,7 +215,8 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
             </div>
             {errorMsg && <p className="text-center text-sm text-red-400 animate-fade-in">{errorMsg}</p>}
             <button
-              onClick={handlePhoneSubmit}
+              type="submit"
+              {...noBlur}
               disabled={loading}
               className="w-full py-4 grad-primary rounded-2xl text-white font-bold text-base glow-primary hover:opacity-90 transition-opacity disabled:opacity-70 flex items-center justify-center gap-2"
             >
@@ -175,6 +226,10 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 <>Продолжить <Icon name="ArrowRight" size={18} /></>
               )}
             </button>
+          </form>
+        )}
+        {step === "phone" && (
+          <div className="space-y-4 mt-4">
             <VkLoginButton onDone={onDone} />
             <p className="text-center text-xs text-muted-foreground">
               Нажимая «Продолжить», вы соглашаетесь с{" "}
@@ -187,9 +242,9 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
 
         {/* Password step */}
         {step === "password" && (
-          <div className="animate-fade-in space-y-4">
+          <form onSubmit={submit(handlePasswordSubmit)} noValidate className="animate-fade-in space-y-4">
             <div>
-              <button onClick={() => { setStep("phone"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
+              <button type="button" onClick={() => { setStep("phone"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
                 <Icon name="ChevronLeft" size={16} /> Изменить номер
               </button>
               <h2 className="text-xl font-bold mb-1">Введите пароль</h2>
@@ -201,18 +256,24 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 autoFocus
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handlePasswordSubmit()}
+                onFocus={keepVisible}
+                autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="go"
                 placeholder="Пароль"
                 className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
                 type={showPassword ? "text" : "password"}
               />
-              <button onClick={() => setShowPassword(v => !v)} className="text-muted-foreground hover:text-foreground">
+              <button type="button" {...noBlur} onClick={() => setShowPassword(v => !v)} className="text-muted-foreground hover:text-foreground">
                 <Icon name={showPassword ? "EyeOff" : "Eye"} size={18} />
               </button>
             </div>
             {errorMsg && <p className="text-center text-sm text-red-400 animate-fade-in">{errorMsg}</p>}
             <button
-              onClick={handlePasswordSubmit}
+              type="submit"
+              {...noBlur}
               disabled={loading}
               className="w-full py-4 grad-primary rounded-2xl text-white font-bold text-base glow-primary hover:opacity-90 transition-opacity disabled:opacity-70 flex items-center justify-center gap-2"
             >
@@ -223,12 +284,13 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
               )}
             </button>
             <button
+              type="button"
               onClick={() => { setStep("reset"); setErrorMsg(""); setResetName(""); setResetPassword(""); }}
               className="w-full text-center text-sm text-violet-400 hover:text-violet-300 transition-colors py-1"
             >
               Забыли пароль?
             </button>
-          </div>
+          </form>
         )}
 
         {/* Reset password step */}
@@ -261,7 +323,7 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground font-medium"
                 type={showPassword ? "text" : "password"}
               />
-              <button onClick={() => setShowPassword(v => !v)} className="text-muted-foreground hover:text-foreground">
+              <button type="button" {...noBlur} onClick={() => setShowPassword(v => !v)} className="text-muted-foreground hover:text-foreground">
                 <Icon name={showPassword ? "EyeOff" : "Eye"} size={18} />
               </button>
             </div>
@@ -290,9 +352,9 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
 
         {/* Name step */}
         {step === "name" && (
-          <div className="animate-fade-in space-y-4">
+          <form onSubmit={submit(handleNameSubmit)} noValidate autoComplete="off" className="animate-fade-in space-y-4">
             <div>
-              <button onClick={() => { setStep("password"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
+              <button type="button" onClick={() => { setStep("password"); setErrorMsg(""); }} className="flex items-center gap-1 text-violet-400 text-sm mb-3 hover:text-violet-300 transition-colors">
                 <Icon name="ChevronLeft" size={16} /> Назад
               </button>
               <h2 className="text-xl font-bold mb-1">Как вас зовут?</h2>
@@ -305,18 +367,31 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
               <div className={`w-full flex items-center gap-3 glass rounded-2xl px-4 py-4 border ${shake ? "border-red-500/50" : "border-white/0 focus-within:border-violet-500/40"} transition-colors`}>
                 <Icon name="User" size={18} className="text-muted-foreground" />
                 <input
-                  autoFocus
+                  id="nova-reg-name"
+                  name="nova-display-name"
+                  type="text"
                   value={name}
-                  onChange={e => setName(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleNameSubmit()}
+                  onChange={e => { setName(e.target.value); if (errorMsg) setErrorMsg(""); }}
+                  onFocus={keepVisible}
                   placeholder="Ваше имя"
-                  className="flex-1 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground"
+                  maxLength={64}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="words"
+                  spellCheck={false}
+                  inputMode="text"
+                  enterKeyHint="done"
+                  data-lpignore="true"
+                  data-form-type="other"
+                  aria-label="Ваше имя"
+                  className="flex-1 min-w-0 bg-transparent outline-none text-base text-foreground placeholder-muted-foreground"
                 />
               </div>
             </div>
             {errorMsg && <p className="text-center text-sm text-red-400 animate-fade-in">{errorMsg}</p>}
             <button
-              onClick={handleNameSubmit}
+              type="submit"
+              {...noBlur}
               disabled={loading}
               className="w-full py-4 grad-primary rounded-2xl text-white font-bold text-base glow-primary hover:opacity-90 transition-opacity disabled:opacity-70 flex items-center justify-center gap-2"
             >
@@ -332,8 +407,10 @@ export function AuthScreen({ onDone }: { onDone: (user: User, token?: string) =>
                 Политикой конфиденциальности
               </button>
             </p>
-          </div>
+          </form>
         )}
+      </div>
+      </div>
       </div>
 
       <style>{`
