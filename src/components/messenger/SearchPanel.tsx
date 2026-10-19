@@ -10,7 +10,19 @@ export function SearchPanel({ users, currentUser, onStartChat, onBack }: { users
   const { t: tr } = useT();
   const [query, setQuery] = useState("");
   const [bots, setBots] = useState<{ id: number; name: string; username: string; description?: string | null; avatar_url?: string | null }[]>([]);
-  const results = users.filter(u => !query || u.name.toLowerCase().includes(query.toLowerCase()) || u.phone.includes(query));
+  const [found, setFound] = useState<User[] | null>(null);
+  const local = users.filter(u => !query || u.name.toLowerCase().includes(query.toLowerCase()));
+  const results = query.trim() && found ? [...found, ...local.filter(l => !found.some(f => f.id === l.id))] : local;
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setFound(null); return; }
+    let alive = true;
+    const t = setTimeout(async () => {
+      const r = await api("get_users", { query: q }, currentUser.id).catch(() => null);
+      if (alive && r && Array.isArray(r.users)) setFound(r.users);
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [query, currentUser.id]);
   useEffect(() => {
     const q = query.trim().replace(/^@/, "");
     if (q.length < 2) { setBots([]); return; }
@@ -86,7 +98,7 @@ export function SearchPanel({ users, currentUser, onStartChat, onBack }: { users
             <Avatar label={u.name[0]?.toUpperCase() || "?"} id={u.id} online={currentUser.id !== u.id && Date.now() / 1000 - (u.last_seen || 0) < 60} />
             <div className="text-left">
               <div className="font-semibold text-sm">{u.name}</div>
-              <div className="text-xs text-muted-foreground">{u.phone}</div>
+              {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}
             </div>
             <div className="ml-auto">
               <Icon name="MessageCircle" size={18} className="text-violet-400" />

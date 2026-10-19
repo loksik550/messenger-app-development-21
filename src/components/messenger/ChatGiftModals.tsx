@@ -32,7 +32,7 @@ export function GiftSendModal({ currentUser, chatId, onClose, onSent, onUserUpda
     const r = await api("lightning_send_to_chat", { quantity: q, chat_id: chatId, message: msg }, currentUser.id);
     setBusy(false);
     if (r.msg_id) {
-      const userR = await api("get_me", { phone: currentUser.phone });
+      const userR = await api("get_me", {}, currentUser.id);
       if (userR.user) {
         onUserUpdate?.(userR.user);
         localStorage.setItem("nova_user", JSON.stringify(userR.user));

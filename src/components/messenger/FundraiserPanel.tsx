@@ -72,7 +72,7 @@ export default function FundraiserPanel({ currentUser, fundraiserId, mode, onClo
     setBusy(false);
     if (r.collected_amount !== undefined) {
       await reload();
-      const userR = await api("get_me", { phone: currentUser.phone });
+      const userR = await api("get_me", {}, currentUser.id);
       if (userR.user) localStorage.setItem("nova_user", JSON.stringify(userR.user));
     } else {
       setError(r.error || "Ошибка");

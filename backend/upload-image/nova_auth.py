@@ -89,10 +89,7 @@ def check(cur, event: dict, user_id) -> bool:
         return False
     token = get_token(event)
     if not token:
-        if is_strict(cur):
-            return False
-        print(f"[auth] legacy request without token uid={uid}")
-        return True
+        return False
     if not token.startswith(f"{uid}."):
         return False
     sid = current_session_id(cur, event, uid)

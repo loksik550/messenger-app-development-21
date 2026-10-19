@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { devApi, type DevAdmin } from "@/lib/devApi";
+import { devApi, getDevToken, type DevAdmin } from "@/lib/devApi";
 import { UPLOAD_API } from "@/lib/api";
 
 export function TwoFactor() {
@@ -241,7 +241,7 @@ export function MyProfile({ admin, onChanged }: { admin: DevAdmin; onChanged?: (
 
       const res = await fetch(UPLOAD_API, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-User-Id": "0" },
+        headers: { "Content-Type": "application/json", "X-Dev-Token": getDevToken() },
         body: JSON.stringify({
           data: url.split(",")[1],
           mime: "image/jpeg",

@@ -57,7 +57,7 @@ export function onAuthExpired(cb: () => void) {
 
 let expiredFired = false;
 export function reportAuthExpired() {
-  if (!memo || expiredFired) return;
+  if (expiredFired) return;
   expiredFired = true;
   setTimeout(() => { expiredFired = false; }, 3000);
   expiredListeners.forEach((cb) => cb());

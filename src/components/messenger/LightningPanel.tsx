@@ -45,7 +45,7 @@ export default function LightningPanel({ currentUser, onClose, onUserUpdate }: P
     if (typeof r.lightning === "number") {
       setLightning(r.lightning);
       setBalance(r.balance);
-      const userR = await api("get_me", { phone: currentUser.phone });
+      const userR = await api("get_me", {}, currentUser.id);
       if (userR.user) {
         onUserUpdate?.(userR.user);
         localStorage.setItem("nova_user", JSON.stringify(userR.user));

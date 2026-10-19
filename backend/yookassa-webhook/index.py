@@ -99,13 +99,17 @@ def handler(event, context):
         except Exception:
             meta = {}
 
+        if status == 'succeeded' and abs(amount - float(order_amount)) > 0.009:
+            print(f"[webhook] amount mismatch order={order_id} paid={amount} expected={order_amount}")
+            return {'statusCode': 200, 'headers': HEADERS, 'body': json.dumps({'status': 'amount_mismatch'})}
+
         if status == 'succeeded':
-            if current_status != 'paid':
-                cur.execute(
-                    f"UPDATE {S}orders SET status='paid', paid_at=%s, updated_at=%s, "
-                    f"payment_method=%s WHERE id=%s",
-                    (now_iso, now_iso, payment_method or 'card', order_id),
-                )
+            cur.execute(
+                f"UPDATE {S}orders SET status='paid', paid_at=%s, updated_at=%s, "
+                f"payment_method=%s WHERE id=%s AND status <> 'paid' RETURNING id",
+                (now_iso, now_iso, payment_method or 'card', order_id),
+            )
+            if cur.fetchone():
                 amt = float(order_amount)
                 uid = int(nova_user_id) if nova_user_id else None
 

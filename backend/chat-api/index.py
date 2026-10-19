@@ -1018,15 +1018,11 @@ def _handle(event: dict, context) -> dict:
 
     # ── get_me ────────────────────────────────────────────────────────────────
     if action == "get_me":
-        phone = (body.get("phone") or params.get("phone") or "").strip()
-        if not phone:
+        if not user_id:
             conn.close()
-            return err("Укажите phone")
-        cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone = %s", (phone,))
-        rid = cur.fetchone()
-        if rid:
-            _maybe_streak_bonus(cur, int(rid[0]))
-        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE phone = %s", (phone,))
+            return err("Нужен X-User-Id")
+        _maybe_streak_bonus(cur, int(user_id))
+        cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
         row = cur.fetchone()
         conn.close()
         if not row:
@@ -1035,12 +1031,26 @@ def _handle(event: dict, context) -> dict:
 
     # ── get_users ─────────────────────────────────────────────────────────────
     if action == "get_users":
-        query = (body.get("query") or params.get("query") or "").strip()
-        exclude_id = body.get("exclude_id") or params.get("exclude_id")
-        if query:
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        query = (body.get("query") or params.get("query") or "").strip()[:64]
+        exclude_id = int(user_id)
+        qdigits = "".join(c for c in query if c.isdigit())
+        if qdigits and len(qdigits) >= 10 and len(qdigits) == len(query.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")):
+            if len(qdigits) == 10:
+                qdigits = "7" + qdigits
+            if qdigits.startswith("8") and len(qdigits) == 11:
+                qdigits = "7" + qdigits[1:]
             cur.execute(
-                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE (name ILIKE %s OR phone LIKE %s) AND id != %s LIMIT 30",
-                (f"%{query}%", f"%{query}%", exclude_id or 0)
+                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE phone = %s AND id != %s LIMIT 1",
+                (qdigits, exclude_id)
+            )
+        elif query:
+            q_like = query.replace("\\", "").replace("%", "").replace("_", "")
+            cur.execute(
+                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE name ILIKE %s AND id != %s LIMIT 30",
+                (f"%{q_like}%", exclude_id)
             )
         else:
             cur.execute(
@@ -1050,7 +1060,7 @@ def _handle(event: dict, context) -> dict:
         rows = cur.fetchall()
         conn.close()
         users = [{
-            "id": r[0], "name": r[1], "phone": r[2], "avatar_url": r[3],
+            "id": r[0], "name": r[1], "phone": (r[2] if qdigits and len(qdigits) >= 11 else None), "avatar_url": r[3],
             "last_seen": 0 if r[5] else r[4],
             "emoji_status": r[6], "name_color": r[7],
         } for r in rows]
@@ -1180,6 +1190,9 @@ def _handle(event: dict, context) -> dict:
         if not chat_id:
             conn.close()
             return err("Укажите chat_id")
+        if not user_id or not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
 
         now_ts = int(time.time())
         cid = int(chat_id)
@@ -1779,7 +1792,7 @@ def _handle(event: dict, context) -> dict:
             conn.close(); return err("Неверные параметры")
         title = (body.get("title") or "").strip()[:200]
         chat_id = body.get("chat_id")
-        if to_id <= 0 or amount <= 0:
+        if to_id <= 0 or not (0 < amount <= 1_000_000):
             conn.close(); return err("Укажите получателя и сумму")
         now = int(time.time())
         cur.execute(
@@ -1838,13 +1851,21 @@ def _handle(event: dict, context) -> dict:
         bal = float(cur.fetchone()[0] or 0)
         if bal < amt:
             conn.close(); return err("Недостаточно средств. Пополните кошелёк.")
-        cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)-%s WHERE id=%s", (amt, from_id))
-        cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)+%s WHERE id=%s", (amt, to_id))
         now = int(time.time())
         cur.execute(
-            f"UPDATE {SCHEMA}.payment_requests SET status='paid', paid_at=%s WHERE id=%s",
+            f"UPDATE {SCHEMA}.payment_requests SET status='paid', paid_at=%s WHERE id=%s AND status='pending' RETURNING id",
             (now, pid)
         )
+        if not cur.fetchone():
+            conn.close(); return err("Счёт уже не активен")
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)-%s WHERE id=%s AND COALESCE(wallet_balance,0) >= %s RETURNING id",
+            (amt, from_id, amt)
+        )
+        if not cur.fetchone():
+            cur.execute(f"UPDATE {SCHEMA}.payment_requests SET status='pending', paid_at=NULL WHERE id=%s", (pid,))
+            conn.close(); return err("Недостаточно средств. Пополните кошелёк.")
+        cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)+%s WHERE id=%s", (amt, to_id))
         cur.execute(
             f"INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, reason, created_at) VALUES (%s, %s, %s, %s)",
             (from_id, -amt, f"Оплата счёта #{pid}", now)
@@ -2152,6 +2173,14 @@ def _handle(event: dict, context) -> dict:
             conn.close()
             return err("Слишком быстро. Подождите минуту.", 429)
         chat_id = body.get("chat_id")
+        try:
+            chat_id = int(chat_id)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Укажите chat_id")
+        if not user_id or not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         text = (body.get("text") or "").strip()
         image_url = (body.get("image_url") or "").strip()
         media_type = (body.get("media_type") or "").strip()
@@ -2351,6 +2380,17 @@ def _handle(event: dict, context) -> dict:
         if not msg_id or not emoji:
             conn.close()
             return err("Укажите message_id и emoji")
+        if len(emoji) > 16:
+            conn.close()
+            return err("Неверная реакция")
+        cur.execute(
+            f"""SELECT 1 FROM {SCHEMA}.messages m JOIN {SCHEMA}.chats c ON c.id = m.chat_id
+                WHERE m.id = %s AND (c.user1_id = %s OR c.user2_id = %s)""",
+            (int(msg_id), int(user_id), int(user_id))
+        )
+        if not cur.fetchone():
+            conn.close()
+            return err("Нет доступа к сообщению", 403)
         now = int(time.time())
         # Если уже такая реакция — удаляем (toggle)
         cur.execute(
@@ -2842,6 +2882,9 @@ def _handle(event: dict, context) -> dict:
         if not chat_id:
             conn.close()
             return err("Укажите chat_id")
+        if not user_id or not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         now = int(time.time())
         cur.execute(
             f"""INSERT INTO {SCHEMA}.typing_status (chat_id, user_id, updated_at)
@@ -2861,6 +2904,9 @@ def _handle(event: dict, context) -> dict:
         if not chat_id:
             conn.close()
             return err("Укажите chat_id")
+        if not user_id or not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         now = int(time.time())
         cur.execute(
             f"""SELECT user_id FROM {SCHEMA}.typing_status
@@ -3374,6 +3420,9 @@ def _handle(event: dict, context) -> dict:
         if not chat_id:
             conn.close()
             return err("Укажите chat_id")
+        if not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         ts = int(time.time())
         cur.execute(
             f"""INSERT INTO {SCHEMA}.chat_settings (user_id, chat_id, cleared_at)
@@ -3613,6 +3662,13 @@ def _handle(event: dict, context) -> dict:
             conn.close()
             return err("Нет доступа к чату", 403)
         cur.execute(
+            f"SELECT 1 FROM {SCHEMA}.messages WHERE id = %s AND chat_id = %s",
+            (int(msg_id), int(chat_id))
+        )
+        if not cur.fetchone():
+            conn.close()
+            return err("Сообщение не найдено", 404)
+        cur.execute(
             f"UPDATE {SCHEMA}.chats SET pinned_message_id = %s WHERE id = %s",
             (int(msg_id), int(chat_id))
         )
@@ -3642,6 +3698,9 @@ def _handle(event: dict, context) -> dict:
         if not chat_id:
             conn.close()
             return err("Укажите chat_id")
+        if not user_id or not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         cur.execute(
             f"""SELECT m.id, m.sender_id, u.name, m.text, m.media_type, m.created_at
                 FROM {SCHEMA}.chats c
@@ -3688,13 +3747,17 @@ def _handle(event: dict, context) -> dict:
         if not src_id or not target_chat_id:
             conn.close()
             return err("Укажите message_id и target_chat_id")
+        if not _is_chat_member(cur, int(target_chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
         cur.execute(
             f"""SELECT m.text, m.media_type, m.media_url, m.image_url, m.file_name, m.file_size,
                        m.duration, m.sender_id, u.name
                 FROM {SCHEMA}.messages m
                 JOIN {SCHEMA}.users u ON u.id = m.sender_id
-                WHERE m.id = %s""",
-            (int(src_id),)
+                JOIN {SCHEMA}.chats c ON c.id = m.chat_id
+                WHERE m.id = %s AND m.removed_at IS NULL AND (c.user1_id = %s OR c.user2_id = %s)""",
+            (int(src_id), int(user_id), int(user_id))
         )
         s = cur.fetchone()
         if not s:
@@ -4519,7 +4582,7 @@ def _handle(event: dict, context) -> dict:
         except (TypeError, ValueError):
             conn.close()
             return err("Неверная сумма")
-        if amount <= 0 or amount > 100000:
+        if not (0 < amount <= 100000):
             conn.close()
             return err("Сумма от 1 до 100000")
         description = (body.get("description") or "Пополнение через Dev Panel")[:200]
@@ -4836,7 +4899,14 @@ def _handle(event: dict, context) -> dict:
             conn.close(); return err(f"Недостаточно средств. Нужно {price}₽, на счету {balance}₽")
         new_until = max(cur_until, now) + duration
         new_balance = balance - price
-        cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=%s, pro_until=%s WHERE id=%s", (new_balance, new_until, int(user_id)))
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)-%s, pro_until=GREATEST(COALESCE(pro_until,0), %s) + %s "
+            f"WHERE id=%s AND COALESCE(wallet_balance,0) >= %s RETURNING wallet_balance, pro_until",
+            (price, now, duration, int(user_id), price))
+        _r = cur.fetchone()
+        if not _r:
+            conn.close(); return err("Недостаточно средств")
+        new_balance, new_until = float(_r[0]), int(_r[1])
         cur.execute(
             f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
                 VALUES (%s, %s, 'pro_purchase', %s, %s, %s)""",
@@ -4867,7 +4937,15 @@ def _handle(event: dict, context) -> dict:
         now = int(time.time())
         new_until = max(cur_until, now) + 30 * 86400
         new_balance = balance - price
-        cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=%s, stickers_subscription_until=%s WHERE id=%s", (new_balance, new_until, int(user_id)))
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)-%s, "
+            f"stickers_subscription_until=GREATEST(COALESCE(stickers_subscription_until,0), %s) + %s "
+            f"WHERE id=%s AND COALESCE(wallet_balance,0) >= %s RETURNING wallet_balance, stickers_subscription_until",
+            (price, now, 30 * 86400, int(user_id), price))
+        _r = cur.fetchone()
+        if not _r:
+            conn.close(); return err("Недостаточно средств")
+        new_balance, new_until = float(_r[0]), int(_r[1])
         cur.execute(
             f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
                 VALUES (%s,%s,'stickers_subscription',%s,%s,%s)""",
@@ -4923,7 +5001,14 @@ def _handle(event: dict, context) -> dict:
         now = int(time.time())
         new_balance = balance - price
         new_lb = lb + qty
-        cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=%s, lightning_balance=%s WHERE id=%s", (new_balance, new_lb, int(user_id)))
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)-%s, lightning_balance=COALESCE(lightning_balance,0)+%s "
+            f"WHERE id=%s AND COALESCE(wallet_balance,0) >= %s RETURNING wallet_balance, lightning_balance",
+            (price, qty, int(user_id), price))
+        _r = cur.fetchone()
+        if not _r:
+            conn.close(); return err("Недостаточно средств")
+        new_balance, new_lb = float(_r[0]), int(_r[1])
         cur.execute(
             f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
                 VALUES (%s,%s,'lightning_purchase',%s,%s,%s)""",
@@ -4967,8 +5052,17 @@ def _handle(event: dict, context) -> dict:
         now = int(time.time())
         new_my = my_lb - qty
         new_their = their_lb + qty
-        cur.execute(f"UPDATE {SCHEMA}.users SET lightning_balance=%s WHERE id=%s", (new_my, int(user_id)))
-        cur.execute(f"UPDATE {SCHEMA}.users SET lightning_balance=%s WHERE id=%s", (new_their, to_user))
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET lightning_balance=COALESCE(lightning_balance,0)-%s WHERE id=%s AND COALESCE(lightning_balance,0) >= %s RETURNING lightning_balance",
+            (qty, int(user_id), qty))
+        _r = cur.fetchone()
+        if not _r:
+            conn.close(); return err("Недостаточно ⚡")
+        new_my = int(_r[0])
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET lightning_balance=COALESCE(lightning_balance,0)+%s WHERE id=%s RETURNING lightning_balance",
+            (qty, to_user))
+        new_their = int((cur.fetchone() or [new_their])[0])
         cur.execute(
             f"""INSERT INTO {SCHEMA}.lightning_transactions (user_id, amount, kind, description, related_user_id, balance_after, created_at)
                 VALUES (%s,%s,'sent',%s,%s,%s,%s)""",
@@ -5061,7 +5155,7 @@ def _handle(event: dict, context) -> dict:
             conn.close(); return err("Неверные параметры")
         message = (body.get("message") or "")[:200]
         is_anon = bool(body.get("is_anonymous"))
-        if fid <= 0 or amount < 10 or amount > 1_000_000:
+        if fid <= 0 or not (10 <= amount <= 1_000_000):
             conn.close(); return err("Сумма от 10 ₽")
         cur.execute(f"SELECT owner_id, status FROM {SCHEMA}.fundraisers WHERE id=%s", (fid,))
         f = cur.fetchone()
@@ -5078,8 +5172,13 @@ def _handle(event: dict, context) -> dict:
         if balance < amount:
             conn.close(); return err(f"Недостаточно средств. На счету {balance:.2f}₽")
         now = int(time.time())
-        new_balance = balance - amount
-        cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=%s WHERE id=%s", (new_balance, int(user_id)))
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)-%s WHERE id=%s AND COALESCE(wallet_balance,0) >= %s RETURNING wallet_balance",
+            (amount, int(user_id), amount))
+        _r = cur.fetchone()
+        if not _r:
+            conn.close(); return err("Недостаточно средств")
+        new_balance = float(_r[0])
         cur.execute(
             f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
                 VALUES (%s,%s,'donation',%s,%s,%s)""",
@@ -5231,8 +5330,13 @@ def _handle(event: dict, context) -> dict:
             balance = float(cur.fetchone()[0])
             if balance < price:
                 conn.close(); return err(f"Недостаточно средств. Нужно {price:.2f}₽")
-            new_balance = balance - price
-            cur.execute(f"UPDATE {SCHEMA}.users SET wallet_balance=%s WHERE id=%s", (new_balance, int(user_id)))
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET wallet_balance=COALESCE(wallet_balance,0)-%s WHERE id=%s AND COALESCE(wallet_balance,0) >= %s RETURNING wallet_balance",
+                (price, int(user_id), price))
+            _r = cur.fetchone()
+            if not _r:
+                conn.close(); return err("Недостаточно средств")
+            new_balance = float(_r[0])
             cur.execute(
                 f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
                     VALUES (%s,%s,'sticker_purchase',%s,%s,%s)""",
@@ -5284,6 +5388,8 @@ def _handle(event: dict, context) -> dict:
         if not cr:
             conn.close(); return err("Чат не найден", 404)
         u1, u2 = int(cr[0]), int(cr[1])
+        if int(user_id) not in (u1, u2):
+            conn.close(); return err("Нет доступа к чату", 403)
         recipient = u2 if u1 == int(user_id) else u1
         if recipient == int(user_id):
             conn.close(); return err("Нельзя дарить себе")
@@ -5305,8 +5411,17 @@ def _handle(event: dict, context) -> dict:
         now = int(time.time())
         new_my = my_lb - qty
         new_their = their_lb + qty
-        cur.execute(f"UPDATE {SCHEMA}.users SET lightning_balance=%s WHERE id=%s", (new_my, int(user_id)))
-        cur.execute(f"UPDATE {SCHEMA}.users SET lightning_balance=%s WHERE id=%s", (new_their, recipient))
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET lightning_balance=COALESCE(lightning_balance,0)-%s WHERE id=%s AND COALESCE(lightning_balance,0) >= %s RETURNING lightning_balance",
+            (qty, int(user_id), qty))
+        _r = cur.fetchone()
+        if not _r:
+            conn.close(); return err("Недостаточно ⚡")
+        new_my = int(_r[0])
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET lightning_balance=COALESCE(lightning_balance,0)+%s WHERE id=%s RETURNING lightning_balance",
+            (qty, recipient))
+        new_their = int((cur.fetchone() or [new_their])[0])
         cur.execute(
             f"""INSERT INTO {SCHEMA}.lightning_transactions (user_id, amount, kind, description, related_user_id, balance_after, created_at)
                 VALUES (%s,%s,'sent',%s,%s,%s,%s)""",

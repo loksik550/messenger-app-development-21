@@ -140,7 +140,7 @@ def handler(event, context):
     except (TypeError, ValueError):
         return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Bad amount'})}
 
-    if amount < MIN_AMOUNT or amount > MAX_AMOUNT:
+    if not (MIN_AMOUNT <= amount <= MAX_AMOUNT):
         return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': f'Сумма от {MIN_AMOUNT} до {MAX_AMOUNT}'})}
 
     user_email = (data.get('user_email') or '').strip()
@@ -171,7 +171,38 @@ def handler(event, context):
     }
     description = descriptions.get(purpose, 'Оплата Nova')
 
+    if purpose not in ('wallet_topup', 'fundraiser') and not purpose.startswith('pro_'):
+        return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Этот товар оплачивается из кошелька'})}
+
     S = get_schema()
+    if purpose.startswith('pro_'):
+        _pc = get_conn()
+        try:
+            _cur = _pc.cursor()
+            _cur.execute(f"SELECT price FROM {S}premium_plans WHERE code = %s AND active = TRUE", (purpose[4:],))
+            _r = _cur.fetchone()
+        finally:
+            _pc.close()
+        if not _r:
+            return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Тариф не найден'})}
+        if abs(float(_r[0]) - amount) > 0.009:
+            return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Цена тарифа изменилась, обновите страницу'})}
+    if purpose == 'fundraiser':
+        try:
+            related_id = int(related_id)
+        except (TypeError, ValueError):
+            return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Сбор не найден'})}
+        if not isinstance(extra, dict):
+            extra = {}
+        extra = {
+            'donor_name': str(extra.get('donor_name') or '')[:64],
+            'message': str(extra.get('message') or '')[:300],
+            'is_anonymous': bool(extra.get('is_anonymous')),
+        }
+    else:
+        related_id = None
+        extra = {}
+
     conn = get_conn()
     try:
         cur = conn.cursor()

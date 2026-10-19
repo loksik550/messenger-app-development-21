@@ -10,23 +10,32 @@
       "name": "Ping returns 200",
       "method": "POST",
       "path": "/",
-      "body": {"action": "ping"},
+      "body": {
+        "action": "ping"
+      },
       "expectedStatus": 200
     },
     {
       "name": "Без user-id для приватного эндпоинта",
       "method": "POST",
       "path": "/",
-      "body": {"action": "get_typing", "chat_id": 1},
+      "body": {
+        "action": "get_typing",
+        "chat_id": 1
+      },
       "expectedStatus": 400
     },
     {
       "name": "Неизвестный action",
       "method": "POST",
       "path": "/",
-      "headers": {"X-User-Id": "1"},
-      "body": {"action": "wat"},
-      "expectedStatus": 404
+      "headers": {
+        "X-User-Id": "1"
+      },
+      "body": {
+        "action": "wat"
+      },
+      "expectedStatus": 401
     }
   ]
 }

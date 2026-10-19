@@ -24,6 +24,7 @@ export default function BotInlineButtons({
 
   const click = async (btn: InlineButton) => {
     if (btn.url) {
+      if (!/^https?:\/\//i.test(btn.url)) return;
       window.open(btn.url, "_blank", "noopener,noreferrer");
       return;
     }

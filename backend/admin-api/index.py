@@ -54,6 +54,28 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     if not check_auth(event):
+        ip = ((event.get("requestContext") or {}).get("identity") or {}).get("sourceIp", "anon")
+        try:
+            _c = get_conn()
+            _cur = _c.cursor()
+            now = int(time.time())
+            window = now - (now % 60)
+            _cur.execute(
+                f"""INSERT INTO {SCHEMA}.rate_limits (key, window_start, counter) VALUES (%s, %s, 1)
+                    ON CONFLICT (key) DO UPDATE SET
+                      counter = CASE WHEN {SCHEMA}.rate_limits.window_start = EXCLUDED.window_start
+                                     THEN {SCHEMA}.rate_limits.counter + 1 ELSE 1 END,
+                      window_start = EXCLUDED.window_start
+                    RETURNING counter""",
+                (f"adminapi:{ip}", window),
+            )
+            cnt = int(_cur.fetchone()[0])
+            _c.close()
+            if cnt > 10:
+                time.sleep(1)
+                return err("Слишком много попыток. Подождите минуту.", 429)
+        except Exception:
+            pass
         return err("Нет доступа", 403)
 
     body = json.loads(event.get("body") or "{}")

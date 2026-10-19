@@ -166,10 +166,8 @@ def handler(event: dict, context) -> dict:
     cur = conn.cursor()
 
     if action in ("send", "send_group", "broadcast", "cancel_call") and not nova_auth.is_internal(event):
-        if nova_auth.is_strict(cur):
-            conn.close()
-            return err("Нет доступа", 403)
-        print(f"[auth] legacy external push call action={action}")
+        conn.close()
+        return err("Нет доступа", 403)
     if action in ("register_native", "subscribe", "unsubscribe", "unregister_native") \
             and not nova_auth.check(cur, event, user_id):
         conn.close()

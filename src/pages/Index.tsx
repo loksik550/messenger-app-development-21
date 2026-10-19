@@ -189,7 +189,7 @@ export default function Index() {
   // Загрузка пользователей для поиска
   useEffect(() => {
     if (!currentUser) return;
-    api("get_users", { exclude_id: currentUser.id }).then((data) => {
+    api("get_users", {}, currentUser.id).then((data) => {
       if (data.users) setUsers(data.users);
     });
   }, [currentUser]);

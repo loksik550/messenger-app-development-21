@@ -5,15 +5,32 @@
       "method": "POST",
       "path": "/",
       "body": {},
-      "expectedStatus": 400,
+      "expectedStatus": 401,
       "bodyMatcher": "partial"
     },
     {
       "name": "Reject invalid base64",
       "method": "POST",
       "path": "/",
-      "body": {"data": "!!!not-base64!!!", "mime": "image/png"},
-      "expectedStatus": 400,
+      "body": {
+        "data": "!!!not-base64!!!",
+        "mime": "image/png"
+      },
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Reject fake dev token",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-Dev-Token": "fake"
+      },
+      "body": {
+        "data": "aGk=",
+        "mime": "image/png"
+      },
+      "expectedStatus": 401,
       "bodyMatcher": "partial"
     }
   ]

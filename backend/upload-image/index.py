@@ -10,7 +10,7 @@ import nova_auth
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Auth-Token, X-Dev-Token",
 }
 
 # Расширения по MIME
@@ -38,8 +38,30 @@ def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
-    user_id = event.get("headers", {}).get("X-User-Id", "0")
-    if user_id not in ("", "0"):
+    user_id = (event.get("headers", {}) or {}).get("X-User-Id", "0")
+    try:
+        user_id = str(int(user_id))
+    except (TypeError, ValueError):
+        user_id = "0"
+    dev_token = (event.get("headers", {}) or {}).get("X-Dev-Token") or ""
+    if user_id == "0":
+        if not dev_token:
+            return nova_auth.denied(CORS)
+        _c = psycopg2.connect(os.environ["DATABASE_URL"])
+        _c.autocommit = True
+        try:
+            _cur = _c.cursor()
+            _cur.execute(
+                f"SELECT admin_id FROM {nova_auth.SCHEMA}.dev_sessions WHERE token = %s AND expires_at > %s",
+                (dev_token, int(time.time())),
+            )
+            _adm = _cur.fetchone()
+        finally:
+            _c.close()
+        if not _adm:
+            return nova_auth.denied(CORS)
+        user_id = "admin"
+    else:
         _c = psycopg2.connect(os.environ["DATABASE_URL"])
         _c.autocommit = True
         try:
@@ -78,13 +100,21 @@ def handler(event: dict, context) -> dict:
                 "body": json.dumps({"error": f"Файл слишком большой ({mb:.1f} МБ). Максимум 5 МБ."}, ensure_ascii=False)}
 
     # Очищаем mime от codecs: "video/mp4;codecs=avc1" -> "video/mp4"
-    mime_clean = mime.split(";")[0].strip().lower()
+    mime_clean = str(mime or "").split(";")[0].strip().lower()
     mime_main = mime_clean.split("/")[0]
-    ext = EXT_MAP.get(mime_clean, mime_clean.split("/")[-1] or "bin")
+    # Опасные типы (html, svg, js и т.п.) не сохраняем как есть: браузер мог бы
+    # выполнить их код. Такие файлы отдаём как обычное вложение для скачивания.
+    if mime_clean in EXT_MAP:
+        ext = EXT_MAP[mime_clean]
+        store_mime = mime_clean
+    else:
+        ext = "bin"
+        store_mime = "application/octet-stream"
+        mime_main = "application"
     media_type = MEDIA_TYPE_MAP.get(mime_main, "file")
 
     # Для голосовых сообщений — всегда audio
-    if "audio" in mime:
+    if mime_main == "audio":
         media_type = "audio"
 
     folder = media_type  # image / video / audio / file
@@ -96,7 +126,10 @@ def handler(event: dict, context) -> dict:
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
     )
-    s3.put_object(Bucket="files", Key=key, Body=file_data, ContentType=mime_clean or mime)
+    extra = {}
+    if store_mime == "application/octet-stream":
+        extra["ContentDisposition"] = "attachment"
+    s3.put_object(Bucket="files", Key=key, Body=file_data, ContentType=store_mime, **extra)
     cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
     return {
@@ -105,7 +138,7 @@ def handler(event: dict, context) -> dict:
         "body": json.dumps({
             "url": cdn_url,
             "media_type": media_type,
-            "file_name": file_name or f"file.{ext}",
-            "file_size": file_size or len(file_data),
+            "file_name": (str(file_name or "")[:120] or f"file.{ext}"),
+            "file_size": len(file_data),
         })
     }

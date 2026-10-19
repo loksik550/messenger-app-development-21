@@ -45,7 +45,7 @@ export default function StickersStorePanel({ currentUser, onClose, onUserUpdate,
     const r = await api("stickers_buy_pack", { pack_id: selected.id }, currentUser.id);
     setBusy(false);
     if (r.owned) {
-      const userR = await api("get_me", { phone: currentUser.phone });
+      const userR = await api("get_me", {}, currentUser.id);
       if (userR.user) {
         onUserUpdate?.(userR.user);
         localStorage.setItem("nova_user", JSON.stringify(userR.user));
@@ -66,7 +66,7 @@ export default function StickersStorePanel({ currentUser, onClose, onUserUpdate,
     const r = await api("buy_stickers_subscription", {}, currentUser.id);
     setBusy(false);
     if (r.stickers_subscription_until) {
-      const userR = await api("get_me", { phone: currentUser.phone });
+      const userR = await api("get_me", {}, currentUser.id);
       if (userR.user) {
         onUserUpdate?.(userR.user);
         localStorage.setItem("nova_user", JSON.stringify(userR.user));

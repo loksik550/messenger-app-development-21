@@ -26,7 +26,7 @@
       "body": {
         "action": "send_group"
       },
-      "expectedStatus": 400,
+      "expectedStatus": 403,
       "bodyMatcher": "partial"
     },
     {

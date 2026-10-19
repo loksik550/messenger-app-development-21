@@ -77,7 +77,7 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
     const r = await api("buy_pro", { plan: plan?.id || "trial" }, currentUser.id);
     setBuying(false);
     if (r.is_pro) {
-      const userR = await api("get_me", { phone: currentUser.phone });
+      const userR = await api("get_me", {}, currentUser.id);
       if (userR.user) {
         onUserUpdate?.(userR.user);
         localStorage.setItem("nova_user", JSON.stringify(userR.user));
@@ -93,7 +93,7 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
     const r = await api("buy_pro", { plan: selected }, currentUser.id);
     setBuying(false);
     if (r.is_pro) {
-      const userR = await api("get_me", { phone: currentUser.phone });
+      const userR = await api("get_me", {}, currentUser.id);
       if (userR.user) {
         onUserUpdate?.(userR.user);
         localStorage.setItem("nova_user", JSON.stringify(userR.user));
@@ -141,7 +141,7 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
         const r = await api("buy_pro", { plan: selected }, currentUser.id);
         setBuying(false);
         if (r.is_pro) {
-          const userR = await api("get_me", { phone: currentUser.phone });
+          const userR = await api("get_me", {}, currentUser.id);
           if (userR.user) {
             onUserUpdate?.(userR.user);
             localStorage.setItem("nova_user", JSON.stringify(userR.user));

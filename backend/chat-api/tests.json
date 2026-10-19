@@ -132,7 +132,7 @@
         "action": "report",
         "reason": "spam"
       },
-      "expectedStatus": 400,
+      "expectedStatus": 401,
       "bodyMatcher": "partial"
     },
     {
@@ -156,7 +156,7 @@
       "body": {
         "action": "block_user"
       },
-      "expectedStatus": 400,
+      "expectedStatus": 401,
       "bodyMatcher": "partial"
     },
     {
@@ -344,7 +344,7 @@
         "request_id": 1,
         "approve": true
       },
-      "expectedStatus": 403
+      "expectedStatus": 401
     },
     {
       "name": "Personal sticker requires user",
@@ -353,6 +353,31 @@
       "body": {
         "action": "stickers_add_personal",
         "image_url": "https://example.com/a.png"
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "get_messages без ключа отклоняется",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "62"
+      },
+      "body": {
+        "action": "get_messages",
+        "chat_id": 767
+      },
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "get_me без ключа отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "get_me",
+        "phone": "79000000000"
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
