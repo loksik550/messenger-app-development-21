@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Icon from "@/components/ui/icon";
+import { saveMedia, shareMedia } from "@/lib/saveMedia";
 
 export interface MediaItem {
   url: string;
@@ -32,6 +33,36 @@ export function MediaViewer({
   const pinchStart = useRef<{ dist: number; scale: number } | null>(null);
 
   const current = items[index];
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | null>(null);
+
+  const showToast = (t: string) => {
+    setToast(t);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2500);
+  };
+
+  const download = async () => {
+    if (!current || saving) return;
+    setMenuOpen(false);
+    setSaving(true);
+    try {
+      const r = await saveMedia(current.url, current.type);
+      if (r === "saved") showToast(current.type === "video" ? "Видео сохранено в галерею" : "Фото сохранено в галерею");
+      else if (r === "downloaded") showToast("Файл скачан");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const share = async () => {
+    setMenuOpen(false);
+    try { await shareMedia(current.url); } catch { showToast("Не удалось поделиться"); }
+  };
 
   const close = useCallback(() => {
     setClosing(true);
@@ -70,8 +101,10 @@ export function MediaViewer({
 
   // Сброс zoom при смене медиа
   useEffect(() => {
-    setScale(1); setPan({ x: 0, y: 0 });
+    setScale(1); setPan({ x: 0, y: 0 }); setMenuOpen(false);
   }, [index]);
+
+  useEffect(() => () => { if (toastTimer.current) window.clearTimeout(toastTimer.current); }, []);
 
   const onTouchStart = (e: React.TouchEvent) => {
     bumpChrome();
@@ -134,6 +167,7 @@ export function MediaViewer({
   };
 
   const onContentClick = () => {
+    if (menuOpen) { setMenuOpen(false); return; }
     setShowChrome(s => !s);
     if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
   };
@@ -180,20 +214,67 @@ export function MediaViewer({
             {index + 1} / {items.length}
           </div>
         ) : <div />}
-        {current.type === "image" ? (
-          <a
-            href={current.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            download
-            onClick={e => e.stopPropagation()}
+        <div className="relative">
+          <button
+            onClick={() => { setMenuOpen(v => !v); bumpChrome(); }}
             className="w-10 h-10 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-white active:scale-95 transition"
-            aria-label="Скачать"
+            aria-label="Ещё"
           >
-            <Icon name="Download" size={18} />
-          </a>
-        ) : <div className="w-10 h-10" />}
+            <Icon name="EllipsisVertical" fallback="MoreVertical" size={20} />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-12 min-w-[220px] rounded-xl bg-[#1f1d2b]/95 backdrop-blur-xl border border-white/10 shadow-2xl py-1.5 animate-scale-in origin-top-right">
+              <button onClick={download} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/10 active:bg-white/15 text-left">
+                <Icon name="Download" size={18} className="text-white/80" />
+                Сохранить в галерею
+              </button>
+              <button onClick={share} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/10 active:bg-white/15 text-left">
+                <Icon name="Share2" size={18} className="text-white/80" />
+                Поделиться
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Нижняя панель — как в Telegram */}
+      {current.type === "image" && <div
+        className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-center gap-3 p-4 bg-gradient-to-t from-black/70 to-transparent"
+        style={{
+          paddingBottom: "calc(1rem + env(safe-area-inset-bottom))",
+          opacity: showChrome && !closing ? 1 : 0,
+          transform: showChrome && !closing ? "translateY(0)" : "translateY(8px)",
+          transition: "opacity 200ms ease-out, transform 200ms ease-out",
+          pointerEvents: showChrome && !closing ? "auto" : "none",
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={download}
+          disabled={saving}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 backdrop-blur text-white text-sm font-medium active:scale-95 transition disabled:opacity-60"
+        >
+          <Icon name={saving ? "Loader2" : "Download"} size={18} className={saving ? "animate-spin" : ""} />
+          {saving ? "Сохраняем…" : "Скачать"}
+        </button>
+        <button
+          onClick={share}
+          className="w-11 h-11 rounded-full bg-white/15 backdrop-blur flex items-center justify-center text-white active:scale-95 transition"
+          aria-label="Поделиться"
+        >
+          <Icon name="Share2" size={18} />
+        </button>
+      </div>}
+
+      {toast && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2 z-20 px-4 py-2.5 rounded-xl bg-[#1f1d2b]/95 text-white text-sm shadow-xl flex items-center gap-2 animate-fade-in"
+          style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
+        >
+          <Icon name="CircleCheck" size={16} className="text-emerald-400" />
+          {toast}
+        </div>
+      )}
 
       {/* Содержимое: на весь экран */}
       <div
