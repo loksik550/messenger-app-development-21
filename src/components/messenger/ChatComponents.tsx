@@ -57,7 +57,7 @@ export function ChatWindow({
   const [editing, setEditing] = useState<Message | null>(null);
   useDraft(`c${chat.id}`, input, setInput, !!editing);
   const [forwardMsgId, setForwardMsgId] = useState<number | null>(null);
-  const { messagesScrollRef, endRef, showScrollDown, newCount, handleMessagesScroll, scrollToBottom } = useChatScroll({ messages, isTyping });
+  const { messagesScrollRef, endRef, showScrollDown, newCount, handleMessagesScroll, scrollToBottom } = useChatScroll({ messages, isTyping, chatKey: chat.id });
   const [, setShowReactionPicker] = useState<number | null>(null);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);

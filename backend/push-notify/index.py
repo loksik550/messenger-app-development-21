@@ -324,7 +324,8 @@ def handler(event: dict, context) -> dict:
             "recipient_id": int(recipient_id),
             "icon": NOTIF_ICON,
             "badge": NOTIF_ICON,
-            "tag": f"call_{call_id}" if is_call else f"msg_{chat_id}",
+            "tag": f"call_{call_id}" if is_call else (body.get("tag") or f"msg_{chat_id}"),
+            "close_tag": body.get("close_tag") or "",
             "requireInteraction": is_call,
         })
 

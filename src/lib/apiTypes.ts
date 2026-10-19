@@ -145,6 +145,7 @@ export interface User {
   font_size?: number;
   verified?: boolean;
   verified_kind?: string;
+  nova_id?: string | null;
   // Уведомления
   notify_messages?: boolean;
   notify_groups?: boolean;

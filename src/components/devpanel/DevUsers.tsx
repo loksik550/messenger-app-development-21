@@ -18,6 +18,7 @@ interface DevUser {
   online: boolean;
   verified?: boolean;
   vk_id?: number | null;
+  nova_id?: string | null;
 }
 
 interface ExportRow {
@@ -366,7 +367,7 @@ export default function DevUsers({
                     <span className="font-medium truncate text-sm">{u.name || "Без имени"}</span>
                     {u.verified && <Icon name="BadgeCheck" size={13} className="text-sky-400 shrink-0" />}
                   </div>
-                  <div className="text-xs text-slate-500 truncate"><DevPhoneVk phone={u.phone} vkId={u.vk_id} id={u.id} /></div>
+                  <div className="text-xs text-slate-500 truncate"><DevPhoneVk phone={u.phone} vkId={u.vk_id} id={u.id} novaId={u.nova_id} /></div>
                   <div className="text-[11px] text-slate-600 mt-0.5">
                     {u.online ? (
                       <span className="text-emerald-400">в сети</span>
@@ -454,7 +455,7 @@ export default function DevUsers({
                         </div>
                       </div>
                     </td>
-                    <td className={`${pad} text-slate-400 whitespace-nowrap`}><DevPhoneVk phone={u.phone} vkId={u.vk_id} /></td>
+                    <td className={`${pad} text-slate-400 whitespace-nowrap`}><DevPhoneVk phone={u.phone} vkId={u.vk_id} novaId={u.nova_id} /></td>
                     {!compact && (
                       <td className={`${pad} text-slate-500 whitespace-nowrap`}>{formatTs(u.created_at)}</td>
                     )}

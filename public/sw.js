@@ -1,4 +1,4 @@
-const SW_VERSION = "nova-sw-25";
+const SW_VERSION = "nova-sw-26";
 const IS_APPLE = /iphone|ipad|ipod|macintosh/i.test(self.navigator.userAgent || "");
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;
@@ -84,6 +84,12 @@ self.addEventListener("push", (e) => {
 
   e.waitUntil(
     (async () => {
+      if (data.close_tag) {
+        try {
+          const old = await self.registration.getNotifications({ tag: data.close_tag });
+          old.forEach((n) => n.close());
+        } catch { /* ignore */ }
+      }
       const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const visible = list.find((c) => c.visibilityState === "visible" && c.focused);
       // На iPhone/iPad при блокировке экрана окно может считаться «видимым».

@@ -975,14 +975,15 @@ def handler(event: dict, context) -> dict:
             if q:
                 like = f"%{q}%"
                 cur.execute(
-                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id "
+                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id, nova_id "
                     f"FROM {SCHEMA}.users "
-                    f"WHERE name ILIKE %s OR phone ILIKE %s OR CAST(vk_id AS TEXT) ILIKE %s ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
-                    (like, like, like, limit, offset),
+                    f"WHERE name ILIKE %s OR phone ILIKE %s OR CAST(vk_id AS TEXT) ILIKE %s OR nova_id = %s "
+                    f"ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
+                    (like, like, like, q.replace(" ", ""), limit, offset),
                 )
             else:
                 cur.execute(
-                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id "
+                    f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id, nova_id "
                     f"FROM {SCHEMA}.users "
                     f"ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
                     (limit, offset),
@@ -998,6 +999,7 @@ def handler(event: dict, context) -> dict:
                 "verified": bool(r[6]) if len(r) > 6 else False,
                 "online": bool(r[4] and r[4] > now - 60),
                 "vk_id": r[7], "phone_missing": str(r[2] or "").startswith("vk"),
+                "nova_id": r[8],
             } for r in rows]
             return ok({"users": users, "total": total})
 
@@ -1005,7 +1007,7 @@ def handler(event: dict, context) -> dict:
             uid = int(body.get("user_id") or 0)
             cur.execute(
                 f"SELECT id, name, phone, created_at, last_seen, avatar_url, about, banned_until, banned_reason, "
-                f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE), vk_id FROM {SCHEMA}.users WHERE id = %s",
+                f"COALESCE(wallet_balance, 0), COALESCE(verified, FALSE), vk_id, nova_id FROM {SCHEMA}.users WHERE id = %s",
                 (uid,),
             )
             r = cur.fetchone()
@@ -1022,6 +1024,7 @@ def handler(event: dict, context) -> dict:
                 "verified": bool(r[10]) if len(r) > 10 else False,
                 "messages": msg_count, "contacts": contacts,
                 "vk_id": r[11], "phone_missing": str(r[2] or "").startswith("vk"),
+                "nova_id": r[12],
             }})
 
         if action == "ban_user":
@@ -2502,7 +2505,7 @@ def handler(event: dict, context) -> dict:
                 f"SELECT id, name, COALESCE(phone, ''), created_at, COALESCE(last_seen, 0), "
                 f"COALESCE(avatar_url, ''), COALESCE(about, ''), COALESCE(banned_until, 0), "
                 f"COALESCE(banned_reason, ''), COALESCE(wallet_balance, 0), "
-                f"COALESCE(verified, FALSE), COALESCE(pro_until, 0), vk_id "
+                f"COALESCE(verified, FALSE), COALESCE(pro_until, 0), vk_id, nova_id "
                 f"FROM {SCHEMA}.users WHERE id = %s",
                 (uid,),
             )
@@ -2561,6 +2564,7 @@ def handler(event: dict, context) -> dict:
                     "pro_until": int(u[11] or 0),
                     "online": bool(u[4] and u[4] > now_ts - 300),
                     "vk_id": u[12], "phone_missing": str(u[2] or "").startswith("vk"),
+                    "nova_id": u[13],
                 },
                 "stats": {
                     "messages": msgs, "paid_total": float(pay[0] or 0),
@@ -2582,8 +2586,8 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"SELECT id, name, COALESCE(phone, ''), COALESCE(avatar_url, '') "
                 f"FROM {SCHEMA}.users WHERE name ILIKE %s OR COALESCE(phone, '') ILIKE %s "
-                f"OR CAST(id AS TEXT) = %s LIMIT 8",
-                (like, like, digits or "0"),
+                f"OR CAST(id AS TEXT) = %s OR nova_id = %s LIMIT 8",
+                (like, like, digits or "0", digits or "-"),
             )
             rows = [{"id": r[0], "title": r[1] or "Без имени",
                      "sub": r[2] or f"ID {r[0]}", "avatar": r[3]} for r in cur.fetchall()]

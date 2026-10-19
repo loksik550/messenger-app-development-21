@@ -130,7 +130,17 @@ export function ProfileHeader({
             </button>
           </div>
         )}
-        <p className="text-muted-foreground text-sm mt-1">{formatPhone(currentUser.phone)}</p>
+        <p className="text-muted-foreground text-sm mt-1">{String(currentUser.phone || "").startsWith("vk") ? "" : formatPhone(currentUser.phone)}</p>
+        {currentUser.nova_id && (
+          <button
+            type="button"
+            onClick={() => { navigator.clipboard?.writeText(currentUser.nova_id || "").catch(() => {}); }}
+            className="mt-1 inline-flex items-center gap-1 text-xs text-violet-300/90 font-mono px-2 py-0.5 rounded-full bg-violet-500/10 hover:bg-violet-500/20"
+            title="Ваш уникальный ID в Nova — нажмите, чтобы скопировать"
+          >
+            ID {currentUser.nova_id}
+          </button>
+        )}
         <div className="flex items-center justify-center gap-2 mt-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-emerald-400 text-xs font-medium">В сети</span>

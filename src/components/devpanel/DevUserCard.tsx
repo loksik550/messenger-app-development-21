@@ -29,6 +29,7 @@ interface UserDetail {
   wallet_balance?: number;
   verified?: boolean;
   vk_id?: number | null;
+  nova_id?: string | null;
 }
 
 interface Device {
@@ -155,7 +156,7 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
               )}
             </div>
           )}
-          <p className="text-sm text-slate-400 mt-0.5"><DevPhoneVk phone={user.phone} vkId={user.vk_id} /></p>
+          <p className="text-sm text-slate-400 mt-0.5"><DevPhoneVk phone={user.phone} vkId={user.vk_id} novaId={user.nova_id} /></p>
           <p className="text-xs text-slate-600">ID {user.id}</p>
         </div>
         <button onClick={onClose} className="text-slate-500 hover:text-slate-300 shrink-0">

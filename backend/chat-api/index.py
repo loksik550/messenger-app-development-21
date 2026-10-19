@@ -64,6 +64,7 @@ def _fire_and_forget_http(url: str, body: bytes, timeout: float = 3.0) -> None:
 
 
 _PENDING: list = []
+_LONG_WAIT: list = [False]
 
 
 def _wait_pending(limit: float = 3.5) -> None:
@@ -96,7 +97,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id"
 
 
 
@@ -182,6 +183,7 @@ def serialize_user(row):
         "font_size": int(row[25]) if len(row) > 25 and row[25] is not None else 16,
         "verified": bool(row[26]) if len(row) > 26 else False,
         "verified_kind": row[27] if len(row) > 27 and row[27] else "",
+        "nova_id": row[28] if len(row) > 28 and row[28] else None,
     }
 
 
@@ -501,10 +503,11 @@ def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
 def handler(event: dict, context) -> dict:
     """Chat API Nova: выполняет действие и дожидается фоновых уведомлений."""
     _PENDING.clear()
+    _LONG_WAIT[0] = False
     try:
         return _handle(event, context)
     finally:
-        limit = 2.5
+        limit = 6.0 if _LONG_WAIT[0] else 2.5
         try:
             limit = min(limit, context.get_remaining_time_in_millis() / 1000 - 0.7)
         except Exception:
@@ -3230,8 +3233,10 @@ def _handle(event: dict, context) -> dict:
                     "from_user_id": int(user_id),
                     "message": "Входящий звонок",
                 }).encode("utf-8")
-                # В фоне, чтобы не задерживать установку звонка у звонящего
-                _fire_and_forget_http(push_url, push_body)
+                # В фоне, но обязательно дожидаемся доставки до завершения функции
+                # (иначе облако замораживает функцию и пуш о звонке теряется).
+                _fire_and_forget_http(push_url, push_body, timeout=6.0)
+                _LONG_WAIT[0] = True
         elif signal_type == "answer":
             conn.close()
             _fire_and_forget_http(_push_notify_url(), json.dumps({
@@ -3319,6 +3324,7 @@ def _handle(event: dict, context) -> dict:
                             "sender_name": missed_caller_name,
                             "message": f"📵 Пропущенный звонок от {missed_caller_name}",
                             "tag": f"missed_{call_id}",
+                            "close_tag": f"call_{call_id}",
                             "chat_id": int(miss_chat_id),
                             "from_user_id": int(caller_id),
                         }).encode("utf-8")

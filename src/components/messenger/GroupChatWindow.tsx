@@ -134,11 +134,45 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   }, [group.id, loadMessages], POLL_MS, 10000);
 
   const didInitialScroll = useRef(false);
+  const pinUntil = useRef(0);
+  const userMoved = useRef(false);
   useEffect(() => {
     if (messages.length === 0) return;
-    endRef.current?.scrollIntoView({ behavior: didInitialScroll.current ? "smooth" : "auto" });
+    const el = scrollRef.current;
+    if (!didInitialScroll.current || (Date.now() < pinUntil.current && !userMoved.current)) {
+      if (!didInitialScroll.current) { pinUntil.current = Date.now() + 2500; userMoved.current = false; }
+      if (el) el.scrollTop = el.scrollHeight;
+    } else {
+      const near = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 160 : true;
+      const last = messages[messages.length - 1];
+      if (near || last?.out) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
     didInitialScroll.current = true;
-  }, [messages.length]);
+  }, [messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const keep = () => { if (Date.now() < pinUntil.current && !userMoved.current) el.scrollTop = el.scrollHeight; };
+    const ro = new ResizeObserver(keep);
+    ro.observe(el);
+    Array.from(el.children).forEach((c) => ro.observe(c));
+    const mo = new MutationObserver((recs) => {
+      recs.forEach((r) => r.addedNodes.forEach((nd) => { if (nd instanceof Element) ro.observe(nd); }));
+    });
+    mo.observe(el, { childList: true });
+    el.addEventListener("load", keep, true);
+    const stop = () => { userMoved.current = true; };
+    el.addEventListener("wheel", stop, { passive: true });
+    el.addEventListener("touchmove", stop, { passive: true });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      el.removeEventListener("load", keep, true);
+      el.removeEventListener("wheel", stop);
+      el.removeEventListener("touchmove", stop);
+    };
+  }, [group.id]);
 
   const send = async () => {
     const text = input.trim();

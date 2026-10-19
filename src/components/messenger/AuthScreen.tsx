@@ -201,7 +201,7 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
           <form onSubmit={submit(handlePhoneSubmit)} noValidate className="animate-fade-in space-y-4">
             <div>
               <h2 className="text-xl font-bold mb-1">Введите номер телефона</h2>
-              <p className="text-sm text-muted-foreground">Ваш уникальный ID в Nova</p>
+              <p className="text-sm text-muted-foreground">После входа вы получите уникальный ID в Nova</p>
             </div>
             <div className={`flex items-center gap-3 glass rounded-2xl px-4 py-4 border ${shake ? "border-red-500/50" : "border-white/0 focus-within:border-violet-500/40"} transition-colors`}>
               <span className="text-2xl">🇷🇺</span>
