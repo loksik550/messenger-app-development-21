@@ -10,7 +10,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { tab: "chats", icon: "MessageCircle", labelKey: "nav.chats" },
   { tab: "contacts", icon: "BookUser", labelKey: "nav.contacts" },
-  { tab: "search", icon: "Search", labelKey: "nav.search" },
+  { tab: "shop", icon: "ShoppingBag", labelKey: "nav.shop" },
   { tab: "profile", icon: "User", labelKey: "nav.profile" },
   { tab: "settings", icon: "Shield", labelKey: "profile.security" },
 ];

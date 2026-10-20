@@ -3,6 +3,8 @@ import { APP_VERSION } from "@/lib/version";
 
 export function SettingsActions({
   exportBackup,
+  backupBusy,
+  backupProgress,
   onLogout,
   onDeleteAccount,
   onOpenPrivacyPolicy,
@@ -10,6 +12,8 @@ export function SettingsActions({
   onOpenHelp,
 }: {
   exportBackup: () => void;
+  backupBusy?: boolean;
+  backupProgress?: string;
   onLogout: () => void;
   onDeleteAccount?: () => void;
   onOpenPrivacyPolicy?: () => void;
@@ -19,15 +23,19 @@ export function SettingsActions({
   return (
     <>
         <button
+          type="button"
           onClick={exportBackup}
-          className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/5 transition-all mt-2"
+          disabled={backupBusy}
+          className="w-full flex items-center gap-3 px-4 py-3 glass rounded-2xl hover:bg-white/5 active:scale-[0.99] transition-all mt-2 disabled:opacity-80"
         >
           <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center">
-            <Icon name="Download" size={18} className="text-emerald-400" />
+            {backupBusy
+              ? <div className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
+              : <Icon name={backupProgress === "Готово" ? "Check" : "Download"} size={18} className="text-emerald-400" />}
           </div>
           <div className="flex-1 text-left">
             <div className="text-sm font-medium">Резервная копия</div>
-            <div className="text-xs text-muted-foreground">Скачать все чаты в файл JSON</div>
+            <div className="text-xs text-muted-foreground">{backupProgress || "Скачать все чаты в файл JSON"}</div>
           </div>
           <Icon name="ChevronRight" size={16} className="text-muted-foreground ml-auto" />
         </button>

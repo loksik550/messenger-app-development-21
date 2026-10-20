@@ -1,4 +1,4 @@
-export type View = "chats" | "stories" | "search" | "profile" | "settings" | "contacts";
+export type View = "chats" | "stories" | "search" | "shop" | "profile" | "settings" | "contacts";
 
 export interface Contact {
   id: number;

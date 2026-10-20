@@ -48,6 +48,7 @@ import ResetApprovalPrompt from "@/components/messenger/ResetApprovalPrompt";
 import VkPhonePrompt from "@/components/messenger/VkPhonePrompt";
 import { reportAppVersion } from "@/lib/reportAppVersion";
 import { NAV_ITEMS } from "@/pages/navItems";
+import ShopPanel from "@/components/messenger/ShopPanel";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
 const LAZY_FALLBACK = (
@@ -173,7 +174,7 @@ export default function Index() {
 
   const { t: tr } = useT();
   const {
-    setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowProgress, setShowBots, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
+    setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowLightning, setShowProgress, setShowBots, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
   } = overlays;
   const openOverlay = overlays.open;
 
@@ -545,14 +546,24 @@ export default function Index() {
         </div>
 
         {/* Search bar */}
-        <div className="flex items-center gap-2 mx-4 mb-2 glass rounded-2xl px-3 py-2">
-          <Icon name="Search" size={15} className="text-muted-foreground" />
-          <input
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder={tr("common.search") + "..."}
-            className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder-muted-foreground"
-          />
+        <div className="flex items-center gap-2 mx-4 mb-2">
+          <div className="flex-1 flex items-center gap-2 glass rounded-2xl px-3 py-2 min-w-0">
+            <Icon name="Search" size={15} className="text-muted-foreground" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder={tr("common.search") + "..."}
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm text-foreground placeholder-muted-foreground"
+            />
+          </div>
+          <button
+            onClick={() => { setView("search"); setSelectedChat(null); setShowSidebar(false); }}
+            className="flex items-center gap-1.5 px-3 py-2 glass rounded-2xl text-xs font-semibold text-violet-300 hover:bg-white/8 transition-colors flex-shrink-0"
+            title="Найти людей по имени, номеру или ID"
+          >
+            <Icon name="UserSearch" fallback="UserPlus" size={15} />
+            Люди
+          </button>
         </div>
 
         {/* Content */}
@@ -838,6 +849,16 @@ export default function Index() {
           />
         ) : view === "search" ? (
           <SearchPanel users={users} currentUser={currentUser} onStartChat={handleStartChat} onBack={() => { setView("chats"); setShowSidebar(true); }} />
+        ) : view === "shop" ? (
+          <ShopPanel
+            currentUser={currentUser}
+            onBack={() => { setView("chats"); setShowSidebar(true); }}
+            onOpenPremium={() => openOverlay(setShowPremium)}
+            onOpenPro={() => openOverlay(setShowPro)}
+            onOpenLightning={() => openOverlay(setShowLightning)}
+            onOpenStickers={() => openOverlay(setShowStickers)}
+            onOpenWallet={() => openOverlay(setShowWallet)}
+          />
         ) : view === "contacts" ? (
           <ContactsPanel currentUser={currentUser} onStartChat={(chat) => { setSelectedChat(chat); setShowSidebar(false); }} onCall={startCall} onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "profile" ? (

@@ -14,6 +14,19 @@ export async function saveFile(filename: string, content: string, mime: string):
     return;
   }
   const blob = new Blob([content], { type: mime });
+  const ua = navigator.userAgent || "";
+  const isAppleMobile = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+  if (isAppleMobile && typeof File !== "undefined" && navigator.canShare) {
+    const file = new File([blob], filename, { type: mime });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename });
+        return;
+      } catch (e) {
+        if ((e as DOMException)?.name === "AbortError") return;
+      }
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

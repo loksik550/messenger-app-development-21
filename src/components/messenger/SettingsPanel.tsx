@@ -194,22 +194,45 @@ export function SettingsPanel({
     }
   };
 
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupProgress, setBackupProgress] = useState("");
   const exportBackup = async () => {
-    if (!currentUser) return;
+    if (!currentUser || backupBusy) return;
+    setBackupBusy(true);
+    setBackupProgress("Собираю чаты...");
     try {
       const chats = await api("get_chats", {}, currentUser.id);
-      const out: { exported_at: string; user: { id: number; name: string; phone: string }; chats: unknown[] } = {
+      if (chats?.error) throw new Error(chats.error);
+      const list: { id: number }[] = chats.chats || [];
+      const out: { exported_at: string; user: { id: number; name: string; phone: string; nova_id?: string | null }; chats: unknown[] } = {
         exported_at: new Date().toISOString(),
-        user: { id: currentUser.id, name: currentUser.name, phone: currentUser.phone },
+        user: { id: currentUser.id, name: currentUser.name, phone: currentUser.phone, nova_id: currentUser.nova_id },
         chats: [],
       };
-      for (const ch of (chats.chats || [])) {
-        const msgs = await api("get_messages", { chat_id: ch.id, since: 0 }, currentUser.id);
-        out.chats.push({ chat: ch, messages: msgs.messages || [] });
-      }
+      let done = 0;
+      const results: unknown[] = new Array(list.length);
+      const queue = list.map((ch, i) => ({ ch, i }));
+      const worker = async () => {
+        while (queue.length) {
+          const job = queue.shift();
+          if (!job) break;
+          const msgs = await api("get_messages", { chat_id: job.ch.id, since: 0 }, currentUser.id).catch(() => ({ messages: [] }));
+          results[job.i] = { chat: job.ch, messages: msgs?.messages || [] };
+          done += 1;
+          setBackupProgress(`Чаты: ${done} из ${list.length}`);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, list.length || 1) }, worker));
+      out.chats = results.filter(Boolean);
+      setBackupProgress("Сохраняю файл...");
       await saveFile(`nova_backup_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(out, null, 2), "application/json");
+      setBackupProgress("Готово");
+      setTimeout(() => setBackupProgress(""), 2500);
     } catch (e) {
+      setBackupProgress("");
       alert("Не удалось сохранить копию: " + (e instanceof Error ? e.message : "попробуйте ещё раз"));
+    } finally {
+      setBackupBusy(false);
     }
   };
 
@@ -285,6 +308,8 @@ export function SettingsPanel({
 
         <SettingsActions
           exportBackup={exportBackup}
+          backupBusy={backupBusy}
+          backupProgress={backupProgress}
           onLogout={onLogout}
           onDeleteAccount={onDeleteAccount}
           onOpenPrivacyPolicy={onOpenPrivacyPolicy}
