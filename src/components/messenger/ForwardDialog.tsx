@@ -4,11 +4,13 @@ import { api, type User } from "@/lib/api";
 
 export function ForwardDialog({
   messageId,
+  messageText,
   currentUser,
   currentChatId,
   onClose,
 }: {
   messageId: number;
+  messageText?: string;
   currentUser: User;
   currentChatId: number;
   onClose: () => void;
@@ -46,7 +48,10 @@ export function ForwardDialog({
 
   const send = async (chatId: number) => {
     setSending(true);
-    await api("forward_message", { message_id: messageId, target_chat_id: chatId }, currentUser.id);
+    const r = await api("forward_message", { message_id: messageId, target_chat_id: chatId }, currentUser.id);
+    if (r?.error && /с устройства/.test(r.error) && messageText) {
+      await api("send_message", { chat_id: chatId, text: messageText, client_id: Date.now() }, currentUser.id);
+    }
     setSentTo(chatId);
     setTimeout(onClose, 600);
   };

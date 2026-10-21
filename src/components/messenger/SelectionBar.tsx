@@ -21,8 +21,8 @@ export interface SelectableMessage {
 async function forwardOne(m: SelectableMessage, t: ForwardTarget, me: User, source: "chat" | "group") {
   if (source === "chat" && t.kind === "chat") {
     const r = await api("forward_message", { message_id: m.id, target_chat_id: t.id }, me.id);
-    if (r?.error) throw new Error(r.error);
-    return;
+    if (!r?.error) return;
+    if (!/с устройства/.test(r.error)) throw new Error(r.error);
   }
   const media = m.media_url || m.image_url || undefined;
   const fields = {

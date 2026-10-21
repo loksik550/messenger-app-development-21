@@ -15,7 +15,7 @@ export function ChatModals({
   showFundModal, setShowFundModal,
   showDisappearing, setShowDisappearing,
   setDisappearingSec, disappearingSec,
-  forwardMsgId, setForwardMsgId,
+  forwardMsgId, setForwardMsgId, forwardText,
   showVideoCircle, setShowVideoCircle,
   showSchedule, setShowSchedule,
   showScheduledList, setShowScheduledList,
@@ -38,6 +38,7 @@ export function ChatModals({
   disappearingSec: number | null;
   forwardMsgId: number | null;
   setForwardMsgId: React.Dispatch<React.SetStateAction<number | null>>;
+  forwardText?: string;
   showVideoCircle: boolean;
   setShowVideoCircle: React.Dispatch<React.SetStateAction<boolean>>;
   showSchedule: boolean;
@@ -96,6 +97,7 @@ export function ChatModals({
       {forwardMsgId !== null && (
         <ForwardDialog
           messageId={forwardMsgId}
+          messageText={forwardText}
           currentUser={currentUser}
           currentChatId={chat.id}
           onClose={() => setForwardMsgId(null)}

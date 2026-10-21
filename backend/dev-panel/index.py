@@ -62,6 +62,7 @@ ACTION_PERMS = {
     "channels": "channels", "channel_update": "channels", "channel_delete": "channels",
     "channel_messages": "channels", "channel_message_delete": "channels",
     "channel_members": "channels", "channel_set_test": "channels",
+    "channel_post": "channels", "nova_message": "user_write",
     "team": "team", "team_update": "team", "team_remove": "team",
     "settings_get": "dashboard", "settings_save": "settings",
     "change_password": "dashboard", "change_email": "dashboard",
@@ -1357,6 +1358,73 @@ def handler(event: dict, context) -> dict:
             return ok({"members": [{
                 "id": r[0], "name": r[1], "avatar_url": r[2] or "", "role": r[3], "joined_at": r[4],
             } for r in cur.fetchall()]})
+
+        if action == "channel_post":
+            gid = int(body.get("channel_id") or 0)
+            text = (body.get("text") or "").strip()[:4000]
+            media_url = (body.get("media_url") or "").strip() or None
+            media_type = (body.get("media_type") or "").strip() or None
+            if not text and not media_url:
+                return err("Напишите текст поста")
+            cur.execute(f"SELECT name, is_channel FROM {SCHEMA}.groups WHERE id = %s AND removed_at IS NULL", (gid,))
+            g = cur.fetchone()
+            if not g:
+                return err("Группа не найдена", 404)
+            nova = _nova_user_id(cur)
+            now = int(time.time())
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.group_members (group_id, user_id, role, joined_at) VALUES (%s, %s, 'admin', %s) "
+                f"ON CONFLICT (group_id, user_id) DO UPDATE SET role = CASE WHEN {SCHEMA}.group_members.role = 'owner' "
+                f"THEN 'owner' ELSE 'admin' END",
+                (gid, nova, now),
+            )
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.group_messages (group_id, sender_id, text, media_type, media_url, created_at) "
+                f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                (gid, nova, text, media_type, media_url, now),
+            )
+            mid = cur.fetchone()[0]
+            preview = text[:100] if text else "[медиа]"
+            cur.execute(f"UPDATE {SCHEMA}.groups SET last_message = %s, last_message_at = %s WHERE id = %s", (preview, now, gid))
+            try:
+                key = hashlib.sha256((os.environ.get("DATABASE_URL", "") + "|nova-internal").encode()).hexdigest()
+                req = Request(PUSH_URL, data=json.dumps({
+                    "action": "send_group", "group_id": gid, "group_name": g[0], "sender_id": nova,
+                    "message": preview, "message_id": mid, "is_channel": bool(g[1]),
+                }).encode(), headers={"Content-Type": "application/json", "X-Internal-Key": key})
+                urlopen(req, timeout=4)
+            except Exception as e:
+                print(f"[channel_post] push: {e}")
+            audit(cur, admin, "channel_post", f"Пост от Nova в «{g[0]}» (#{gid}): {text[:80]}", ip)
+            return ok({"success": True, "id": mid})
+
+        if action == "nova_message":
+            text = (body.get("text") or "").strip()[:4000]
+            if not text:
+                return err("Напишите сообщение")
+            ids = []
+            for x in (body.get("user_ids") or [])[:500]:
+                try:
+                    ids.append(int(x))
+                except (TypeError, ValueError):
+                    pass
+            if not ids:
+                return err("Выберите получателей")
+            cur.execute(
+                f"SELECT id FROM {SCHEMA}.users WHERE id = ANY(%s) AND COALESCE(is_service, FALSE) = FALSE "
+                f"AND phone NOT LIKE 'deleted_%%'",
+                (ids,),
+            )
+            targets = [r[0] for r in cur.fetchall()]
+            sent = 0
+            for uid in targets:
+                try:
+                    send_from_nova(cur, uid, text)
+                    sent += 1
+                except Exception as e:
+                    print(f"[nova_message] {uid}: {e}")
+            audit(cur, admin, "nova_message", f"Сообщение от Nova для {sent} чел.: {text[:80]}", ip)
+            return ok({"success": True, "sent": sent})
 
         if action == "channel_set_test":
             gid = int(body.get("channel_id") or 0)

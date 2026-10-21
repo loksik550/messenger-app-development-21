@@ -1,4 +1,5 @@
 import Icon from "@/components/ui/icon";
+import E2EPanel, { E2EBadge, useChatSecurity } from "@/components/messenger/E2EPanel";
 import { useState, useRef, useEffect } from "react";
 import { api, type Chat, type Message, type User } from "@/lib/api";
 import { ChatHeader, ChatInput } from "@/components/messenger/ChatWindowParts";
@@ -63,6 +64,8 @@ export function ChatWindow({
   const [showFundModal, setShowFundModal] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [showDisappearing, setShowDisappearing] = useState(false);
+  const [showE2E, setShowE2E] = useState(false);
+  const e2eSec = useChatSecurity(chat.id, currentUser.id, !chat.saved && !chat.group && chat.id > 0);
   const {
     pinnedMsg, setPinnedMsg,
     isUnknown, setIsUnknown, unknownDismissed, setUnknownDismissed, addToContacts,
@@ -119,7 +122,8 @@ export function ChatWindow({
       if (editing) {
         const editId = editing.id;
         setEditing(null);
-        await api("edit_message", { message_id: editId, text }, currentUser.id);
+        const er = await api("edit_message", { message_id: editId, chat_id: chat.id, text }, currentUser.id);
+        if (er?.error) { alert(er.error); return; }
         setMessages(prev => prev.map(m => m.id === editId ? { ...m, text, edited_at: Math.floor(Date.now() / 1000) } : m));
         return;
       }
@@ -216,7 +220,12 @@ export function ChatWindow({
         onSetDisappearing={() => setShowDisappearing(true)}
         disappearingSeconds={disappearingSec}
         onChooseWallpaper={() => setShowWallpaper(true)}
+        e2eSlot={<E2EBadge sec={e2eSec} onClick={() => setShowE2E(true)} />}
       />
+
+      {showE2E && (
+        <E2EPanel chatId={chat.id} userId={currentUser.id} partnerName={chat.name} sec={e2eSec} onClose={() => setShowE2E(false)} />
+      )}
 
       {showProfile && !chat.group && !chat.saved && (
         <PartnerProfilePanel
@@ -400,6 +409,7 @@ export function ChatWindow({
       />
 
       <ChatModals
+        forwardText={forwardMsgId !== null ? messages.find(m => m.id === forwardMsgId)?.text : undefined}
         chat={chat}
         currentUser={currentUser}
         input={input}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { myDeviceFingerprint } from "@/lib/e2e";
 import Icon from "@/components/ui/icon";
 import { api, type User, type IconName } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
@@ -107,6 +108,11 @@ export function SettingsPanel({
       return next;
     });
   };
+
+  const [e2eFp, setE2eFp] = useState<string | null>(null);
+  useEffect(() => {
+    if (userId) myDeviceFingerprint(userId).then(setE2eFp).catch(() => { /* ignore */ });
+  }, [userId]);
 
   const sounds = useSettingsSounds();
   const { pushPerm, requestPushPerm } = sounds;
@@ -262,19 +268,29 @@ export function SettingsPanel({
         </div>
       </div>
 
-      <div className="mx-4 mb-4 glass rounded-2xl p-4 border border-violet-500/20">
+      <div className="mx-4 mb-4 glass rounded-2xl p-4 border border-emerald-500/25">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl grad-primary flex items-center justify-center">
-            <Icon name="ShieldCheck" size={20} className="text-white" />
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+            <Icon name="Lock" size={20} className="text-emerald-400" />
           </div>
-          <div>
-            <div className="font-semibold text-sm">Защита активна</div>
-            <div className="text-xs text-violet-400">Соединение зашифровано</div>
+          <div className="min-w-0">
+            <div className="font-semibold text-sm flex items-center gap-2">
+              Сквозное шифрование
+              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">ВКЛ</span>
+            </div>
+            <div className="text-xs text-emerald-400">Личные чаты · всегда включено</div>
           </div>
         </div>
-        <div className="text-xs text-muted-foreground leading-relaxed">
-          Сообщения и звонки передаются по защищённому соединению (HTTPS/TLS, звонки — DTLS-SRTP). Посторонние в сети не могут их перехватить.
+        <div className="text-xs text-muted-foreground leading-relaxed space-y-1.5">
+          <p>Текст личных сообщений шифруется на вашем устройстве и читается только на устройствах собеседника и ваших. Сервер Nova хранит лишь шифр — ни мы, ни кто-либо ещё прочитать его не может.</p>
+          <p>Ключи создаются на устройстве и не покидают его. Каждое сообщение подписано, поэтому подделку или подмену видно сразу. Сверить ключи с собеседником можно в чате: нажмите «Зашифровано» под именем.</p>
+          <p className="text-muted-foreground/70">Не шифруются: группы и каналы, фото и файлы, звонки (они защищены при передаче DTLS-SRTP), а также переписка с ботами и аккаунтом Nova.</p>
         </div>
+        {e2eFp && (
+          <div className="mt-3 pt-3 border-t border-white/5 text-[11px] text-muted-foreground">
+            Отпечаток ключа этого устройства: <span className="font-mono text-foreground/80">{e2eFp}</span>
+          </div>
+        )}
       </div>
 
       <div className="px-4 space-y-2 pb-6">

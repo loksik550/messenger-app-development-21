@@ -5,6 +5,7 @@ import DevUserBilling from "@/components/devpanel/DevUserBilling";
 import DevUserHistory from "./DevUserHistory";
 import { DevUserChatsTab, DevUserMediaTab } from "./DevUserTabs";
 import { DevPhoneVk } from "@/components/devpanel/DevPhoneVk";
+import DevNovaMessage from "./DevNovaMessage";
 
 const BAN_REASONS = [
   "Спам и массовые рассылки",
@@ -163,6 +164,8 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
           <Icon name="X" size={18} />
         </button>
       </div>
+
+      {can("user_write") && <DevNovaMessage userId={user.id} userName={user.name} />}
 
       <div className="flex gap-1 p-1 bg-black/30 rounded-xl mb-4">
         {(

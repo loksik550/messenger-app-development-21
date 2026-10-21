@@ -80,6 +80,27 @@ export default function DevChannelView({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
+  const [post, setPost] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [postErr, setPostErr] = useState("");
+
+  const publish = async () => {
+    const text = post.trim();
+    if (!text || posting) return;
+    if (!confirm(`Опубликовать в «${channel.name}» от имени Nova? Участники получат уведомление.`)) return;
+    setPosting(true);
+    setPostErr("");
+    try {
+      await devApi("channel_post", { channel_id: channel.id, text });
+      setPost("");
+      await loadMsgs();
+      onChanged();
+    } catch (e) {
+      setPostErr(e instanceof Error ? e.message : "Не удалось опубликовать");
+    } finally {
+      setPosting(false);
+    }
+  };
 
   const loadMsgs = async (before = 0) => {
     const r = await devApi<{ messages: Msg[]; has_more: boolean }>("channel_messages", { channel_id: channel.id, before });
@@ -279,6 +300,36 @@ export default function DevChannelView({
             </div>
           )}
         </div>
+
+        {canEdit && tab === "feed" && (
+          <div className="border-t border-white/8 px-5 py-3">
+            <div className="flex items-center gap-2 mb-2 text-xs text-slate-400">
+              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-[9px] font-bold text-white">N</div>
+              Пост от имени <span className="text-slate-200 font-semibold">Nova</span>
+              <Icon name="BadgeCheck" size={12} className="text-sky-400" />
+            </div>
+            <div className="flex gap-2 items-end">
+              <textarea
+                value={post}
+                onChange={(e) => setPost(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) publish(); }}
+                rows={post.split("\n").length > 2 ? 5 : 2}
+                maxLength={4000}
+                placeholder="Текст поста… (Ctrl+Enter — опубликовать)"
+                className="flex-1 bg-black/30 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-violet-500/50 resize-none"
+              />
+              <button
+                onClick={publish}
+                disabled={posting || !post.trim()}
+                className="h-11 px-4 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-sm font-semibold disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Icon name={posting ? "Loader2" : "Send"} size={15} className={posting ? "animate-spin" : ""} />
+                <span className="hidden sm:inline">Опубликовать</span>
+              </button>
+            </div>
+            {postErr && <p className="text-xs text-red-400 mt-1.5">{postErr}</p>}
+          </div>
+        )}
       </div>
     </div>
   );

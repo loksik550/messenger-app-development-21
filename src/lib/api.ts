@@ -1,5 +1,6 @@
 import { reportNetworkError, reportNetworkOk } from "@/lib/connection";
 import { authHeaders, reportAuthExpired } from "@/lib/authToken";
+import { needsOutgoing, processOutgoing, processIncoming } from "@/lib/e2e";
 
 export const CHAT_API = "https://functions.poehali.dev/b97ade88-cc88-4702-a461-4c386efd5ca3";
 export const CHAT_POLL_API = "https://functions.poehali.dev/3fc067b7-d1b3-4aed-8ad9-98df81040f0a";
@@ -139,6 +140,24 @@ async function fetchWithRetry(url: string, init: RequestInit, timeoutMs = 15000,
 }
 
 export async function api(action: string, body: Record<string, unknown> = {}, userId?: number) {
+  if (userId && needsOutgoing(action, body)) {
+    try {
+      body = await processOutgoing(body, userId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (/открытым текстом/.test(msg)) return { error: msg };
+      reportNetworkError();
+      throw e;
+    }
+  }
+  const data = await apiRaw(action, body, userId);
+  if (userId && (action === "get_messages" || action === "get_pinned_message") && data && !data.error) {
+    await processIncoming(action, body, data, userId).catch(() => { /* ignore */ });
+  }
+  return data;
+}
+
+async function apiRaw(action: string, body: Record<string, unknown>, userId?: number) {
   const url = POLL_ACTIONS.has(action) ? CHAT_POLL_API : CHAT_API;
   let res: Response;
   try {

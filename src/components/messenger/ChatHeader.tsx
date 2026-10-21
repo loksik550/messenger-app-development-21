@@ -16,6 +16,7 @@ export function ChatHeader({
   setSearchQuery,
   showSearch,
   setShowSearch,
+  e2eSlot,
 }: {
   chat: Chat;
   onBack: () => void;
@@ -35,6 +36,7 @@ export function ChatHeader({
   onBlock: () => void;
   onToggleArchive: () => void;
   onSetDisappearing?: () => void;
+  e2eSlot?: React.ReactNode;
   disappearingSeconds?: number | null;
   onChooseWallpaper?: () => void;
 }) {
@@ -108,6 +110,7 @@ export function ChatHeader({
             ) : (
               formatLastSeen(chat.lastSeen)
             )}
+            {e2eSlot && !chat.saved && !chat.group && <span className="ml-2">{e2eSlot}</span>}
           </div>
         </div>
       </button>

@@ -142,7 +142,7 @@ def handler(event: dict, context) -> dict:
     if action == "scheduled_run_due":
         now = int(time.time())
         cur.execute(
-            f"""SELECT id, chat_id, text, media_url, media_type, file_name, file_size, duration
+            f"""SELECT id, chat_id, text, media_url, media_type, file_name, file_size, duration, enc
                 FROM {SCHEMA}.scheduled_messages
                 WHERE sender_id=%s AND sent_at IS NULL AND cancelled_at IS NULL AND scheduled_at <= %s
                 ORDER BY scheduled_at ASC LIMIT 20""",
@@ -151,7 +151,7 @@ def handler(event: dict, context) -> dict:
         due = cur.fetchall()
         sent_ids = []
         for row in due:
-            sid, chat_id, text, media_url, media_type, file_name, file_size, duration = row
+            sid, chat_id, text, media_url, media_type, file_name, file_size, duration, s_enc = row
             cur.execute(
                 f"UPDATE {SCHEMA}.scheduled_messages SET sent_at=%s WHERE id=%s AND sent_at IS NULL RETURNING id",
                 (now, sid),
@@ -161,16 +161,16 @@ def handler(event: dict, context) -> dict:
             try:
                 cur.execute(
                     f"""INSERT INTO {SCHEMA}.messages
-                        (chat_id, sender_id, text, image_url, media_type, media_url, file_name, file_size, duration, created_at, kind)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                        (chat_id, sender_id, text, image_url, media_type, media_url, file_name, file_size, duration, created_at, kind, enc)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                     (
                         int(chat_id), int(user_id), text or "",
                         media_url if media_type == "image" else None,
-                        media_type, media_url, file_name, file_size, duration, now, "text",
+                        media_type, media_url, file_name, file_size, duration, now, "text", s_enc,
                     ),
                 )
                 msg_id = int(cur.fetchone()[0])
-                preview = (text or {"image": "📷 Фото", "video": "📹 Видео", "audio": "🎵 Аудио", "file": "📎 Файл"}.get(media_type or "", "Сообщение"))[:100]
+                preview = "🔒 Сообщение" if s_enc else (text or {"image": "📷 Фото", "video": "📹 Видео", "audio": "🎵 Аудио", "file": "📎 Файл"}.get(media_type or "", "Сообщение"))[:100]
                 cur.execute(
                     f"UPDATE {SCHEMA}.chats SET last_message=%s, last_message_at=%s WHERE id=%s",
                     (preview, now, int(chat_id)),

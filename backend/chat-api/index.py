@@ -1213,6 +1213,113 @@ def _handle(event: dict, context) -> dict:
         return ok({"chat_id": chat_id})
 
     # ── get_messages ──────────────────────────────────────────────────────────
+    # ── Сквозное шифрование: ключи устройств ──────────────────────────────────
+    if action == "e2e_register":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        dev = str(body.get("device_id") or "").strip()[:64]
+        pub = str(body.get("pub") or "").strip()
+        name = str(body.get("name") or "").strip()[:80]
+        if not dev or not pub or len(pub) > 2000:
+            conn.close(); return err("Нужны device_id и pub")
+        try:
+            pj = json.loads(pub)
+            assert isinstance(pj.get("e"), str) and isinstance(pj.get("s"), str)
+        except Exception:
+            conn.close(); return err("Неверный ключ")
+        now = int(time.time())
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.e2e_devices (user_id, device_id, pub, name, created_at, last_seen)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, device_id) DO UPDATE SET last_seen = EXCLUDED.last_seen, name = EXCLUDED.name
+                RETURNING pub, revoked_at""",
+            (int(user_id), dev, pub, name, now, now)
+        )
+        row = cur.fetchone()
+        if row and row[0] != pub:
+            conn.close(); return err("Устройство уже зарегистрировано с другим ключом", 409)
+        if row and row[1]:
+            cur.execute(f"UPDATE {SCHEMA}.e2e_devices SET revoked_at = NULL WHERE user_id = %s AND device_id = %s", (int(user_id), dev))
+        cur.execute(
+            f"""UPDATE {SCHEMA}.e2e_devices SET revoked_at = %s
+                WHERE user_id = %s AND revoked_at IS NULL AND id NOT IN (
+                    SELECT id FROM {SCHEMA}.e2e_devices WHERE user_id = %s AND revoked_at IS NULL
+                    ORDER BY last_seen DESC LIMIT 8)""",
+            (now, int(user_id), int(user_id))
+        )
+        conn.close()
+        return ok({"ok": True})
+
+    if action == "e2e_revoke":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        dev = str(body.get("device_id") or "").strip()[:64]
+        cur.execute(
+            f"UPDATE {SCHEMA}.e2e_devices SET revoked_at = %s WHERE user_id = %s AND device_id = %s AND revoked_at IS NULL",
+            (int(time.time()), int(user_id), dev)
+        )
+        conn.close()
+        return ok({"ok": True})
+
+    if action == "e2e_chat_devices":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        try:
+            cid = int(body.get("chat_id") or 0)
+        except (TypeError, ValueError):
+            cid = 0
+        cur.execute(f"SELECT user1_id, user2_id FROM {SCHEMA}.chats WHERE id = %s", (cid,))
+        cr = cur.fetchone()
+        me = int(user_id)
+        if not cr or me not in (int(cr[0]), int(cr[1])):
+            conn.close(); return err("Нет доступа к чату", 403)
+        partner = int(cr[1]) if int(cr[0]) == me else int(cr[0])
+        cur.execute(
+            f"SELECT COALESCE(is_bot, FALSE) OR COALESCE(is_service, FALSE) FROM {SCHEMA}.users WHERE id = %s",
+            (partner,)
+        )
+        pr = cur.fetchone()
+        no_e2e = bool(pr and pr[0])
+        cur.execute(
+            f"""SELECT user_id, device_id, pub, name, created_at, revoked_at
+                FROM {SCHEMA}.e2e_devices WHERE user_id = ANY(%s)
+                ORDER BY user_id, created_at""",
+            (list({me, partner}),)
+        )
+        out = {}
+        for r in cur.fetchall():
+            out.setdefault(str(r[0]), []).append({
+                "id": r[1], "pub": r[2], "name": r[3], "created_at": r[4], "revoked": r[5] is not None,
+            })
+        conn.close()
+        return ok({"me": me, "partner_id": partner, "e2e": not no_e2e, "devices": out})
+
+    if action == "e2e_devices":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        ids = []
+        for x in (body.get("user_ids") or [])[:10]:
+            try:
+                ids.append(int(x))
+            except (TypeError, ValueError):
+                pass
+        if not ids:
+            conn.close(); return ok({"devices": {}})
+        cur.execute(
+            f"""SELECT d.user_id, d.device_id, d.pub, d.name, d.created_at
+                FROM {SCHEMA}.e2e_devices d
+                JOIN {SCHEMA}.users u ON u.id = d.user_id
+                WHERE d.user_id = ANY(%s) AND d.revoked_at IS NULL
+                  AND COALESCE(u.is_bot, FALSE) = FALSE AND COALESCE(u.is_service, FALSE) = FALSE
+                ORDER BY d.user_id, d.created_at""",
+            (ids,)
+        )
+        out = {}
+        for r in cur.fetchall():
+            out.setdefault(str(r[0]), []).append({"id": r[1], "pub": r[2], "name": r[3], "created_at": r[4]})
+        conn.close()
+        return ok({"devices": out})
+
     if action == "get_messages":
         chat_id = body.get("chat_id") or params.get("chat_id")
         since = body.get("since") or params.get("since") or 0
@@ -1260,6 +1367,7 @@ def _handle(event: dict, context) -> dict:
                        COALESCE(m.kind, 'text'), m.payload_json, m.expires_at,
                        rm.id AS reply_id, ru.name AS reply_sender_name,
                        rm.text AS reply_text, rm.media_type AS reply_media_type,
+                       m.enc, rm.enc AS reply_enc,
                        COALESCE(
                            (SELECT json_agg(json_build_object(
                                 'emoji', mr.emoji,
@@ -1312,7 +1420,7 @@ def _handle(event: dict, context) -> dict:
         def _reply_obj(r):
             if not r[12] or not r[19]:
                 return None
-            return {"id": r[19], "sender_name": r[20], "text": r[21], "media_type": r[22]}
+            return {"id": r[19], "sender_name": r[20], "text": r[21], "media_type": r[22], "enc": r[24]}
 
         messages = [{
             "id": r[0], "sender_id": r[1], "text": r[2], "created_at": r[3],
@@ -1327,7 +1435,8 @@ def _handle(event: dict, context) -> dict:
             "kind": r[16] or "text",
             "payload": _parse_payload(r[17]),
             "expires_at": int(r[18]) if r[18] else None,
-            "reactions": r[23] or [],
+            "enc": r[23],
+            "reactions": r[25] or [],
         } for r in rows]
         return ok({"messages": messages, "removed_ids": removed_ids, "read_up_to": read_up_to, "now": int(time.time()), "has_more": has_more})
 
@@ -1341,6 +1450,11 @@ def _handle(event: dict, context) -> dict:
         except (TypeError, ValueError):
             conn.close(); return err("Неверный chat_id/scheduled_at")
         text = (body.get("text") or "").strip()[:4000]
+        s_enc = body.get("enc") or None
+        if s_enc is not None:
+            if not isinstance(s_enc, str) or len(s_enc) > 200000:
+                conn.close(); return err("Неверное зашифрованное сообщение")
+            text = "🔒 Зашифрованное сообщение"
         media_url = body.get("media_url") or None
         media_type = body.get("media_type") or None
         file_name = body.get("file_name") or None
@@ -1367,9 +1481,9 @@ def _handle(event: dict, context) -> dict:
             conn.close(); return err("Нет доступа к чату", 403)
         cur.execute(
             f"""INSERT INTO {SCHEMA}.scheduled_messages
-                (chat_id, sender_id, text, media_url, media_type, file_name, file_size, duration, scheduled_at, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (chat_id, int(user_id), text, media_url, media_type, file_name, file_size, duration, scheduled_at, int(time.time()))
+                (chat_id, sender_id, text, media_url, media_type, file_name, file_size, duration, scheduled_at, created_at, enc)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (chat_id, int(user_id), text, media_url, media_type, file_name, file_size, duration, scheduled_at, int(time.time()), s_enc)
         )
         sid = int(cur.fetchone()[0])
         conn.close()
@@ -1429,7 +1543,7 @@ def _handle(event: dict, context) -> dict:
             conn.close(); return err("Нужен X-User-Id")
         now = int(time.time())
         cur.execute(
-            f"""SELECT id, chat_id, text, media_url, media_type, file_name, file_size, duration
+            f"""SELECT id, chat_id, text, media_url, media_type, file_name, file_size, duration, enc
                 FROM {SCHEMA}.scheduled_messages
                 WHERE sender_id=%s AND sent_at IS NULL AND cancelled_at IS NULL AND scheduled_at <= %s
                 ORDER BY scheduled_at ASC LIMIT 20""",
@@ -1438,19 +1552,19 @@ def _handle(event: dict, context) -> dict:
         due = cur.fetchall()
         sent_ids = []
         for row in due:
-            sid, chat_id, text, media_url, media_type, file_name, file_size, duration = row
+            sid, chat_id, text, media_url, media_type, file_name, file_size, duration, s_enc = row
             kind = "text"
             try:
                 cur.execute(
                     f"""INSERT INTO {SCHEMA}.messages
-                        (chat_id, sender_id, text, image_url, media_type, media_url, file_name, file_size, duration, created_at, kind)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                        (chat_id, sender_id, text, image_url, media_type, media_url, file_name, file_size, duration, created_at, kind, enc)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                     (int(chat_id), int(user_id), text or "",
                      media_url if media_type == "image" else None,
-                     media_type, media_url, file_name, file_size, duration, now, kind)
+                     media_type, media_url, file_name, file_size, duration, now, kind, s_enc)
                 )
                 msg_id = int(cur.fetchone()[0])
-                preview = (text or {"image": "📷 Фото", "video": "📹 Видео", "audio": "🎵 Аудио", "file": "📎 Файл"}.get(media_type or "", "Сообщение"))[:100]
+                preview = "🔒 Сообщение" if s_enc else (text or {"image": "📷 Фото", "video": "📹 Видео", "audio": "🎵 Аудио", "file": "📎 Файл"}.get(media_type or "", "Сообщение"))[:100]
                 cur.execute(
                     f"UPDATE {SCHEMA}.chats SET last_message=%s, last_message_at=%s WHERE id=%s",
                     (preview, now, int(chat_id))
@@ -2228,6 +2342,11 @@ def _handle(event: dict, context) -> dict:
         forwarded_from_name = (body.get("forwarded_from_name") or "").strip() or None
         kind = (body.get("kind") or "text").strip() or "text"
         payload = body.get("payload") or None
+        enc = body.get("enc") or None
+        if enc is not None:
+            if not isinstance(enc, str) or len(enc) > 200000 or kind != "text" or media_url or image_url:
+                conn.close(); return err("Неверное зашифрованное сообщение")
+            text = "🔒 Зашифрованное сообщение"
 
         # Совместимость: image_url → media
         if image_url and not media_url:
@@ -2238,7 +2357,7 @@ def _handle(event: dict, context) -> dict:
             conn.close()
             return err("Укажите chat_id и text или media")
 
-        _bad = _check_forbidden(cur, user_id, text, _mod)
+        _bad = None if enc else _check_forbidden(cur, user_id, text, _mod)
         if _bad:
             conn.commit()
             conn.close()
@@ -2308,20 +2427,20 @@ def _handle(event: dict, context) -> dict:
         cur.execute(
             f"""INSERT INTO {SCHEMA}.messages
                 (chat_id, sender_id, text, image_url, media_type, media_url, file_name, file_size, duration, created_at,
-                 reply_to_id, forwarded_from_user_id, forwarded_from_name, kind, payload_json, expires_at, client_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                 reply_to_id, forwarded_from_user_id, forwarded_from_name, kind, payload_json, expires_at, client_id, enc)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (int(chat_id), int(user_id), text,
              media_url if media_type == "image" else None,
              media_type or None, media_url or None,
              file_name, file_size, duration, now,
              int(reply_to_id) if reply_to_id else None,
              int(forwarded_from_user_id) if forwarded_from_user_id else None,
-             forwarded_from_name, kind, payload_str, expires_at, client_id)
+             forwarded_from_name, kind, payload_str, expires_at, client_id, enc)
         )
         msg_id = cur.fetchone()[0]
         cur.execute(
             f"UPDATE {SCHEMA}.chats SET last_message = %s, last_message_at = %s WHERE id = %s",
-            (text[:100], now, int(chat_id))
+            ("🔒 Сообщение" if enc else text[:100], now, int(chat_id))
         )
         cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (now, int(user_id)))
 
@@ -2378,14 +2497,14 @@ def _handle(event: dict, context) -> dict:
                     "chat_id": int(chat_id),
                     "from_user_id": int(user_id),
                     "from_user_name": sender_name,
-                    "text": text or "",
+                    "text": "" if enc else (text or ""),
                     "created_at": now,
                 }).encode("utf-8")
                 _fire_and_forget_http(bot_webhook_url, wh_body, timeout=3.0)
             # Push-уведомление — в фоне
             push_url = _push_notify_url()
             if push_url:
-                _preview = (text or "").strip()[:100]
+                _preview = "🔒 Новое сообщение" if enc else (text or "").strip()[:100]
                 if not _preview:
                     _preview = {
                         "image": "📷 Фото",
@@ -3694,6 +3813,11 @@ def _handle(event: dict, context) -> dict:
             return err("Нужен X-User-Id")
         msg_id = body.get("message_id")
         new_text = (body.get("text") or "").strip()
+        new_enc = body.get("enc") or None
+        if new_enc is not None:
+            if not isinstance(new_enc, str) or len(new_enc) > 200000:
+                conn.close(); return err("Неверное зашифрованное сообщение")
+            new_text = "🔒 Зашифрованное сообщение"
         if not msg_id or not new_text:
             conn.close()
             return err("Укажите message_id и text")
@@ -3710,8 +3834,8 @@ def _handle(event: dict, context) -> dict:
             return err("Можно редактировать только свои сообщения", 403)
         now = int(time.time())
         cur.execute(
-            f"UPDATE {SCHEMA}.messages SET text = %s, edited_at = %s WHERE id = %s",
-            (new_text, now, int(msg_id))
+            f"UPDATE {SCHEMA}.messages SET text = %s, enc = %s, edited_at = %s WHERE id = %s",
+            (new_text, new_enc, now, int(msg_id))
         )
         # обновим last_message в чате если это последнее сообщение
         cur.execute(
@@ -3723,7 +3847,7 @@ def _handle(event: dict, context) -> dict:
         if last and int(last[0]) == int(msg_id):
             cur.execute(
                 f"UPDATE {SCHEMA}.chats SET last_message = %s WHERE id = %s",
-                (new_text[:100], int(row[1]))
+                ("🔒 Сообщение" if new_enc else new_text[:100], int(row[1]))
             )
         conn.close()
         return ok({"ok": True, "edited_at": now})
@@ -3782,7 +3906,7 @@ def _handle(event: dict, context) -> dict:
             conn.close()
             return err("Нет доступа к чату", 403)
         cur.execute(
-            f"""SELECT m.id, m.sender_id, u.name, m.text, m.media_type, m.created_at
+            f"""SELECT m.id, m.sender_id, u.name, m.text, m.media_type, m.created_at, m.enc
                 FROM {SCHEMA}.chats c
                 JOIN {SCHEMA}.messages m ON m.id = c.pinned_message_id
                 JOIN {SCHEMA}.users u ON u.id = m.sender_id
@@ -3795,7 +3919,7 @@ def _handle(event: dict, context) -> dict:
             return ok({"pinned": None})
         return ok({"pinned": {
             "id": row[0], "sender_id": row[1], "sender_name": row[2],
-            "text": row[3], "media_type": row[4], "created_at": row[5],
+            "text": row[3], "media_type": row[4], "created_at": row[5], "enc": row[6],
         }})
 
     # ── archive_chat / unarchive_chat ─────────────────────────────────────────
@@ -3832,7 +3956,7 @@ def _handle(event: dict, context) -> dict:
             return err("Нет доступа к чату", 403)
         cur.execute(
             f"""SELECT m.text, m.media_type, m.media_url, m.image_url, m.file_name, m.file_size,
-                       m.duration, m.sender_id, u.name
+                       m.duration, m.sender_id, u.name, m.enc
                 FROM {SCHEMA}.messages m
                 JOIN {SCHEMA}.users u ON u.id = m.sender_id
                 JOIN {SCHEMA}.chats c ON c.id = m.chat_id
@@ -3843,7 +3967,10 @@ def _handle(event: dict, context) -> dict:
         if not s:
             conn.close()
             return err("Сообщение не найдено", 404)
-        text, m_type, m_url, img_url, f_name, f_size, dur, orig_sender, orig_name = s
+        text, m_type, m_url, img_url, f_name, f_size, dur, orig_sender, orig_name, src_enc = s
+        if src_enc:
+            conn.close()
+            return err("Зашифрованное сообщение пересылается с устройства", 409)
         now = int(time.time())
         cur.execute(
             f"""INSERT INTO {SCHEMA}.messages
