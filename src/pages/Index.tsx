@@ -5,7 +5,7 @@ import { getDraft, useDraftsVersion } from "@/lib/drafts";
 import { track, setTrackUser } from "@/lib/track";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import Icon from "@/components/ui/icon";
-import { api, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
+import { api, prefetchIceServers, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
 import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
 import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger/Panels";
 import { AuthScreen } from "@/components/messenger/AuthScreen";
@@ -271,6 +271,12 @@ export default function Index() {
   };
 
   useIncomingCalls({ currentUser, activeCall, setActiveCall, pendingCallId, setPendingCallId });
+  useEffect(() => {
+    if (!currentUser) return;
+    prefetchIceServers(currentUser.id);
+    const iv = setInterval(() => prefetchIceServers(currentUser.id), 20 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, [currentUser?.id]);
 
   const login = (user: User, token?: string) => {
     if (token) setAuthToken(token);

@@ -13,16 +13,7 @@ export const ICE_API = "https://functions.poehali.dev/b47750f2-27d7-416d-9a72-c9
 // TURN нужен, чтобы голос проходил между устройствами за NAT (мобильный интернет).
 const FALLBACK_ICE: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-  {
-    urls: [
-      "turn:openrelay.metered.ca:443",
-      "turn:openrelay.metered.ca:443?transport=tcp",
-      "turns:openrelay.metered.ca:443",
-    ],
-    username: "openrelayproject",
-    credential: "openrelayproject",
-  },
+  { urls: "stun:stun.cloudflare.com:3478" },
   {
     urls: [
       "turn:relay1.expressturn.com:3478",
@@ -32,19 +23,44 @@ const FALLBACK_ICE: RTCIceServer[] = [
     credential: "ymS3tZmVQ0kR6Xt3",
   },
 ];
-export async function getIceServers(userId?: number): Promise<RTCIceServer[]> {
+const ICE_CACHE_KEY = "nova_ice_cache";
+const ICE_CACHE_TTL = 6 * 3600 * 1000;
+
+function readIceCache(maxAge = ICE_CACHE_TTL): RTCIceServer[] | null {
   try {
-    // Таймаут: если сервер не ответил быстро — не тормозим звонок, берём запасной набор
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2500);
-    const res = await fetch(ICE_API, { method: "GET", signal: ctrl.signal, headers: authHeaders(userId) });
-    clearTimeout(t);
-    const data = await res.json();
-    if (Array.isArray(data.iceServers) && data.iceServers.length) {
-      return data.iceServers as RTCIceServer[];
-    }
-  } catch { /* сеть/таймаут — используем запасной список */ }
-  return FALLBACK_ICE;
+    const raw = localStorage.getItem(ICE_CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as { at: number; list: RTCIceServer[] };
+    if (!Array.isArray(c.list) || !c.list.length || Date.now() - c.at > maxAge) return null;
+    return c.list;
+  } catch { return null; }
+}
+
+let iceInflight: Promise<RTCIceServer[]> | null = null;
+
+export async function getIceServers(userId?: number): Promise<RTCIceServer[]> {
+  if (iceInflight) return iceInflight;
+  iceInflight = (async () => {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(ICE_API, { method: "GET", signal: ctrl.signal, headers: authHeaders(userId) });
+      clearTimeout(t);
+      const data = await res.json();
+      if (Array.isArray(data.iceServers) && data.iceServers.length) {
+        try { localStorage.setItem(ICE_CACHE_KEY, JSON.stringify({ at: Date.now(), list: data.iceServers })); } catch { /* ignore */ }
+        return data.iceServers as RTCIceServer[];
+      }
+    } catch { /* сеть/таймаут — берём сохранённый или запасной список */ }
+    return readIceCache(24 * 3600 * 1000) || FALLBACK_ICE;
+  })();
+  try { return await iceInflight; } finally { setTimeout(() => { iceInflight = null; }, 0); }
+}
+
+/** Заранее подгружаем серверы связи, чтобы звонок стартовал мгновенно. */
+export function prefetchIceServers(userId?: number) {
+  if (readIceCache(30 * 60 * 1000)) return;
+  getIceServers(userId).catch(() => { /* ignore */ });
 }
 
 // Лёгкие polling-эндпоинты вынесены в отдельную функцию chat-poll

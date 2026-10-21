@@ -46,6 +46,9 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
   const audioStallRef = useRef(0);
   const connectedRef = useRef(false);
   const poorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restartCountRef = useRef(0);
+  const relayOnlyRef = useRef(false);
 
   // ── Завершение / очистка ──────────────────────────────────────────────────
   const cleanup = () => {
@@ -53,6 +56,7 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (audioWatchRef.current) { clearInterval(audioWatchRef.current); audioWatchRef.current = null; }
     if (poorTimerRef.current) { clearTimeout(poorTimerRef.current); poorTimerRef.current = null; }
+    if (checkTimerRef.current) { clearTimeout(checkTimerRef.current); checkTimerRef.current = null; }
     try { pcRef.current?.close(); } catch { /* ignore */ }
     pcRef.current = null;
     localStreamRef.current?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
@@ -208,10 +212,10 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     };
 
     pc.ontrack = (e) => {
-      // Берём поток собеседника как есть (как в рабочей версии) — надёжнее для
-      // воспроизведения, чем ручная сборка дорожек.
-      const incoming = e.streams[0] || new MediaStream([e.track]);
+      const incoming = e.streams[0] || remoteStreamRef.current;
+      if (!incoming.getTracks().includes(e.track)) incoming.addTrack(e.track);
       remoteStreamRef.current = incoming;
+      e.track.onunmute = () => bindRemoteMedia();
       logDiag("ontrack", { kind: e.track.kind, tracks: incoming.getTracks().map(t => t.kind) });
       stopRingtone();
       stopDialTone();
@@ -227,19 +231,25 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
       logDiag("ice_state", { ice, conn });
       if (ice === "connected" || ice === "completed" || conn === "connected") {
         restartingRef.current = false;
+        if (checkTimerRef.current) { clearTimeout(checkTimerRef.current); checkTimerRef.current = null; }
         bindRemoteMedia();
         logSelectedPair(pc);
         if (remoteStreamRef.current.getTracks().length) markConnected();
         else setNetPoor(false);
       } else if (ice === "disconnected") {
         schedulePoor(4000);
+      } else if (ice === "checking" && !checkTimerRef.current && !connectedRef.current) {
+        checkTimerRef.current = setTimeout(() => {
+          checkTimerRef.current = null;
+          const st = pc.iceConnectionState;
+          if (!endedRef.current && pcRef.current === pc && (st === "checking" || st === "new")) {
+            logDiag("ice_stuck", { st });
+            requestRestart(pc);
+          }
+        }, 8000);
       } else if (ice === "failed" || conn === "failed") {
         if (connectedRef.current) setNetPoor(true);
-        // Полный обрыв — пробуем переподключиться (только звонящий)
-        if (!isIncoming && !restartingRef.current) {
-          restartingRef.current = true;
-          restartIce(pc);
-        }
+        requestRestart(pc);
       }
     };
     pc.oniceconnectionstatechange = onConn;
@@ -306,11 +316,33 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     }, 3000);
   };
 
+  // Переподключение: звонящий пересобирает соединение сам, принимающий просит
+  // его об этом. Со второй попытки идём только через ретранслятор (TURN) —
+  // это самый надёжный путь между разными операторами связи.
+  const requestRestart = (pc: RTCPeerConnection) => {
+    if (restartingRef.current || restartCountRef.current >= 3 || endedRef.current) return;
+    restartingRef.current = true;
+    restartCountRef.current += 1;
+    if (restartCountRef.current >= 2 && !relayOnlyRef.current) {
+      relayOnlyRef.current = true;
+      try { pc.setConfiguration({ ...pc.getConfiguration(), iceTransportPolicy: "relay" }); } catch { /* ignore */ }
+    }
+    logDiag("ice_restart", { n: restartCountRef.current, relay: relayOnlyRef.current });
+    if (isIncoming) {
+      sendSignal("restart_request", { relay: relayOnlyRef.current });
+      setTimeout(() => { restartingRef.current = false; }, 6000);
+    } else {
+      restartIce(pc);
+    }
+  };
+
   const restartIce = async (pc: RTCPeerConnection) => {
     try {
+      if (pc.signalingState !== "stable") { restartingRef.current = false; return; }
       const offer = await pc.createOffer({ iceRestart: true });
       await pc.setLocalDescription(offer);
       await sendSignal("offer", { sdp: offer.sdp, type: offer.type });
+      setTimeout(() => { restartingRef.current = false; }, 6000);
     } catch { restartingRef.current = false; }
   };
 
@@ -335,6 +367,17 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
         await flushPendingCandidates(pc);
         console.log("[call] answer applied");
         stopRingtone(); stopDialTone();
+      } else if (sig.type === "restart_request" && !isIncoming) {
+        const wantRelay = !!(sig.payload as { relay?: boolean } | null)?.relay;
+        if (wantRelay && !relayOnlyRef.current) {
+          relayOnlyRef.current = true;
+          try { pc.setConfiguration({ ...pc.getConfiguration(), iceTransportPolicy: "relay" }); } catch { /* ignore */ }
+        }
+        if (!restartingRef.current) {
+          restartingRef.current = true;
+          restartCountRef.current += 1;
+          restartIce(pc);
+        }
       } else if (sig.type === "candidate") {
         const cand = sig.payload as RTCIceCandidateInit;
         if (!remoteDescSetRef.current) pendingCandidatesRef.current.push(cand);

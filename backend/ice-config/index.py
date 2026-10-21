@@ -49,24 +49,48 @@ def _own_turn():
     secret = os.environ.get("TURN_SECRET", "").strip()
     if not host or not secret:
         return None
-    try:
-        socket.getaddrinfo(host, 3478)
-    except Exception:
-        print(f"[ice] TURN host {host} не найден в DNS — пропускаем")
-        return None
+    is_ip = host.replace(".", "").isdigit()
+    if not is_ip:
+        try:
+            socket.getaddrinfo(host, 3478)
+        except Exception:
+            print(f"[ice] TURN host {host} не найден в DNS — пропускаем")
+            return None
     expiry = int(time.time()) + 24 * 3600
     username = str(expiry)
     digest = hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()
     credential = base64.b64encode(digest).decode()
+    urls = [f"turn:{host}:3478?transport=udp", f"turn:{host}:3478?transport=tcp"]
+    if not is_ip:
+        urls.append(f"turns:{host}:5349?transport=tcp")
     return {
-        "urls": [
-            f"turn:{host}:3478?transport=udp",
-            f"turn:{host}:3478?transport=tcp",
-            f"turns:{host}:5349?transport=tcp",
-        ],
+        "urls": urls,
         "username": username,
         "credential": credential,
     }
+
+
+_METERED_CACHE = {"at": 0.0, "data": []}
+
+
+def _metered():
+    """Креды Metered кэшируются на 10 минут — чтобы выдача серверов была мгновенной."""
+    if _METERED_CACHE["data"] and time.time() - _METERED_CACHE["at"] < 600:
+        return _METERED_CACHE["data"]
+    key = os.environ.get("METERED_API_KEY", "").strip()
+    domain = os.environ.get("METERED_DOMAIN", "").strip()
+    if not key or not domain:
+        return []
+    try:
+        url = f"https://{domain}/api/v1/turn/credentials?apiKey={key}"
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if isinstance(data, list) and data:
+            _METERED_CACHE.update(at=time.time(), data=data)
+            return data
+    except Exception as e:
+        print(f"[ice] metered: {e}")
+    return _METERED_CACHE["data"]
 
 
 def handler(event: dict, context) -> dict:
@@ -115,31 +139,7 @@ def handler(event: dict, context) -> dict:
     ]
 
     # 3. Metered — свежие креды, если задан ключ
-    metered_key = os.environ.get("METERED_API_KEY", "").strip()
-    metered_domain = os.environ.get("METERED_DOMAIN", "").strip()
-    if metered_key and metered_domain:
-        try:
-            url = f"https://{metered_domain}/api/v1/turn/credentials?apiKey={metered_key}"
-            req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            if isinstance(data, list) and data:
-                ice_servers += data
-        except Exception:
-            pass
-
-    # 4. Резервные публичные TURN
-    ice_servers += [
-        {
-            "urls": [
-                "turn:openrelay.metered.ca:443",
-                "turn:openrelay.metered.ca:443?transport=tcp",
-                "turns:openrelay.metered.ca:443",
-            ],
-            "username": "openrelayproject",
-            "credential": "openrelayproject",
-        },
-    ]
+    ice_servers += _metered()
 
     return {
         "statusCode": 200,
