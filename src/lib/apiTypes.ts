@@ -150,6 +150,7 @@ export interface User {
   nova_id?: string | null;
   // Уведомления
   notify_messages?: boolean;
+  notify_preview?: boolean;
   notify_groups?: boolean;
   notify_calls?: boolean;
   notify_sound?: string;

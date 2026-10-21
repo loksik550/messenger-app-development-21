@@ -1,0 +1,1 @@
+UPDATE t_p67547116_messenger_app_develo.dev_notifications SET read_by = '2' WHERE COALESCE(read_by, '') = '';

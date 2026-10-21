@@ -60,6 +60,8 @@ ACTION_PERMS = {
     "logs": "logs",
     "services": "services", "invites": "services", "create_invite": "services",
     "channels": "channels", "channel_update": "channels", "channel_delete": "channels",
+    "channel_messages": "channels", "channel_message_delete": "channels",
+    "channel_members": "channels", "channel_set_test": "channels",
     "team": "team", "team_update": "team", "team_remove": "team",
     "settings_get": "dashboard", "settings_save": "settings",
     "change_password": "dashboard", "change_email": "dashboard",
@@ -813,10 +815,10 @@ def handler(event: dict, context) -> dict:
             device = "Телефон" if "Mobile" in ua else "Компьютер"
             when = time.strftime("%d.%m.%Y в %H:%M", time.localtime(now + 3 * 3600))
             cur.execute(
-                f"INSERT INTO {SCHEMA}.dev_notifications (kind, title, body, link_section) "
-                f"VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO {SCHEMA}.dev_notifications (kind, title, body, link_section, read_by) "
+                f"VALUES (%s, %s, %s, %s, %s)",
                 ("login", f"Вход в панель: {cur_admin['name'] or cur_admin['email']}",
-                 f"{cur_admin['role_label']} · {device} · IP {ip} · {when}", "logs"),
+                 f"{cur_admin['role_label']} · {device} · IP {ip} · {when}", "logs", str(cur_admin["id"])),
             )
             return ok({"token": token, "admin": cur_admin, "login_notice": {
                 "name": cur_admin["name"] or cur_admin["email"],
@@ -1287,9 +1289,9 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"SELECT g.id, g.name, g.description, g.avatar_url, g.is_channel, g.owner_id, "
                 f"u.name, g.created_at, g.last_message_at, g.invite_link, "
-                f"(SELECT COUNT(*) FROM {SCHEMA}.group_members m WHERE m.group_id = g.id), "
-                f"(SELECT COUNT(*) FROM {SCHEMA}.group_messages gm WHERE gm.group_id = g.id), "
-                f"COALESCE(g.verified, FALSE) "
+                f"(SELECT COUNT(*) FROM {SCHEMA}.group_members m WHERE m.group_id = g.id AND m.role <> 'removed'), "
+                f"(SELECT COUNT(*) FROM {SCHEMA}.group_messages gm WHERE gm.group_id = g.id AND gm.removed_at IS NULL), "
+                f"COALESCE(g.verified, FALSE), COALESCE(g.is_test, FALSE), g.only_admins_post, g.last_message "
                 f"FROM {SCHEMA}.groups g LEFT JOIN {SCHEMA}.users u ON u.id = g.owner_id "
                 f"WHERE g.removed_at IS NULL "
                 f"ORDER BY g.last_message_at DESC NULLS LAST LIMIT 100"
@@ -1300,8 +1302,69 @@ def handler(event: dict, context) -> dict:
                 "created_at": r[7], "last_message_at": r[8], "invite_link": r[9],
                 "members": r[10], "messages": r[11],
                 "verified": bool(r[12]) if len(r) > 12 else False,
+                "is_test": bool(r[13]), "only_admins_post": bool(r[14]), "last_message": r[15] or "",
             } for r in cur.fetchall()]
             return ok({"channels": channels})
+
+        if action == "channel_messages":
+            gid = int(body.get("channel_id") or 0)
+            before = int(body.get("before") or 0)
+            cur.execute(
+                f"SELECT m.id, m.sender_id, u.name, u.avatar_url, m.text, m.media_type, m.media_url, "
+                f"m.kind, m.file_name, m.created_at, m.removed_at, m.edited_at "
+                f"FROM {SCHEMA}.group_messages m LEFT JOIN {SCHEMA}.users u ON u.id = m.sender_id "
+                f"WHERE m.group_id = %s AND (%s = 0 OR m.id < %s) "
+                f"ORDER BY m.id DESC LIMIT 60",
+                (gid, before, before),
+            )
+            rows = cur.fetchall()
+            return ok({"messages": [{
+                "id": r[0], "sender_id": r[1], "sender_name": r[2] or f"ID {r[1]}",
+                "sender_avatar": r[3] or "", "text": r[4] or "", "media_type": r[5],
+                "media_url": r[6], "kind": r[7] or "", "file_name": r[8], "created_at": r[9],
+                "removed": r[10] is not None, "edited": bool(r[11]),
+            } for r in reversed(rows)], "has_more": len(rows) == 60})
+
+        if action == "channel_message_delete":
+            mid = int(body.get("message_id") or 0)
+            now = int(time.time())
+            cur.execute(
+                f"UPDATE {SCHEMA}.group_messages SET removed_at = %s, text = '', media_url = NULL "
+                f"WHERE id = %s AND removed_at IS NULL RETURNING group_id",
+                (now, mid),
+            )
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    f"SELECT text FROM {SCHEMA}.group_messages WHERE group_id = %s AND removed_at IS NULL "
+                    f"ORDER BY id DESC LIMIT 1", (row[0],),
+                )
+                last = cur.fetchone()
+                cur.execute(f"UPDATE {SCHEMA}.groups SET last_message = %s WHERE id = %s",
+                            ((last[0] if last else "") or "", row[0]))
+                audit(cur, admin, "channel_message_delete", f"Удалено сообщение #{mid} в группе #{row[0]}", ip)
+            return ok({"success": True})
+
+        if action == "channel_members":
+            gid = int(body.get("channel_id") or 0)
+            cur.execute(
+                f"SELECT u.id, u.name, u.avatar_url, gm.role, gm.joined_at "
+                f"FROM {SCHEMA}.group_members gm JOIN {SCHEMA}.users u ON u.id = gm.user_id "
+                f"WHERE gm.group_id = %s AND gm.role <> 'removed' "
+                f"ORDER BY CASE gm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, gm.joined_at",
+                (gid,),
+            )
+            return ok({"members": [{
+                "id": r[0], "name": r[1], "avatar_url": r[2] or "", "role": r[3], "joined_at": r[4],
+            } for r in cur.fetchall()]})
+
+        if action == "channel_set_test":
+            gid = int(body.get("channel_id") or 0)
+            value = bool(body.get("is_test"))
+            cur.execute(f"UPDATE {SCHEMA}.groups SET is_test = %s WHERE id = %s", (value, gid))
+            audit(cur, admin, "channel_set_test",
+                  f"Группа #{gid}: {'скрыта от поиска' if value else 'снова видна в поиске'}", ip)
+            return ok({"success": True})
 
         if action == "set_channel_verified":
             gid = int(body.get("channel_id") or 0)
@@ -1341,6 +1404,9 @@ def handler(event: dict, context) -> dict:
                 f"UPDATE {SCHEMA}.groups SET name = %s, description = %s WHERE id = %s",
                 (name[:100], desc[:500], gid),
             )
+            if "only_admins_post" in body:
+                cur.execute(f"UPDATE {SCHEMA}.groups SET only_admins_post = %s WHERE id = %s",
+                            (bool(body.get("only_admins_post")), gid))
             audit(cur, admin, "channel_update", f"Изменён канал #{gid}: {name}", ip)
             return ok({"success": True})
 
@@ -1561,8 +1627,13 @@ def handler(event: dict, context) -> dict:
             me = str(admin["id"])
             items = []
             unread = 0
+            seen = set()
             for r in cur.fetchall():
-                read = me in (r[5] or "").split(",")
+                key = (r[1], r[2], r[3])
+                if key in seen:
+                    continue
+                seen.add(key)
+                read = me in [x.strip() for x in (r[5] or "").split(",")]
                 if not read:
                     unread += 1
                 items.append({
@@ -1573,11 +1644,13 @@ def handler(event: dict, context) -> dict:
 
         if action == "notifications_read":
             me = str(admin["id"])
+            nid = int(body.get("id") or 0)
             cur.execute(
                 f"UPDATE {SCHEMA}.dev_notifications "
-                f"SET read_by = CASE WHEN read_by = '' THEN %s ELSE read_by || ',' || %s END "
-                f"WHERE POSITION(%s IN read_by) = 0",
-                (me, me, me),
+                f"SET read_by = CASE WHEN COALESCE(read_by, '') = '' THEN %s ELSE read_by || ',' || %s END "
+                f"WHERE NOT (%s = ANY(string_to_array(COALESCE(read_by, ''), ','))) "
+                f"AND (%s = 0 OR id = %s)",
+                (me, me, me, nid, nid),
             )
             return ok({"success": True})
 

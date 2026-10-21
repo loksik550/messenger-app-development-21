@@ -130,6 +130,12 @@ def _drop_native(cur, tokens):
             pass
 
 
+def _preview_on(cur, uid):
+    cur.execute(f"SELECT COALESCE(notify_preview, TRUE) FROM {SCHEMA}.users WHERE id = %s", (int(uid),))
+    r = cur.fetchone()
+    return bool(r[0]) if r else True
+
+
 def handler(event: dict, context) -> dict:
     """
     Push-уведомления для Nova.
@@ -283,6 +289,11 @@ def handler(event: dict, context) -> dict:
                 if ntokens:
                     n_title = f"📞 {sender_name}" if is_call else (sender_name or title)
                     n_body = "Входящий звонок" if is_call else message
+                    if not is_call:
+                        cur.execute(f"SELECT COALESCE(notify_preview, TRUE) FROM {SCHEMA}.users WHERE id = %s", (int(recipient_id),))
+                        _pv = cur.fetchone()
+                        if _pv and not _pv[0]:
+                            n_body = "Новое сообщение"
                     avatar = body.get("avatar_url") or ""
                     sender_uid = body.get("from_user_id") or body.get("sender_id")
                     if not avatar and sender_uid:
@@ -316,7 +327,7 @@ def handler(event: dict, context) -> dict:
 
         payload = json.dumps({
             "title": f"📞 {sender_name}" if is_call else (sender_name or title),
-            "body": "Входящий звонок" if is_call else message,
+            "body": "Входящий звонок" if is_call else (message if _preview_on(cur, recipient_id) else "Новое сообщение"),
             "chat_id": chat_id,
             "call_id": call_id,
             "is_call": is_call,

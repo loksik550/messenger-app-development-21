@@ -51,11 +51,24 @@ export function SettingsPanel({
   };
   const writeBool = (k: string, v: boolean) => localStorage.setItem(k, v ? "1" : "0");
 
-  const [e2e, setE2e] = useState(() => readBool("nova_sec_e2e", true));
   const [twofa, setTwofa] = useState(() => Boolean(localStorage.getItem("nova_sec_pin")));
   const [biometric, setBiometric] = useState(() => Boolean(localStorage.getItem("nova_sec_bio_cred")));
-  const [notifications, setNotifications] = useState(() => readBool("nova_sec_notifications", true));
-  const [msgPreview, setMsgPreview] = useState(() => readBool("nova_sec_msg_preview", false));
+  const [notifications, setNotifications] = useState(() => currentUser?.notify_messages ?? readBool("nova_sec_notifications", true));
+  const [msgPreview, setMsgPreview] = useState(() => currentUser?.notify_preview ?? readBool("nova_sec_msg_preview", true));
+  const saveServer = (field: "notify_messages" | "notify_groups" | "notify_preview", value: boolean) => {
+    if (currentUser?.id) api("update_user_settings", { [field]: value }, currentUser.id).catch(() => { /* ignore */ });
+  };
+  const toggleNotifications = () => setNotifications(v => {
+    const next = !v;
+    saveServer("notify_messages", next);
+    saveServer("notify_groups", next);
+    return next;
+  });
+  const toggleMsgPreview = () => setMsgPreview(v => {
+    const next = !v;
+    saveServer("notify_preview", next);
+    return next;
+  });
 
   // Оповещения о входе с нового устройства — хранятся на сервере
   const [loginAlerts, setLoginAlerts] = useState(() => readBool("nova_sec_login_alerts", true));
@@ -101,7 +114,6 @@ export function SettingsPanel({
   const [pinFlow, setPinFlow] = useState<null | PinFlow>(null);
 
 
-  useEffect(() => { writeBool("nova_sec_e2e", e2e); }, [e2e]);
   useEffect(() => { writeBool("nova_sec_biometric", biometric && Boolean(localStorage.getItem("nova_sec_bio_cred"))); }, [biometric]);
   useEffect(() => { writeBool("nova_sec_notifications", notifications); }, [notifications]);
   useEffect(() => { writeBool("nova_sec_msg_preview", msgPreview); }, [msgPreview]);
@@ -257,21 +269,20 @@ export function SettingsPanel({
           </div>
           <div>
             <div className="font-semibold text-sm">Защита активна</div>
-            <div className="text-xs text-violet-400">Все данные зашифрованы</div>
+            <div className="text-xs text-violet-400">Соединение зашифровано</div>
           </div>
         </div>
         <div className="text-xs text-muted-foreground leading-relaxed">
-          Nova использует сквозное шифрование (E2E). Ваши сообщения не могут быть прочитаны третьими лицами.
+          Сообщения и звонки передаются по защищённому соединению (HTTPS/TLS, звонки — DTLS-SRTP). Посторонние в сети не могут их перехватить.
         </div>
       </div>
 
       <div className="px-4 space-y-2 pb-6">
         {[
-          { icon: "Lock", label: "Сквозное шифрование", sub: "E2E для всех чатов", state: e2e, toggle: () => setE2e(v => !v), badge: "Signal" },
-          { icon: "KeyRound", label: "Двухфакторная аутентификация", sub: twofa ? "PIN установлен" : "Код при входе", state: twofa, toggle: toggle2FA },
-          { icon: "Fingerprint", label: "Биометрия", sub: biometric ? "Включена — вход по Face ID / Touch ID" : "Вход по Face ID / Touch ID", state: biometric, toggle: toggleBiometric },
-          { icon: "Bell", label: "Уведомления", sub: "Показывать оповещения", state: notifications, toggle: () => setNotifications(v => !v) },
-          { icon: "Eye", label: "Предпросмотр сообщений", sub: "Текст в уведомлениях", state: msgPreview, toggle: () => setMsgPreview(v => !v) },
+          { icon: "KeyRound", label: "PIN-код на вход", sub: twofa ? "PIN установлен — спросим при открытии" : "Код при открытии приложения", state: twofa, toggle: toggle2FA },
+          { icon: "Fingerprint", label: "Биометрия", sub: biometric ? "Включена — вход по отпечатку или лицу" : "Вход по отпечатку или лицу", state: biometric, toggle: toggleBiometric },
+          { icon: "Bell", label: "Уведомления", sub: "Показывать оповещения", state: notifications, toggle: toggleNotifications },
+          { icon: "Eye", label: "Предпросмотр сообщений", sub: "Текст в уведомлениях", state: msgPreview, toggle: toggleMsgPreview },
           { icon: "ShieldAlert", label: "Оповещать о входах", sub: devicesCount > 1 ? `Ваших устройств: ${devicesCount}` : "Новое устройство в аккаунте", state: loginAlerts, toggle: toggleLoginAlerts },
         ].map((item, i) => (
           <div key={item.icon} className={`flex items-center gap-3 px-4 py-3 glass rounded-2xl animate-fade-in stagger-${Math.min(i + 1, 5)}`}>
@@ -281,7 +292,6 @@ export function SettingsPanel({
             <div className="flex-1 min-w-0 overflow-hidden">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm font-medium truncate">{item.label}</span>
-                {item.badge && <span className="text-[9px] bg-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">{item.badge}</span>}
               </div>
               <div className="text-xs text-muted-foreground truncate">{item.sub}</div>
             </div>

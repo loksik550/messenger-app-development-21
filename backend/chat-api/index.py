@@ -97,7 +97,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE)"
 
 
 
@@ -184,6 +184,9 @@ def serialize_user(row):
         "verified": bool(row[26]) if len(row) > 26 else False,
         "verified_kind": row[27] if len(row) > 27 and row[27] else "",
         "nova_id": row[28] if len(row) > 28 and row[28] else None,
+        "notify_messages": bool(row[29]) if len(row) > 29 else True,
+        "notify_groups": bool(row[30]) if len(row) > 30 else True,
+        "notify_preview": bool(row[31]) if len(row) > 31 else True,
     }
 
 
@@ -1043,7 +1046,7 @@ def _handle(event: dict, context) -> dict:
         if len(id_query) == 8 and id_query.isdigit():
             cur.execute(
                 f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color, nova_id FROM {SCHEMA}.users "
-                f"WHERE nova_id = %s AND id != %s AND COALESCE(is_bot, FALSE) = FALSE AND phone NOT LIKE 'deleted_%%' LIMIT 1",
+                f"WHERE nova_id = %s AND id != %s AND COALESCE(is_test, FALSE) = FALSE AND COALESCE(is_service, FALSE) = FALSE AND COALESCE(is_bot, FALSE) = FALSE AND phone NOT LIKE 'deleted_%%' LIMIT 1",
                 (id_query, exclude_id)
             )
             rows = cur.fetchall()
@@ -1059,18 +1062,18 @@ def _handle(event: dict, context) -> dict:
             if qdigits.startswith("8") and len(qdigits) == 11:
                 qdigits = "7" + qdigits[1:]
             cur.execute(
-                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE phone = %s AND id != %s LIMIT 1",
+                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE phone = %s AND id != %s AND COALESCE(is_test, FALSE) = FALSE AND COALESCE(is_service, FALSE) = FALSE AND COALESCE(is_bot, FALSE) = FALSE AND phone NOT LIKE 'deleted_%%' LIMIT 1",
                 (qdigits, exclude_id)
             )
         elif query:
             q_like = query.replace("\\", "").replace("%", "").replace("_", "")
             cur.execute(
-                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE name ILIKE %s AND id != %s LIMIT 30",
+                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE name ILIKE %s AND id != %s AND COALESCE(is_test, FALSE) = FALSE AND COALESCE(is_service, FALSE) = FALSE AND COALESCE(is_bot, FALSE) = FALSE AND phone NOT LIKE 'deleted_%%' LIMIT 30",
                 (f"%{q_like}%", exclude_id)
             )
         else:
             cur.execute(
-                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE id != %s ORDER BY last_seen DESC LIMIT 50",
+                f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color FROM {SCHEMA}.users WHERE id != %s AND COALESCE(is_test, FALSE) = FALSE AND COALESCE(is_service, FALSE) = FALSE AND COALESCE(is_bot, FALSE) = FALSE AND phone NOT LIKE 'deleted_%%' ORDER BY last_seen DESC LIMIT 50",
                 (exclude_id or 0,)
             )
         rows = cur.fetchall()
@@ -1135,6 +1138,7 @@ def _handle(event: dict, context) -> dict:
                     ON cs.chat_id = mc.id AND cs.user_id = %s
                 LEFT JOIN unread un ON un.chat_id = mc.id
                 WHERE u.id NOT IN (SELECT blocked_id FROM blocked)
+                  AND COALESCE(u.is_test, FALSE) = FALSE
                   AND COALESCE(cs.archived, FALSE) = %s
                   AND NOT (COALESCE(cs.hidden, FALSE) AND COALESCE(mc.last_message_at, 0) <= COALESCE(cs.cleared_at, 0))
                 ORDER BY COALESCE(cs.pinned, FALSE) DESC,
@@ -1506,7 +1510,7 @@ def _handle(event: dict, context) -> dict:
             "app_lock_enabled", "read_receipts_enabled", "last_seen_visibility",
             "profile_photo_visibility", "phone_visibility",
             "status_text", "status_until",
-            "notify_messages", "notify_groups", "notify_calls",
+            "notify_messages", "notify_groups", "notify_calls", "notify_preview",
             "notify_sound", "notify_vibration", "quiet_hours_from", "quiet_hours_to",
         }
         fields, vals = [], []
@@ -2797,11 +2801,12 @@ def _handle(event: dict, context) -> dict:
 
         cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
         urow = cur.fetchone()
+        _nb = f"{urow[0] if urow else user_id} — {full_name}"
         cur.execute(
             f"INSERT INTO {SCHEMA}.dev_notifications (kind, title, body, link_section) "
-            f"VALUES (%s, %s, %s, %s)",
-            ("verification", "Новая заявка на верификацию",
-             f"{urow[0] if urow else user_id} — {full_name}", "verification"),
+            f"SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM {SCHEMA}.dev_notifications "
+            f"WHERE kind = %s AND body = %s AND created_at > EXTRACT(EPOCH FROM NOW())::bigint - 86400)",
+            ("verification", "Новая заявка на верификацию", _nb, "verification", "verification", _nb),
         )
         conn.commit()
         conn.close()
@@ -3063,7 +3068,7 @@ def _handle(event: dict, context) -> dict:
                 return err("Неверный contact_id")
             cur.execute(
                 f"SELECT id, name FROM {SCHEMA}.users "
-                f"WHERE id = %s AND COALESCE(is_service, FALSE) = FALSE",
+                f"WHERE id = %s AND COALESCE(is_service, FALSE) = FALSE AND COALESCE(is_test, FALSE) = FALSE",
                 (cid_int,),
             )
             found = cur.fetchone()
@@ -3078,7 +3083,7 @@ def _handle(event: dict, context) -> dict:
                 return err("Укажите phone или contact_id")
             cur.execute(
                 f"SELECT id, name FROM {SCHEMA}.users "
-                f"WHERE phone = %s AND COALESCE(is_service, FALSE) = FALSE",
+                f"WHERE phone = %s AND COALESCE(is_service, FALSE) = FALSE AND COALESCE(is_test, FALSE) = FALSE",
                 (phone,),
             )
             found = cur.fetchone()
@@ -3153,7 +3158,7 @@ def _handle(event: dict, context) -> dict:
             return ok({"ok": True, "added": 0, "matched": [], "not_registered": phones_list})
 
         in_clause = ",".join(f"'{p}'" for p in safe_phones)
-        cur.execute(f"SELECT id, name, phone, avatar_url FROM {SCHEMA}.users WHERE phone IN ({in_clause})")
+        cur.execute(f"SELECT id, name, phone, avatar_url FROM {SCHEMA}.users WHERE phone IN ({in_clause}) AND COALESCE(is_test, FALSE) = FALSE AND COALESCE(is_service, FALSE) = FALSE")
         rows = cur.fetchall()
         users_by_phone = {r[2]: {"id": r[0], "name": r[1], "phone": r[2], "avatar_url": r[3]} for r in rows}
 
@@ -3926,7 +3931,8 @@ def _handle(event: dict, context) -> dict:
                        gm.archived
                 FROM {SCHEMA}.groups g
                 JOIN {SCHEMA}.group_members gm ON gm.group_id = g.id AND gm.user_id = %s AND gm.role <> 'removed'
-                JOIN {SCHEMA}.group_members gm2 ON gm2.group_id = g.id
+                JOIN {SCHEMA}.group_members gm2 ON gm2.group_id = g.id AND gm2.role <> 'removed'
+                WHERE g.removed_at IS NULL
                 GROUP BY g.id, gm.cleared_at, gm.role, gm.archived
                 ORDER BY g.last_message_at DESC NULLS LAST""",
             (int(user_id), int(user_id), int(user_id), int(user_id))
@@ -4474,28 +4480,28 @@ def _handle(event: dict, context) -> dict:
         rr = None
         # 1) точное совпадение invite_link
         cur.execute(
-            f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE invite_link=%s LIMIT 1",
+            f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE invite_link=%s AND removed_at IS NULL AND COALESCE(is_test, FALSE) = FALSE LIMIT 1",
             (code,)
         )
         rr = cur.fetchone()
         # 2) по числовому id группы (как fallback)
         if not rr and code.isdigit():
             cur.execute(
-                f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE id=%s LIMIT 1",
+                f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE id=%s AND removed_at IS NULL AND COALESCE(is_test, FALSE) = FALSE LIMIT 1",
                 (int(code),)
             )
             rr = cur.fetchone()
         # 3) по имени группы (без учёта регистра, точное)
         if not rr:
             cur.execute(
-                f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE LOWER(name)=LOWER(%s) LIMIT 1",
+                f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE LOWER(name)=LOWER(%s) AND removed_at IS NULL AND COALESCE(is_test, FALSE) = FALSE LIMIT 1",
                 (code,)
             )
             rr = cur.fetchone()
         # 4) частичное совпадение invite_link (на всякий случай для старых форматов)
         if not rr:
             cur.execute(
-                f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE invite_link LIKE %s LIMIT 1",
+                f"SELECT id, name, is_channel FROM {SCHEMA}.groups WHERE invite_link LIKE %s AND removed_at IS NULL AND COALESCE(is_test, FALSE) = FALSE LIMIT 1",
                 (f"%{code}",)
             )
             rr = cur.fetchone()
@@ -4601,6 +4607,7 @@ def _handle(event: dict, context) -> dict:
                        (SELECT COUNT(*) FROM {SCHEMA}.group_members gm WHERE gm.group_id=g.id AND gm.role!='removed') AS members
                 FROM {SCHEMA}.groups g
                 WHERE (g.name ILIKE %s OR COALESCE(g.description, '') ILIKE %s)
+                  AND g.removed_at IS NULL AND COALESCE(g.is_test, FALSE) = FALSE
                 ORDER BY members DESC, g.id DESC LIMIT 50""",
             (f"%{q}%", f"%{q}%")
         )
@@ -5862,7 +5869,7 @@ def _handle(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT id, name, avatar_url, COALESCE(xp,0), COALESCE(level,1)
                 FROM {SCHEMA}.users
-                WHERE COALESCE(xp,0) > 0
+                WHERE COALESCE(xp,0) > 0 AND COALESCE(is_test, FALSE) = FALSE AND COALESCE(is_bot, FALSE) = FALSE
                 ORDER BY xp DESC, id ASC
                 LIMIT 50"""
         )

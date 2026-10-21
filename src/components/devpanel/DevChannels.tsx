@@ -2,21 +2,9 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi, formatTs, formatNum } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
+import DevChannelView, { type DevChannel } from "./DevChannelView";
 
-interface Channel {
-  id: number;
-  name: string;
-  description: string | null;
-  avatar_url: string | null;
-  is_channel: boolean;
-  verified?: boolean;
-  owner_id: number;
-  owner_name: string;
-  created_at: number;
-  last_message_at: number | null;
-  members: number;
-  messages: number;
-}
+type Channel = DevChannel;
 
 export default function DevChannels({ can }: { can: (p: string) => boolean }) {
   const [items, setItems] = useState<Channel[]>([]);
@@ -24,9 +12,6 @@ export default function DevChannels({ can }: { can: (p: string) => boolean }) {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "channels" | "groups">("all");
   const [edit, setEdit] = useState<Channel | null>(null);
-  const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
-  const [busy, setBusy] = useState(false);
 
   const load = async () => {
     try {
@@ -44,39 +29,7 @@ export default function DevChannels({ can }: { can: (p: string) => boolean }) {
     load();
   }, []);
 
-  const openEdit = (c: Channel) => {
-    setEdit(c);
-    setName(c.name);
-    setDesc(c.description || "");
-  };
-
-  const save = async () => {
-    if (!edit) return;
-    setBusy(true);
-    try {
-      await devApi("channel_update", { channel_id: edit.id, name, description: desc });
-      setEdit(null);
-      await load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Не удалось сохранить");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (c: Channel) => {
-    if (!confirm(`Удалить «${c.name}»? Все сообщения будут скрыты.`)) return;
-    setBusy(true);
-    try {
-      await devApi("channel_delete", { channel_id: c.id });
-      setEdit(null);
-      await load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Не удалось удалить");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const openEdit = (c: Channel) => setEdit(c);
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox text={error} onRetry={load} />;
@@ -136,6 +89,9 @@ export default function DevChannels({ can }: { can: (p: string) => boolean }) {
                     >
                       {c.is_channel ? "канал" : "группа"}
                     </span>
+                    {c.is_test && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0 bg-amber-500/20 text-amber-400">тест</span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5 truncate">
                     Владелец: {c.owner_name}
@@ -165,7 +121,7 @@ export default function DevChannels({ can }: { can: (p: string) => boolean }) {
                     onClick={() => openEdit(c)}
                     className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition"
                   >
-                    Управление
+                    Открыть
                   </button>
                   <button
                     onClick={async () => {
@@ -188,53 +144,7 @@ export default function DevChannels({ can }: { can: (p: string) => boolean }) {
       )}
 
       {edit && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEdit(null)}>
-          <div className="bg-[#12131f] border border-white/10 rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold">{edit.is_channel ? "Канал" : "Группа"}</h3>
-              <button onClick={() => setEdit(null)} className="text-slate-500 hover:text-slate-300">
-                <Icon name="X" size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-500 mb-1.5 block">Название</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-violet-500/50"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 mb-1.5 block">Описание</label>
-                <textarea
-                  value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
-                  rows={3}
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-violet-500/50 resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={save}
-                disabled={busy}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-sm font-semibold disabled:opacity-50"
-              >
-                Сохранить
-              </button>
-              <button
-                onClick={() => remove(edit)}
-                disabled={busy}
-                className="px-4 py-2.5 rounded-xl bg-red-500/15 border border-red-500/25 text-red-400 text-sm hover:bg-red-500/25 disabled:opacity-50"
-              >
-                Удалить
-              </button>
-            </div>
-          </div>
-        </div>
+        <DevChannelView channel={edit} canEdit={can("channels")} onClose={() => setEdit(null)} onChanged={load} />
       )}
     </div>
   );
