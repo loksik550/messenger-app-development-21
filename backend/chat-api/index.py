@@ -1122,9 +1122,15 @@ def _handle(event: dict, context) -> dict:
                        COALESCE(cs.cleared_at, 0),
                        COALESCE(cs.archived, FALSE),
                        COALESCE(un.cnt, 0),
-                       COALESCE(u.verified, FALSE)
+                       COALESCE(u.verified, FALSE),
+                       lm.sender_id, lm.read_at
                 FROM my_chats mc
                 JOIN {SCHEMA}.users u ON u.id = mc.partner_id
+                LEFT JOIN LATERAL (
+                    SELECT m.sender_id, m.read_at FROM {SCHEMA}.messages m
+                    WHERE m.chat_id = mc.id AND m.removed_at IS NULL
+                    ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+                ) lm ON TRUE
                 LEFT JOIN {SCHEMA}.chat_settings cs
                     ON cs.chat_id = mc.id AND cs.user_id = %s
                 LEFT JOIN unread un ON un.chat_id = mc.id
@@ -1152,6 +1158,8 @@ def _handle(event: dict, context) -> dict:
             "partner": {"id": r[3], "name": r[4], "phone": r[5], "avatar_url": r[6],
                         "last_seen": r[7], "verified": bool(r[14]) if len(r) > 14 else False},
             "unread": int(r[13] or 0),
+            "last_mine": (r[15] == uid) if len(r) > 16 else False,
+            "last_read": bool(r[16]) if len(r) > 16 and r[15] == uid else False,
             "muted": r[8], "pinned": r[9], "favorite": r[10], "cleared_at": r[11], "archived": r[12],
         } for r in rows]
         return ok({"chats": chats, "archived_count": archived_count})

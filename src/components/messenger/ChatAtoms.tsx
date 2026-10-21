@@ -188,7 +188,16 @@ export function ChatList({
                 <span className="font-semibold text-sm text-foreground truncate">{chat.name}</span>
                 {chat.muted && <Icon name="BellOff" size={11} className="text-muted-foreground flex-shrink-0" />}
               </div>
-              <span className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">{chat.time}</span>
+              <span className="flex items-center gap-1 flex-shrink-0 ml-2">
+                {chat.lastMine && !chat.group && !chat.saved && chat.time && (
+                  <Icon
+                    name={chat.lastRead ? "CheckCheck" : "Check"}
+                    size={14}
+                    className={chat.lastRead ? "text-sky-400" : "text-muted-foreground"}
+                  />
+                )}
+                <span className="text-[11px] text-muted-foreground">{chat.time}</span>
+              </span>
             </div>
             <div className="flex items-center justify-between mt-0.5">
               {chat.typing ? (

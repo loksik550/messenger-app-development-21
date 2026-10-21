@@ -1,5 +1,4 @@
 import Icon from "@/components/ui/icon";
-import { type User } from "@/lib/api";
 
 interface ShopItem {
   key: string;
@@ -7,25 +6,18 @@ interface ShopItem {
   desc: string;
   icon: string;
   gradient: string;
-  onClick: () => void;
 }
 
 interface Props {
-  currentUser: User;
   onBack?: () => void;
-  onOpenPremium: () => void;
-  onOpenPro: () => void;
-  onOpenLightning: () => void;
-  onOpenStickers: () => void;
-  onOpenWallet: () => void;
 }
 
-export function ShopPanel({ currentUser, onBack, onOpenPremium, onOpenPro, onOpenLightning, onOpenStickers, onOpenWallet }: Props) {
+export function ShopPanel({ onBack }: Props) {
   const items: ShopItem[] = [
-    { key: "premium", title: "Premium", desc: "Все возможности Nova без ограничений", icon: "Crown", gradient: "linear-gradient(135deg, #f59e0b, #f97316)", onClick: onOpenPremium },
-    { key: "pro", title: "Nova Pro", desc: "Эмодзи-статус, цвет имени, инкогнито", icon: "Sparkles", gradient: "linear-gradient(135deg, #8b5cf6, #6366f1)", onClick: onOpenPro },
-    { key: "lightning", title: "Молнии", desc: "Валюта для подарков и реакций", icon: "Zap", gradient: "linear-gradient(135deg, #eab308, #f59e0b)", onClick: onOpenLightning },
-    { key: "stickers", title: "Стикеры", desc: "Наборы стикеров для чатов", icon: "Smile", gradient: "linear-gradient(135deg, #ec4899, #8b5cf6)", onClick: onOpenStickers },
+    { key: "premium", title: "Premium", desc: "Все возможности Nova без ограничений", icon: "Crown", gradient: "linear-gradient(135deg, #f59e0b, #f97316)" },
+    { key: "pro", title: "Nova Pro", desc: "Эмодзи-статус, цвет имени, инкогнито", icon: "Sparkles", gradient: "linear-gradient(135deg, #8b5cf6, #6366f1)" },
+    { key: "lightning", title: "Молнии", desc: "Валюта для подарков и реакций", icon: "Zap", gradient: "linear-gradient(135deg, #eab308, #f59e0b)" },
+    { key: "stickers", title: "Стикеры", desc: "Наборы стикеров для чатов", icon: "Smile", gradient: "linear-gradient(135deg, #ec4899, #8b5cf6)" },
   ];
 
   return (
@@ -42,31 +34,24 @@ export function ShopPanel({ currentUser, onBack, onOpenPremium, onOpenPro, onOpe
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
-        <button
-          onClick={onOpenWallet}
-          className="w-full flex items-center gap-3 p-4 glass rounded-2xl hover:bg-white/8 transition-all text-left"
-        >
-          <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
-            <Icon name="Wallet" size={20} className="text-emerald-400" />
+        <div className="flex flex-col items-center text-center pt-6 pb-2">
+          <div className="w-20 h-20 grad-primary rounded-3xl flex items-center justify-center glow-primary animate-float mb-5">
+            <Icon name="ShoppingBag" size={36} className="text-white" />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs text-muted-foreground">Кошелёк</div>
-            <div className="text-lg font-bold">{(currentUser.wallet_balance || 0).toLocaleString("ru-RU")} ₽</div>
-          </div>
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-300 text-sm font-semibold">
-            <Icon name="Zap" size={14} />
-            {(currentUser.lightning_balance || 0).toLocaleString("ru-RU")}
-          </div>
-          <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
-        </button>
+          <span className="px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 text-xs font-bold uppercase tracking-widest mb-3">Скоро</span>
+          <h3 className="text-2xl font-bold grad-text mb-2">Магазин скоро откроется</h3>
+          <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+            Мы готовим подарки, стикеры и улучшения для вашего Nova. Загляните сюда чуть позже.
+          </p>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           {items.map((it) => (
-            <button
+            <div
               key={it.key}
-              onClick={it.onClick}
-              className="flex flex-col items-start gap-3 p-4 glass rounded-2xl hover:bg-white/8 active:scale-[0.98] transition-all text-left"
+              className="relative flex flex-col items-start gap-3 p-4 glass rounded-2xl text-left opacity-70"
             >
+              <span className="absolute top-3 right-3 text-[9px] px-1.5 py-0.5 rounded-md bg-white/10 text-muted-foreground font-bold uppercase">Скоро</span>
               <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white" style={{ background: it.gradient }}>
                 <Icon name={it.icon} size={20} />
               </div>
@@ -74,7 +59,7 @@ export function ShopPanel({ currentUser, onBack, onOpenPremium, onOpenPro, onOpe
                 <div className="font-semibold text-sm">{it.title}</div>
                 <div className="text-xs text-muted-foreground leading-snug mt-0.5">{it.desc}</div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>

@@ -9,6 +9,8 @@ interface ChatRaw {
   last_message_at: number;
   partner: { id: number; name: string; last_seen: number; avatar_url?: string | null; verified?: boolean };
   unread: number;
+  last_mine?: boolean;
+  last_read?: boolean;
   muted?: boolean;
   pinned?: boolean;
   favorite?: boolean;
@@ -24,6 +26,8 @@ export function mapChat(c: ChatRaw): Chat {
     lastMsg: c.last_message || "Нет сообщений",
     time: c.last_message_at ? new Date(c.last_message_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }) : "",
     unread: c.unread || 0,
+    lastMine: !!c.last_mine,
+    lastRead: !!c.last_read,
     online: Date.now() / 1000 - (c.partner.last_seen || 0) < 60,
     partner_id: c.partner.id,
     lastSeen: c.partner.last_seen,

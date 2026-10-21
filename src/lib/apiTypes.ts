@@ -94,6 +94,8 @@ export interface Chat {
   lastMsg: string;
   time: string;
   unread?: number;
+  lastMine?: boolean;
+  lastRead?: boolean;
   online?: boolean;
   typing?: boolean;
   verified?: boolean;

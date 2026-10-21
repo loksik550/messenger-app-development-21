@@ -174,7 +174,7 @@ export default function Index() {
 
   const { t: tr } = useT();
   const {
-    setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowLightning, setShowProgress, setShowBots, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
+    setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowProgress, setShowBots, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
   } = overlays;
   const openOverlay = overlays.open;
 
@@ -790,6 +790,9 @@ export default function Index() {
                     {totalUnread > 99 ? "99+" : totalUnread}
                   </span>
                 )}
+                {item.tab === "shop" && (
+                  <span className="absolute -top-0.5 -right-2 px-1 rounded-md bg-amber-500 text-[8px] font-bold text-white leading-[14px]">скоро</span>
+                )}
                 <span className="text-[9px] font-medium">{tr(item.labelKey)}</span>
               </button>
             );
@@ -850,15 +853,7 @@ export default function Index() {
         ) : view === "search" ? (
           <SearchPanel users={users} currentUser={currentUser} onStartChat={handleStartChat} onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "shop" ? (
-          <ShopPanel
-            currentUser={currentUser}
-            onBack={() => { setView("chats"); setShowSidebar(true); }}
-            onOpenPremium={() => openOverlay(setShowPremium)}
-            onOpenPro={() => openOverlay(setShowPro)}
-            onOpenLightning={() => openOverlay(setShowLightning)}
-            onOpenStickers={() => openOverlay(setShowStickers)}
-            onOpenWallet={() => openOverlay(setShowWallet)}
-          />
+          <ShopPanel onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "contacts" ? (
           <ContactsPanel currentUser={currentUser} onStartChat={(chat) => { setSelectedChat(chat); setShowSidebar(false); }} onCall={startCall} onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "profile" ? (
