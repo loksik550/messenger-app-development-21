@@ -10,17 +10,27 @@
       "name": "Missing user id returns 400",
       "method": "POST",
       "path": "/",
-      "body": {"amount": 100, "user_email": "test@example.com", "return_url": "https://example.com/ok"},
+      "body": {
+        "amount": 100,
+        "user_email": "test@example.com",
+        "return_url": "https://example.com/ok"
+      },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
     },
     {
-      "name": "Bad amount returns 400",
+      "name": "Оплата с поддельным пользователем без входа отклоняется",
       "method": "POST",
       "path": "/",
-      "headers": {"X-User-Id": "1"},
-      "body": {"amount": 0, "user_email": "test@example.com", "return_url": "https://example.com/ok"},
-      "expectedStatus": 400,
+      "headers": {
+        "X-User-Id": "1"
+      },
+      "body": {
+        "amount": 0,
+        "user_email": "test@example.com",
+        "return_url": "https://example.com/ok"
+      },
+      "expectedStatus": 401,
       "bodyMatcher": "partial"
     }
   ]
