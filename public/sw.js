@@ -1,4 +1,4 @@
-const SW_VERSION = "nova-sw-30";
+const SW_VERSION = "nova-sw-31";
 const IS_APPLE = /iphone|ipad|ipod|macintosh/i.test(self.navigator.userAgent || "");
 // Иконка уведомлений — иконка приложения из public (доступна по абсолютному URL origin).
 const NOTIF_ICON = new URL("/app-icon-192.png", self.location.origin).href;

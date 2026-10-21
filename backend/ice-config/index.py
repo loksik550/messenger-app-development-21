@@ -4,6 +4,7 @@ import time
 import hmac
 import hashlib
 import base64
+import socket
 import urllib.request
 import psycopg2
 import nova_auth
@@ -47,6 +48,11 @@ def _own_turn():
     host = os.environ.get("TURN_HOST", "").strip()
     secret = os.environ.get("TURN_SECRET", "").strip()
     if not host or not secret:
+        return None
+    try:
+        socket.getaddrinfo(host, 3478)
+    except Exception:
+        print(f"[ice] TURN host {host} не найден в DNS — пропускаем")
         return None
     expiry = int(time.time()) + 24 * 3600
     username = str(expiry)

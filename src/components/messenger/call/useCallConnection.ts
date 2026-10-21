@@ -44,12 +44,15 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
   const audioWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAudioBytesRef = useRef(0);
   const audioStallRef = useRef(0);
+  const connectedRef = useRef(false);
+  const poorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Завершение / очистка ──────────────────────────────────────────────────
   const cleanup = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (audioWatchRef.current) { clearInterval(audioWatchRef.current); audioWatchRef.current = null; }
+    if (poorTimerRef.current) { clearTimeout(poorTimerRef.current); poorTimerRef.current = null; }
     try { pcRef.current?.close(); } catch { /* ignore */ }
     pcRef.current = null;
     localStreamRef.current?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
@@ -97,6 +100,23 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     playHangupSound();
     setState("ended");
     setTimeout(() => { cleanup(); onClose(); }, 700);
+  };
+
+  const markConnected = () => {
+    if (poorTimerRef.current) { clearTimeout(poorTimerRef.current); poorTimerRef.current = null; }
+    setNetPoor(false);
+    if (connectedRef.current) return;
+    connectedRef.current = true;
+    setState("connected");
+    startTimer();
+  };
+
+  const schedulePoor = (delayMs: number) => {
+    if (!connectedRef.current || poorTimerRef.current) return;
+    poorTimerRef.current = setTimeout(() => {
+      poorTimerRef.current = null;
+      if (!endedRef.current) setNetPoor(true);
+    }, delayMs);
   };
 
   const startTimer = () => {
@@ -196,9 +216,8 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
       stopRingtone();
       stopDialTone();
       bindRemoteMedia();
-      setNetPoor(false);
-      setState("connected");
-      startTimer();
+      const ice = pc.iceConnectionState;
+      if (ice === "connected" || ice === "completed" || pc.connectionState === "connected") markConnected();
       startAudioWatch(pc);
     };
 
@@ -208,18 +227,14 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
       logDiag("ice_state", { ice, conn });
       if (ice === "connected" || ice === "completed" || conn === "connected") {
         restartingRef.current = false;
-        setNetPoor(false);
         bindRemoteMedia();
         logSelectedPair(pc);
-        if (remoteStreamRef.current.getTracks().length) {
-          setState("connected");
-          startTimer();
-        }
+        if (remoteStreamRef.current.getTracks().length) markConnected();
+        else setNetPoor(false);
       } else if (ice === "disconnected") {
-        // Временный обрыв — не завершаем звонок, ждём восстановления
-        setNetPoor(true);
+        schedulePoor(4000);
       } else if (ice === "failed" || conn === "failed") {
-        setNetPoor(true);
+        if (connectedRef.current) setNetPoor(true);
         // Полный обрыв — пробуем переподключиться (только звонящий)
         if (!isIncoming && !restartingRef.current) {
           restartingRef.current = true;
@@ -282,10 +297,10 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
         if (bytes > lastAudioBytesRef.current) {
           lastAudioBytesRef.current = bytes;
           audioStallRef.current = 0;
-          setNetPoor(false);
-        } else {
+          markConnected();
+        } else if (connectedRef.current && lastAudioBytesRef.current > 0) {
           audioStallRef.current += 1;
-          if (audioStallRef.current >= 2) setNetPoor(true);
+          if (audioStallRef.current >= 3) setNetPoor(true);
         }
       } catch { /* ignore */ }
     }, 3000);

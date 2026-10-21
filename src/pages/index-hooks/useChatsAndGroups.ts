@@ -79,7 +79,7 @@ export function useChatsAndGroups({
             const isActiveOpen = selectedChatRef.current?.id === c.id && document.visibilityState === "visible";
             if (now > before && !c.muted && !isActiveOpen) {
               playMessageSound();
-              native.localNotify.show(c.name, c.lastMsg || "Новое сообщение");
+              native.localNotify.fallback(c.name, c.lastMsg || "Новое сообщение");
               break;
             }
           }

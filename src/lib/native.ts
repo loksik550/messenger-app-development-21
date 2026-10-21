@@ -298,7 +298,28 @@ const push = {
 };
 
 // ── Локальные уведомления (бейдж, alarm) ────────────────────────────────────
+let webPushCache: { at: number; on: boolean } | null = null;
+async function hasWebPush(): Promise<boolean> {
+  if (webPushCache && Date.now() - webPushCache.at < 60_000) return webPushCache.on;
+  let on = false;
+  try {
+    if ("serviceWorker" in navigator && "PushManager" in window) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      on = !!(reg && await reg.pushManager.getSubscription());
+    }
+  } catch { /* ignore */ }
+  webPushCache = { at: Date.now(), on };
+  return on;
+}
+
 const localNotify = {
+  /** Уведомление-резерв: только если пуши на этом устройстве не работают,
+   *  иначе пользователь получит одно и то же сообщение дважды. */
+  async fallback(title: string, body: string) {
+    if (isNative && push.enabled) return;
+    if (!isNative && await hasWebPush()) return;
+    await localNotify.show(title, body);
+  },
   async show(title: string, body: string, id = Math.floor(Math.random() * 1_000_000)) {
     try {
       if (isNative) {

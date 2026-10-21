@@ -34,9 +34,7 @@ export function useIncomingCalls({
         } else {
           // Приложение свёрнуто — уведомляем звонком-уведомлением
           // (на Android с Firebase звонок уже показан полноэкранно/уведомлением)
-          if (!(native.isNative && native.push.enabled)) {
-            native.localNotify.show(`📞 ${data.call.from_name}`, "Входящий звонок");
-          }
+          native.localNotify.fallback(`📞 ${data.call.from_name}`, "Входящий звонок");
         }
       }
     }, 3000);
