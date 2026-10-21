@@ -45,140 +45,149 @@ export function TypingIndicator() {
   );
 }
 
-// ─── ChatList ─────────────────────────────────────────────────────────────────
+const ACTION_W = 76;
 
-type ChatFilter = "all" | "unread" | "groups" | "personal";
-
-export function ChatList({
-  chats, onSelect, selectedId,
-  onToggleMute, onToggleArchive, onRefresh, onStartChat,
-}: {
-  chats: Chat[];
-  onSelect: (c: Chat) => void;
+type RowProps = {
+  chat: Chat;
   selectedId?: number;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (c: Chat) => void;
   onToggleMute?: (c: Chat) => void;
   onToggleArchive?: (c: Chat) => void;
-  onRefresh?: () => Promise<void> | void;
-  onStartChat?: () => void;
-}) {
-  const [filter, setFilter] = useState<ChatFilter>("all");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const { pull, refreshing, threshold } = usePullToRefresh(scrollRef, onRefresh || (() => {}));
+  onDelete?: (c: Chat) => void;
+};
 
-  const filtered = chats.filter(c => {
-    if (filter === "unread") return (c.unread || 0) > 0;
-    if (filter === "groups") return !!c.group;
-    if (filter === "personal") return !c.group;
-    return true;
-  });
+function ChatRow({ chat, selectedId, open, onOpenChange, onSelect, onToggleMute, onToggleArchive, onDelete }: RowProps) {
+  const actions: { key: string; icon: string; label: string; bg: string; run: () => void }[] = [
+    ...(onToggleMute ? [{ key: "mute", icon: chat.muted ? "Volume2" : "VolumeX", label: chat.muted ? "Вкл. звук" : "Убрать звук", bg: "#c27c2c", run: () => onToggleMute(chat) }] : []),
+    ...(onDelete ? [{ key: "del", icon: "Trash2", label: "Удалить", bg: "#b8291f", run: () => onDelete(chat) }] : []),
+    ...(onToggleArchive ? [{ key: "arch", icon: chat.archived ? "ArchiveRestore" : "Archive", label: chat.archived ? "Из архива" : "В архив", bg: "#6b6b6b", run: () => onToggleArchive(chat) }] : []),
+  ];
+  const maxOpen = actions.length * ACTION_W;
+  const base = open ? -maxOpen : 0;
+  const [drag, setDrag] = useState<number | null>(null);
+  const [menu, setMenu] = useState(false);
+  const startX = useRef<number | null>(null);
+  const startY = useRef<number | null>(null);
+  const horizontal = useRef(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swiped = useRef(false);
 
-  const pinned = filtered.filter(c => c.pinned);
-  const rest = filtered.filter(c => !c.pinned);
+  const dx = drag ?? base;
 
-  const ChatRow = ({ chat }: { chat: Chat }) => {
-    const [dx, setDx] = useState(0);
-    const [menu, setMenu] = useState(false);
-    const startX = useRef<number | null>(null);
-    const startY = useRef<number | null>(null);
-    const horizontal = useRef(false);
-    const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const moved = useRef(false);
+  const cancelHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
+  const startHold = () => {
+    cancelHold();
+    holdTimer.current = setTimeout(() => {
+      try { (navigator as Navigator & { vibrate?: (p: number) => boolean }).vibrate?.(15); } catch { /* ignore */ }
+      setMenu(true);
+    }, 450);
+  };
 
-    const cancelHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
-    const startHold = () => {
-      moved.current = false;
-      cancelHold();
-      holdTimer.current = setTimeout(() => {
-        try { (navigator as Navigator & { vibrate?: (p: number) => boolean }).vibrate?.(15); } catch { /* ignore */ }
-        setMenu(true);
-      }, 450);
-    };
+  const onTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    startY.current = e.touches[0].clientY;
+    horizontal.current = false;
+    swiped.current = false;
+    startHold();
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (startX.current === null || startY.current === null || !actions.length) return;
+    const dxRaw = e.touches[0].clientX - startX.current;
+    const dyRaw = e.touches[0].clientY - startY.current;
+    if (Math.abs(dxRaw) > 6 || Math.abs(dyRaw) > 6) cancelHold();
+    if (!horizontal.current && Math.abs(dxRaw) > 8 && Math.abs(dxRaw) > Math.abs(dyRaw) * 1.2) {
+      horizontal.current = true;
+    }
+    if (horizontal.current) {
+      swiped.current = true;
+      let next = base + dxRaw;
+      if (next > 0) next = 0;
+      if (next < -maxOpen) next = -maxOpen - (-maxOpen - next) * 0.25;
+      setDrag(next);
+    }
+  };
+  const onTouchEnd = () => {
+    cancelHold();
+    if (horizontal.current && drag !== null) {
+      const shouldOpen = open ? drag < -maxOpen * 0.7 : drag < -maxOpen * 0.3;
+      onOpenChange(shouldOpen);
+    }
+    setDrag(null);
+    startX.current = null;
+    startY.current = null;
+    horizontal.current = false;
+  };
 
-    const onTouchStart = (e: React.TouchEvent) => {
-      startX.current = e.touches[0].clientX;
-      startY.current = e.touches[0].clientY;
-      horizontal.current = false;
-      startHold();
-    };
-    const onTouchMove = (e: React.TouchEvent) => {
-      if (startX.current === null || startY.current === null) return;
-      const dxRaw = e.touches[0].clientX - startX.current;
-      const dyRaw = e.touches[0].clientY - startY.current;
-      if (Math.abs(dxRaw) > 6 || Math.abs(dyRaw) > 6) { moved.current = true; cancelHold(); }
-      if (!horizontal.current && Math.abs(dxRaw) > 8 && Math.abs(dxRaw) > Math.abs(dyRaw)) {
-        horizontal.current = true;
-      }
-      if (horizontal.current) {
-        // ограничиваем диапазон, чтобы не уезжало далеко
-        setDx(Math.max(-110, Math.min(110, dxRaw)));
-      }
-    };
-    const onTouchEnd = () => {
-      cancelHold();
-      if (horizontal.current) {
-        if (dx <= -70 && onToggleMute) onToggleMute(chat);
-        else if (dx >= 70 && onToggleArchive) onToggleArchive(chat);
-      }
-      setDx(0);
-      startX.current = null;
-      startY.current = null;
-      horizontal.current = false;
-    };
+  const runAction = (a: { run: () => void }) => { onOpenChange(false); a.run(); };
 
-    const menuItems: { icon: string; label: string; red?: boolean; onClick: () => void }[] = [
-      ...(onToggleMute ? [{ icon: chat.muted ? "Bell" : "BellOff", label: chat.muted ? "Включить уведомления" : "Выключить уведомления", onClick: () => onToggleMute(chat) }] : []),
-      ...(onToggleArchive ? [{ icon: chat.archived ? "ArchiveRestore" : "Archive", label: chat.archived ? "Из архива" : "В архив", onClick: () => onToggleArchive(chat) }] : []),
-      { icon: "MailOpen", label: "Открыть чат", onClick: () => onSelect(chat) },
-    ];
+  const menuItems: { icon: string; label: string; red?: boolean; onClick: () => void }[] = [
+    ...(onToggleMute ? [{ icon: chat.muted ? "Bell" : "BellOff", label: chat.muted ? "Включить уведомления" : "Выключить уведомления", onClick: () => onToggleMute(chat) }] : []),
+    ...(onToggleArchive ? [{ icon: chat.archived ? "ArchiveRestore" : "Archive", label: chat.archived ? "Из архива" : "В архив", onClick: () => onToggleArchive(chat) }] : []),
+    { icon: "MailOpen", label: "Открыть чат", onClick: () => onSelect(chat) },
+    ...(onDelete ? [{ icon: "Trash2", label: "Удалить чат", red: true, onClick: () => onDelete(chat) }] : []),
+  ];
 
-    return (
-      <div className="relative mx-2 overflow-hidden rounded-2xl">
-        {menu && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={() => setMenu(false)}>
-            <div className="rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-w-[240px] max-w-[320px] animate-scale-in" style={{ backgroundColor: "#16151f" }} onClick={e => e.stopPropagation()}>
-              <div className="px-5 py-3 border-b border-white/10 flex items-center gap-3">
-                <Avatar label={chat.avatar} id={chat.id} src={chat.avatar_url || undefined} size="sm" />
-                <span className="font-semibold text-sm truncate">{chat.name}</span>
-              </div>
-              {menuItems.map(item => (
-                <button
-                  key={item.label}
-                  onClick={() => { setMenu(false); item.onClick(); }}
-                  className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-white/8 transition-colors text-sm ${item.red ? "text-red-400 hover:bg-red-500/10" : ""}`}
-                >
-                  <Icon name={item.icon} size={16} className={item.red ? "" : "text-muted-foreground"} />
-                  {item.label}
-                </button>
-              ))}
+  const reveal = Math.min(1, Math.max(0, -dx / maxOpen));
+
+  return (
+    <div className="relative mx-2 overflow-hidden rounded-2xl">
+      {menu && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={() => setMenu(false)}>
+          <div className="rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-w-[240px] max-w-[320px] animate-scale-in" style={{ backgroundColor: "#16151f" }} onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-white/10 flex items-center gap-3">
+              <Avatar label={chat.avatar} id={chat.id} src={chat.avatar_url || undefined} size="sm" />
+              <span className="font-semibold text-sm truncate">{chat.name}</span>
             </div>
+            {menuItems.map(item => (
+              <button
+                key={item.label}
+                onClick={() => { setMenu(false); item.onClick(); }}
+                className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-white/8 transition-colors text-sm ${item.red ? "text-red-400 hover:bg-red-500/10" : ""}`}
+              >
+                <Icon name={item.icon} size={16} className={item.red ? "" : "text-muted-foreground"} />
+                {item.label}
+              </button>
+            ))}
           </div>
-        )}
-        {/* фон под свайпом */}
-        {dx !== 0 && (
-          <div className="absolute inset-0 flex items-center justify-between px-5 text-xs font-semibold pointer-events-none">
-            <span className={`transition-opacity ${dx > 0 ? "opacity-100" : "opacity-0"} text-amber-400 flex items-center gap-1.5`}>
-              <Icon name={chat.archived ? "ArchiveRestore" : "Archive"} size={16} />
-              {chat.archived ? "Из архива" : "В архив"}
-            </span>
-            <span className={`transition-opacity ${dx < 0 ? "opacity-100" : "opacity-0"} text-violet-400 flex items-center gap-1.5`}>
-              <Icon name={chat.muted ? "Bell" : "BellOff"} size={16} />
-              {chat.muted ? "Включить" : "Заглушить"}
-            </span>
-          </div>
-        )}
-        <button
-          onClick={() => { if (Math.abs(dx) < 5 && !menu) onSelect(chat); }}
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-          onMouseDown={startHold}
-          onMouseUp={cancelHold}
-          onMouseLeave={cancelHold}
-          onContextMenu={(e) => { e.preventDefault(); setMenu(true); }}
-          style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? "transform 0.2s ease" : "none" }}
-          className={`w-full flex items-center gap-3 px-4 py-3 transition-colors rounded-2xl
-            ${selectedId === chat.id ? "bg-white/8 glass" : "bg-[hsl(var(--background))] hover:bg-white/4"}`}
-        >
+        </div>
+      )}
+      {dx < 0 && (
+        <div className="absolute inset-y-0 right-0 flex items-center" style={{ width: maxOpen, opacity: reveal }}>
+          {actions.map(a => (
+            <button
+              key={a.key}
+              onClick={(e) => { e.stopPropagation(); runAction(a); }}
+              className="flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
+              style={{ width: ACTION_W }}
+            >
+              <span className="w-[62px] h-8 rounded-full flex items-center justify-center text-white" style={{ backgroundColor: a.bg }}>
+                <Icon name={a.icon} size={17} />
+              </span>
+              <span className="text-[10.5px] text-muted-foreground leading-none whitespace-nowrap">{a.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={() => {
+          if (swiped.current) { swiped.current = false; return; }
+          if (open) { onOpenChange(false); return; }
+          if (!menu) onSelect(chat);
+        }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+        onMouseDown={startHold}
+        onMouseUp={cancelHold}
+        onMouseLeave={cancelHold}
+        onContextMenu={(e) => { e.preventDefault(); setMenu(true); }}
+        style={{ transform: `translateX(${dx}px)`, transition: drag === null ? "transform 0.25s cubic-bezier(.2,.8,.2,1)" : "none", touchAction: "pan-y" }}
+        className={`relative w-full flex items-center gap-3 px-4 py-3 transition-colors rounded-2xl
+          ${selectedId === chat.id ? "bg-white/8 glass" : "bg-[hsl(var(--background))] hover:bg-white/4"}`}
+      >
           <Avatar label={chat.avatar} id={chat.id} online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} />
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-center justify-between">
@@ -214,10 +223,43 @@ export function ChatList({
               ) : null}
             </div>
           </div>
-        </button>
-      </div>
-    );
-  };
+      </button>
+    </div>
+  );
+}
+
+// ─── ChatList ─────────────────────────────────────────────────────────────────
+
+type ChatFilter = "all" | "unread" | "groups" | "personal";
+
+export function ChatList({
+  chats, onSelect, selectedId,
+  onToggleMute, onToggleArchive, onDelete, onRefresh, onStartChat,
+}: {
+  chats: Chat[];
+  onSelect: (c: Chat) => void;
+  selectedId?: number;
+  onToggleMute?: (c: Chat) => void;
+  onToggleArchive?: (c: Chat) => void;
+  onDelete?: (c: Chat, forAll: boolean) => void;
+  onRefresh?: () => Promise<void> | void;
+  onStartChat?: () => void;
+}) {
+  const [filter, setFilter] = useState<ChatFilter>("all");
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Chat | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { pull, refreshing, threshold } = usePullToRefresh(scrollRef, onRefresh || (() => {}));
+
+  const filtered = chats.filter(c => {
+    if (filter === "unread") return (c.unread || 0) > 0;
+    if (filter === "groups") return !!c.group;
+    if (filter === "personal") return !c.group;
+    return true;
+  });
+
+  const pinned = filtered.filter(c => c.pinned);
+  const rest = filtered.filter(c => !c.pinned);
 
   const tabs: { key: ChatFilter; label: string }[] = [
     { key: "all", label: "Все" },
@@ -244,7 +286,35 @@ export function ChatList({
           );
         })}
       </div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-2 space-y-0.5 relative">
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[220] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 animate-fade-in" onClick={() => setDeleteTarget(null)}>
+          <div className="w-full max-w-sm glass-strong rounded-3xl p-5 animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-3">
+              <Avatar label={deleteTarget.avatar} id={deleteTarget.id} src={deleteTarget.avatar_url || undefined} size="sm" />
+              <h3 className="font-bold text-base truncate">Удалить чат с {deleteTarget.name}?</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Переписка исчезнет из списка. Это действие нельзя отменить.</p>
+            <div className="flex flex-col gap-2">
+              {!deleteTarget.group && (
+                <button
+                  onClick={() => { const c = deleteTarget; setDeleteTarget(null); setOpenId(null); onDelete?.(c, true); }}
+                  className="w-full rounded-xl py-3 text-sm font-bold text-white bg-red-500 hover:bg-red-600"
+                >
+                  Удалить у меня и у {deleteTarget.name}
+                </button>
+              )}
+              <button
+                onClick={() => { const c = deleteTarget; setDeleteTarget(null); setOpenId(null); onDelete?.(c, false); }}
+                className="w-full rounded-xl py-3 text-sm font-semibold text-red-400 glass hover:bg-red-500/10"
+              >
+                Удалить только у меня
+              </button>
+              <button onClick={() => setDeleteTarget(null)} className="w-full rounded-xl py-3 text-sm font-semibold glass">Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div ref={scrollRef} onScroll={() => { if (openId !== null) setOpenId(null); }} className="flex-1 overflow-y-auto py-2 space-y-0.5 relative">
         {(pull > 0 || refreshing) && onRefresh && (
           <div
             className="absolute left-0 right-0 top-0 flex items-center justify-center text-violet-400 pointer-events-none"
@@ -283,11 +353,31 @@ export function ChatList({
         {pinned.length > 0 && (
           <>
             <div className="px-6 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Закреплённые</div>
-            {pinned.map((c) => <ChatRow key={c.id} chat={c} />)}
+            {pinned.map((c) => <ChatRow
+              key={c.id}
+              chat={c}
+              selectedId={selectedId}
+              open={openId === c.id}
+              onOpenChange={(o) => setOpenId(o ? c.id : (openId === c.id ? null : openId))}
+              onSelect={onSelect}
+              onToggleMute={onToggleMute}
+              onToggleArchive={onToggleArchive}
+              onDelete={onDelete ? (ch) => setDeleteTarget(ch) : undefined}
+            />)}
             <div className="px-6 py-1 mt-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Все чаты</div>
           </>
         )}
-        {rest.map((c) => <ChatRow key={c.id} chat={c} />)}
+        {rest.map((c) => <ChatRow
+              key={c.id}
+              chat={c}
+              selectedId={selectedId}
+              open={openId === c.id}
+              onOpenChange={(o) => setOpenId(o ? c.id : (openId === c.id ? null : openId))}
+              onSelect={onSelect}
+              onToggleMute={onToggleMute}
+              onToggleArchive={onToggleArchive}
+              onDelete={onDelete ? (ch) => setDeleteTarget(ch) : undefined}
+            />)}
         </div>
       </div>
     </div>

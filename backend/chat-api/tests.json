@@ -417,6 +417,17 @@
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "delete_chat без входа отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "delete_chat",
+        "chat_id": 1
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

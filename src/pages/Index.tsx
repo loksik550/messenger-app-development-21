@@ -668,6 +668,15 @@ export default function Index() {
                     setRealChats(prev => [...prev, { ...c, archived: !next }]);
                   }
                 }}
+                onDelete={async (c, forAll) => {
+                  setRealChats(prev => prev.filter(x => x.id !== c.id));
+                  if (selectedChat?.id === c.id) setSelectedChat(null);
+                  try {
+                    await api("delete_chat", { chat_id: c.id, for_all: forAll }, currentUser!.id);
+                  } catch {
+                    setRealChats(prev => [...prev, c]);
+                  }
+                }}
                 onRefresh={async () => {
                   if (!currentUser) return;
                   const data = await api("get_chats", { archived: showArchived }, currentUser.id);

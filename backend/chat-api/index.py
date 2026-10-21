@@ -1136,6 +1136,7 @@ def _handle(event: dict, context) -> dict:
                 LEFT JOIN unread un ON un.chat_id = mc.id
                 WHERE u.id NOT IN (SELECT blocked_id FROM blocked)
                   AND COALESCE(cs.archived, FALSE) = %s
+                  AND NOT (COALESCE(cs.hidden, FALSE) AND COALESCE(mc.last_message_at, 0) <= COALESCE(cs.cleared_at, 0))
                 ORDER BY COALESCE(cs.pinned, FALSE) DESC,
                          COALESCE(cs.muted, FALSE) ASC,
                          mc.last_message_at DESC NULLS LAST""",
@@ -3468,6 +3469,44 @@ def _handle(event: dict, context) -> dict:
         )
         conn.close()
         return ok({"ok": True, "cleared_at": ts})
+
+    # ── delete_chat — удалить переписку у себя или у обоих ─────────────────────
+    if action == "delete_chat":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        chat_id = body.get("chat_id")
+        for_all = bool(body.get("for_all"))
+        if not chat_id:
+            conn.close()
+            return err("Укажите chat_id")
+        if not _is_chat_member(cur, int(chat_id), int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
+        ts = int(time.time())
+        members = [int(user_id)]
+        if for_all:
+            cur.execute(f"SELECT user1_id, user2_id FROM {SCHEMA}.chats WHERE id = %s", (int(chat_id),))
+            r = cur.fetchone()
+            if r:
+                members = list({int(r[0]), int(r[1])})
+            cur.execute(
+                f"""UPDATE {SCHEMA}.messages
+                    SET removed_at = %s, text = '', media_url = NULL, media_type = NULL, image_url = NULL
+                    WHERE chat_id = %s AND removed_at IS NULL""",
+                (ts, int(chat_id))
+            )
+            cur.execute(f"UPDATE {SCHEMA}.chats SET last_message = '' WHERE id = %s", (int(chat_id),))
+        for uid_ in members:
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.chat_settings (user_id, chat_id, cleared_at, hidden, pinned)
+                    VALUES (%s, %s, %s, TRUE, FALSE)
+                    ON CONFLICT (user_id, chat_id) DO UPDATE
+                    SET cleared_at = EXCLUDED.cleared_at, hidden = TRUE, pinned = FALSE""",
+                (uid_, int(chat_id), ts)
+            )
+        conn.close()
+        return ok({"ok": True, "for_all": for_all, "cleared_at": ts})
 
     # ── clear_group_history ───────────────────────────────────────────────────
     if action == "clear_group_history":
