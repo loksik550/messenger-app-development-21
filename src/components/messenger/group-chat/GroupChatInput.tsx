@@ -187,6 +187,7 @@ export default function GroupChatInput({
             autoCapitalize="sentences"
             spellCheck
             inputMode="text"
+            lang=""
             enterKeyHint="enter"
             className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 placeholder:text-muted-foreground resize-none break-words"
           />

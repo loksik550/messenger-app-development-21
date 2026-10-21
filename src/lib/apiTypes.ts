@@ -105,6 +105,7 @@ export interface Chat {
   favorite?: boolean;
   archived?: boolean;
   partner_id?: number;
+  readOnly?: boolean;
   lastSeen?: number;
 }
 
@@ -151,6 +152,7 @@ export interface User {
   // Уведомления
   notify_messages?: boolean;
   notify_preview?: boolean;
+  is_staff?: boolean;
   notify_groups?: boolean;
   notify_calls?: boolean;
   notify_sound?: string;

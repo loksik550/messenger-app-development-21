@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { track } from "@/lib/track";
 import { api, uploadMedia, type Chat, type Message, type User } from "@/lib/api";
 import { uploadAlbum, MAX_ALBUM } from "@/lib/uploadAlbum";
+import { canEncryptChat, encryptFile, type MediaKey } from "@/lib/e2e";
 
 // Отправка файлов и запись голосовых сообщений.
 // Логика перенесена из ChatComponents.tsx без изменений.
@@ -42,18 +43,32 @@ export function useChatMedia({
     setShowAttach(false);
     const labelMap: Record<string, string> = { image: "Загружаем фото...", video: "Загружаем видео...", audio: "Загружаем аудио...", file: "Загружаем файл..." };
     try {
-      const result = await uploadMedia(file, currentUser.id);
+      const secure = !chat.saved && !chat.group && await canEncryptChat(chat.id, currentUser.id);
+      let mediaKey: MediaKey | null = null;
+      let result: Awaited<ReturnType<typeof uploadMedia>>;
+      if (secure) {
+        const enc = await encryptFile(file, file.name || "file");
+        mediaKey = enc.key;
+        const guessed = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "file";
+        const up = await uploadMedia(new File([enc.blob], "encrypted.bin", { type: "application/octet-stream" }), currentUser.id);
+        result = { ...up, media_type: guessed, file_name: "encrypted.bin", file_size: file.size };
+      } else {
+        result = await uploadMedia(file, currentUser.id);
+      }
       const finalMediaType = extra?.mediaTypeOverride || result.media_type;
+      const localUrl = mediaKey ? URL.createObjectURL(file) : result.url;
       track(finalMediaType === "audio" ? "msg_voice" : finalMediaType === "image" ? "msg_photo" : finalMediaType === "video" ? "msg_video" : "msg_file");
       setUploadLabel(labelMap[finalMediaType] || "Загружаем...");
       const data = await api("send_message", {
         chat_id: chat.id,
         media_type: finalMediaType,
         media_url: result.url,
-        file_name: result.file_name,
+        file_name: mediaKey ? "encrypted.bin" : result.file_name,
         file_size: result.file_size,
         duration: extra?.duration,
+        ...(mediaKey ? { e2e_media: mediaKey } : {}),
       }, currentUser.id);
+      if (data?.error) throw new Error(data.error);
       if (data.id) {
         const timeStr = new Date(data.created_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
         setMessages(prev => [...prev, {
@@ -63,9 +78,9 @@ export function useChatMedia({
           out: true,
           created_at: data.created_at,
           media_type: finalMediaType,
-          media_url: result.url,
-          image_url: finalMediaType === "image" ? result.url : undefined,
-          file_name: result.file_name,
+          media_url: localUrl,
+          image_url: finalMediaType === "image" ? localUrl : undefined,
+          file_name: mediaKey ? mediaKey.name : result.file_name,
           file_size: result.file_size,
           duration: extra?.duration,
           reactions: [],
@@ -83,7 +98,8 @@ export function useChatMedia({
     const list = files.filter(Boolean);
     if (list.length === 0) return;
     const images = list.filter(f => f.type.startsWith("image/") && !/gif|svg/i.test(f.type));
-    if (list.length === 1 || images.length < 2) {
+    const secure = !chat.saved && !chat.group && await canEncryptChat(chat.id, currentUser.id);
+    if (list.length === 1 || images.length < 2 || secure) {
       for (const f of list) await sendFile(f);
       return;
     }

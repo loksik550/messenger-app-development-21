@@ -265,7 +265,9 @@ function signedBytes(e: Omit<Envelope, "sg">): Uint8Array<ArrayBuffer> {
   return te.encode(JSON.stringify([e.v, e.su, e.sd, e.c, e.ep, e.iv, e.ct, keys])) as Uint8Array<ArrayBuffer>;
 }
 
-async function encryptText(chatId: number, userId: number, plain: string): Promise<string | null> {
+export interface MediaKey { k: string; iv: string; mime: string; name: string; size: number }
+
+async function encryptText(chatId: number, userId: number, plain: string, media?: MediaKey): Promise<string | null> {
   const keys = await ensureDevice(userId);
   if (!keys) return null;
   let d = await getDirectory(chatId, userId);
@@ -288,7 +290,7 @@ async function encryptText(chatId: number, userId: number, plain: string): Promi
   const k = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
   const raw = new Uint8Array(await crypto.subtle.exportKey("raw", k));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: te.encode(`${INFO}|${chatId}`) }, k, te.encode(JSON.stringify({ t: plain })));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: te.encode(`${INFO}|${chatId}`) }, k, te.encode(JSON.stringify(media ? { t: plain, m: media } : { t: plain })));
   const ep = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
   const epRaw = await crypto.subtle.exportKey("spki", ep.publicKey);
 
@@ -314,13 +316,14 @@ async function encryptText(chatId: number, userId: number, plain: string): Promi
   return JSON.stringify({ ...env, sg: b64(sg) });
 }
 
-const plainCache = new Map<string, { text: string; state: DecryptState }>();
+type Plain = { text: string; state: DecryptState; media?: MediaKey };
+const plainCache = new Map<string, Plain>();
 
-async function decryptEnvelope(chatId: number, userId: number, senderId: number, enc: string): Promise<{ text: string; state: DecryptState }> {
+async function decryptEnvelope(chatId: number, userId: number, senderId: number, enc: string): Promise<Plain> {
   const cacheKey = `${userId}|${chatId}|${senderId}|${enc}`;
   const hit = plainCache.get(cacheKey);
   if (hit) return hit;
-  const res = await (async (): Promise<{ text: string; state: DecryptState }> => {
+  const res = await (async (): Promise<Plain> => {
     let env: Envelope;
     try { env = JSON.parse(enc); } catch { return { text: "⚠️ Повреждённое сообщение", state: "bad" }; }
     if (env.v !== 1 || env.c !== chatId || env.su !== senderId) return { text: "⚠️ Сообщение не прошло проверку подлинности", state: "bad" };
@@ -348,8 +351,8 @@ async function decryptEnvelope(chatId: number, userId: number, senderId: number,
       const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(entry.iv) }, wk, unb64(entry.w));
       const k = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
       const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(env.iv), additionalData: te.encode(`${INFO}|${chatId}`) }, k, unb64(env.ct));
-      const obj = JSON.parse(td.decode(pt)) as { t?: string };
-      return { text: String(obj.t ?? ""), state: "ok" };
+      const obj = JSON.parse(td.decode(pt)) as { t?: string; m?: MediaKey };
+      return { text: String(obj.t ?? ""), state: "ok", media: obj.m && typeof obj.m.k === "string" ? obj.m : undefined };
     } catch {
       return { text: "⚠️ Не удалось расшифровать сообщение", state: "bad" };
     }
@@ -365,6 +368,7 @@ async function decryptEnvelope(chatId: number, userId: number, senderId: number,
 const OUT_ACTIONS = new Set(["send_message", "edit_message", "schedule_message"]);
 
 export function needsOutgoing(action: string, body: Record<string, unknown>): boolean {
+  if (action === "send_message" && body.e2e_media && !body.enc) return true;
   if (!OUT_ACTIONS.has(action) || body.enc || !e2eSupported()) return false;
   if (typeof body.text !== "string" || !body.text.trim()) return false;
   if (body.media_url || body.image_url || body.payload) return false;
@@ -374,6 +378,12 @@ export function needsOutgoing(action: string, body: Record<string, unknown>): bo
 
 export async function processOutgoing(body: Record<string, unknown>, userId: number): Promise<Record<string, unknown>> {
   const chatId = Number(body.chat_id);
+  if (body.e2e_media) {
+    const { e2e_media, text: caption, ...rest } = body;
+    const enc = await encryptText(chatId, userId, typeof caption === "string" ? caption : "", e2e_media as MediaKey);
+    if (!enc) throw new Error("Не удалось зашифровать файл — сообщение не отправлено открытым текстом");
+    return { ...rest, enc };
+  }
   const enc = await encryptText(chatId, userId, String(body.text).trim());
   if (!enc) return body;
   const { text: _t, ...rest } = body;
@@ -381,7 +391,13 @@ export async function processOutgoing(body: Record<string, unknown>, userId: num
   return { ...rest, enc };
 }
 
-interface RawMsg { sender_id?: number; text?: string; enc?: string | null; e2e?: DecryptState; reply_to?: { text?: string; enc?: string | null; sender_name?: string } | null }
+interface RawMsg {
+  sender_id?: number; text?: string; enc?: string | null; e2e?: DecryptState;
+  media_type?: string | null; media_url?: string | null; image_url?: string | null; file_name?: string | null; file_size?: number | null;
+  reply_to?: { text?: string; enc?: string | null; sender_name?: string } | null;
+}
+
+const MEDIA_LABEL: Record<string, string> = { image: "📷 Фото", video: "🎥 Видео", audio: "🎵 Голосовое", file: "📎 Файл" };
 
 export async function processIncoming(action: string, body: Record<string, unknown>, data: Record<string, unknown>, userId: number) {
   if (!data || !e2eSupported()) return;
@@ -392,9 +408,24 @@ export async function processIncoming(action: string, body: Record<string, unkno
     await Promise.all(list.map(async (m) => {
       if (m.enc && m.sender_id) {
         const r = await decryptEnvelope(chatId, userId, m.sender_id, m.enc);
-        m.text = r.text;
         m.e2e = r.state;
         delete m.enc;
+        if (m.media_url) {
+          const url = r.media && r.state === "ok" ? await openMedia(m.media_url, r.media).catch(() => null) : null;
+          if (url && r.media) {
+            m.media_url = url;
+            m.image_url = m.media_type === "image" ? url : null;
+            m.file_name = r.media.name;
+            m.file_size = r.media.size;
+            m.text = r.text || MEDIA_LABEL[m.media_type || ""] || "📎 Файл";
+          } else {
+            m.media_url = null;
+            m.image_url = null;
+            m.text = r.state === "ok" ? "⚠️ Не удалось загрузить зашифрованный файл" : r.text;
+          }
+        } else {
+          m.text = r.text;
+        }
       }
       if (m.reply_to?.enc) {
         const original = list.find((x) => x.enc === m.reply_to?.enc);
@@ -424,5 +455,58 @@ async function decryptAnySender(chatId: number, userId: number, enc: string): Pr
     return (await decryptEnvelope(chatId, userId, su, enc)).text;
   } catch {
     return ENC_PLACEHOLDER;
+  }
+}
+
+
+// ── Файлы: шифр AES-256-GCM, ключ файла едет внутри зашифрованного конверта ──
+export async function encryptFile(file: Blob, name: string): Promise<{ blob: Blob; key: MediaKey }> {
+  const k = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = await file.arrayBuffer();
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, k, data);
+  const raw = new Uint8Array(await crypto.subtle.exportKey("raw", k));
+  const key: MediaKey = { k: b64(raw), iv: b64(iv), mime: (file.type || "application/octet-stream").split(";")[0], name: name.slice(0, 120), size: file.size };
+  raw.fill(0);
+  return { blob: new Blob([ct], { type: "application/octet-stream" }), key };
+}
+
+const mediaCache = new Map<string, Promise<string>>();
+
+async function fetchAndDecrypt(url: string, key: MediaKey): Promise<string> {
+  let lastErr: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(url, { cache: "force-cache" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const k = await crypto.subtle.importKey("raw", unb64(key.k), "AES-GCM", false, ["decrypt"]);
+      const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(key.iv) }, k, buf);
+      return URL.createObjectURL(new Blob([pt], { type: key.mime || "application/octet-stream" }));
+    } catch (e) {
+      lastErr = e;
+      if (e instanceof DOMException && e.name === "OperationError") break;
+      await new Promise((r) => setTimeout(r, 700 * (i + 1)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("decrypt");
+}
+
+export function openMedia(url: string, key: MediaKey): Promise<string> {
+  const id = `${url}#${key.k}`;
+  let p = mediaCache.get(id);
+  if (!p) {
+    p = fetchAndDecrypt(url, key).catch((e) => { mediaCache.delete(id); throw e; });
+    mediaCache.set(id, p);
+  }
+  return p;
+}
+
+export async function canEncryptChat(chatId: number, userId: number): Promise<boolean> {
+  try {
+    const s = await chatSecurity(chatId, userId);
+    return s.encrypted;
+  } catch {
+    return false;
   }
 }

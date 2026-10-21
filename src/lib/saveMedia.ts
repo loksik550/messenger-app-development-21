@@ -3,8 +3,10 @@ import { Filesystem, Directory } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 
 function extFrom(url: string, mime: string) {
-  const m = url.split("?")[0].match(/\.([a-z0-9]{2,5})$/i);
+  const m = url.startsWith("blob:") ? null : url.split("?")[0].match(/\.([a-z0-9]{2,5})$/i);
   if (m) return m[1].toLowerCase();
+  if (mime.includes("jpeg")) return "jpg";
+  if (mime.includes("gif")) return "gif";
   if (mime.includes("png")) return "png";
   if (mime.includes("webp")) return "webp";
   if (mime.includes("mp4")) return "mp4";

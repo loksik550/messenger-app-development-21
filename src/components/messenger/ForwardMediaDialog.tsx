@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Icon from "@/components/ui/icon";
-import { api, type User } from "@/lib/api";
+import { api, uploadMedia, type User } from "@/lib/api";
+import { canEncryptChat, encryptFile } from "@/lib/e2e";
 
 export type ForwardTarget = { key: string; kind: "chat" | "group"; id: number; name: string; avatar_url?: string | null; saved?: boolean; channel?: boolean };
 
@@ -54,9 +55,22 @@ export default function ForwardMediaDialog({ url = "", type = "image", title, se
     if (!me || sendingKey) return;
     setSendingKey(t.key);
     setError("");
-    const media = { media_type: type, media_url: url, file_name: type === "video" ? "video.mp4" : "photo.jpg" };
+    let media: Record<string, unknown> = { media_type: type, media_url: url, file_name: type === "video" ? "video.mp4" : "photo.jpg" };
     try {
       if (sendTo) { await sendTo(t, me); onDone(t.name); return; }
+      if (url.startsWith("blob:")) {
+        const blob = await (await fetch(url)).blob();
+        const name = type === "video" ? "video.mp4" : "photo.jpg";
+        const file = new File([blob], name, { type: blob.type || (type === "video" ? "video/mp4" : "image/jpeg") });
+        if (t.kind === "chat" && await canEncryptChat(t.id, me.id)) {
+          const enc = await encryptFile(file, name);
+          const up = await uploadMedia(new File([enc.blob], "encrypted.bin", { type: "application/octet-stream" }), me.id);
+          media = { media_type: type, media_url: up.url, file_name: "encrypted.bin", file_size: file.size, e2e_media: enc.key };
+        } else {
+          const up = await uploadMedia(file, me.id);
+          media = { media_type: type, media_url: up.url, file_name: up.file_name, file_size: up.file_size };
+        }
+      }
       const r = t.kind === "group"
         ? await api("send_group_message", { group_id: t.id, ...media }, me.id)
         : await api("send_message", { chat_id: t.id, ...media }, me.id);

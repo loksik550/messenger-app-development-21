@@ -10,6 +10,17 @@ if (_accent) applyAccent(_accent);
 applyBubbleStyle(getStoredBubbleStyle());
 startAutoTheme(getStoredAutoConfig());
 
+// Android WebView передаёт lang страницы клавиатуре как «подсказку языка»,
+// и клавиатуры (Gboard, Xiaomi) принудительно возвращают русскую раскладку.
+// Убираем подсказку у всех полей ввода — пользователь сам выбирает раскладку.
+const clearLangHint = (el: EventTarget | null) => {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable)) {
+    if (el.getAttribute("lang") !== "") el.setAttribute("lang", "");
+  }
+};
+document.addEventListener("pointerdown", (e) => clearLangHint(e.target), true);
+document.addEventListener("focusin", (e) => clearLangHint(e.target), true);
+
 createRoot(document.getElementById("root")!).render(<App />);
 
 if ("serviceWorker" in navigator) {

@@ -94,7 +94,8 @@ export function useGroupProfileData(group: Group, currentUser: User) {
     const next = !onlyAdmins;
     setOnlyAdmins(next);
     const r = await api("set_group_only_admins", { group_id: group.id, only_admins_post: next }, currentUser.id);
-    if (r?.error) { setOnlyAdmins(!next); alert(r.error); }
+    if (r?.error) { setOnlyAdmins(!next); alert(r.error); return; }
+    window.dispatchEvent(new CustomEvent("nova:group-only-admins", { detail: { groupId: group.id, value: next } }));
   };
 
   const fullInviteUrl = inviteLink ? `${window.location.origin}/?join=${inviteLink}` : "";

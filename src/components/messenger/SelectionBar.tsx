@@ -1,7 +1,8 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import ForwardMediaDialog, { type ForwardTarget } from "@/components/messenger/ForwardMediaDialog";
-import { api, type User } from "@/lib/api";
+import { api, uploadMedia, type User } from "@/lib/api";
+import { canEncryptChat, encryptFile } from "@/lib/e2e";
 import native from "@/lib/native";
 import { isMediaPlaceholder } from "@/components/messenger/chatConstants";
 
@@ -25,6 +26,26 @@ async function forwardOne(m: SelectableMessage, t: ForwardTarget, me: User, sour
     if (!/с устройства/.test(r.error)) throw new Error(r.error);
   }
   const media = m.media_url || m.image_url || undefined;
+  if (media && media.startsWith("blob:")) {
+    const blob = await (await fetch(media)).blob();
+    const name = m.file_name || "file";
+    const file = new File([blob], name, { type: blob.type || "application/octet-stream" });
+    const mt = m.media_type || "image";
+    if (t.kind === "chat" && await canEncryptChat(t.id, me.id)) {
+      const enc = await encryptFile(file, name);
+      const up = await uploadMedia(new File([enc.blob], "encrypted.bin", { type: "application/octet-stream" }), me.id);
+      const r = await api("send_message", { chat_id: t.id, media_type: mt, media_url: up.url, file_name: "encrypted.bin", file_size: file.size, duration: m.duration || undefined, e2e_media: enc.key }, me.id);
+      if (r?.error) throw new Error(r.error);
+    } else {
+      const up = await uploadMedia(file, me.id);
+      const f2 = { media_type: mt, media_url: up.url, file_name: name, file_size: up.file_size, duration: m.duration || undefined };
+      const r = t.kind === "group"
+        ? await api("send_group_message", { group_id: t.id, ...f2 }, me.id)
+        : await api("send_message", { chat_id: t.id, ...f2, forwarded_from_name: m.sender_name || undefined }, me.id);
+      if (r?.error) throw new Error(r.error);
+    }
+    return;
+  }
   const fields = {
     text: m.text || "",
     media_type: media ? (m.media_type || "image") : undefined,

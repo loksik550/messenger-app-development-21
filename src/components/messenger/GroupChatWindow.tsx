@@ -104,6 +104,15 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     });
   }, [group.id, currentUser.id, loadMessages]);
 
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent<{ groupId: number; value: boolean }>).detail;
+      if (d?.groupId === group.id) setOnlyAdminsPost(d.value);
+    };
+    window.addEventListener("nova:group-only-admins", h);
+    return () => window.removeEventListener("nova:group-only-admins", h);
+  }, [group.id]);
+
   const myRole = members.find(m => m.id === currentUser.id)?.role;
   const isAdminHere = myRole === "owner" || myRole === "admin";
   const canWrite = (!group.is_channel && !onlyAdminsPost) || isAdminHere;

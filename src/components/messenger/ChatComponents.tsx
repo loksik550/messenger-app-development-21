@@ -18,7 +18,7 @@ import { useChatMedia } from "@/components/messenger/useChatMedia";
 import { useChatScroll } from "@/components/messenger/useChatScroll";
 import { useMessageActions } from "@/components/messenger/useMessageActions";
 import {
-  ConfirmDialog, EncryptionBadge, UnknownContactHint, PinnedBar, ScrollDownButton,
+  ConfirmDialog, EncryptionBadge, PinnedBar, ScrollDownButton,
 } from "@/components/messenger/ChatOverlays";
 import { ChatModals } from "@/components/messenger/ChatModals";
 import { MediaActionsContext, type MediaMessageActions } from "@/components/messenger/MediaActionsContext";
@@ -68,7 +68,7 @@ export function ChatWindow({
   const e2eSec = useChatSecurity(chat.id, currentUser.id, !chat.saved && !chat.group && chat.id > 0);
   const {
     pinnedMsg, setPinnedMsg,
-    isUnknown, setIsUnknown, unknownDismissed, setUnknownDismissed, addToContacts,
+    isUnknown, setIsUnknown,
     disappearingSec, setDisappearingSec,
     scheduled, reloadScheduled,
     wallpaper, setWallpaper,
@@ -259,20 +259,7 @@ export function ChatWindow({
       )}
 
       {/* Lock badge */}
-      {!chat.saved && <EncryptionBadge />}
-
-      {/* Подсказка о незнакомце */}
-      {isUnknown && !unknownDismissed && chat.partner_id && !chat.saved && (
-        <UnknownContactHint
-          onAddToContacts={addToContacts}
-          onBlock={async () => {
-            await api("block_user", { target_user_id: chat.partner_id }, currentUser.id);
-            onChatDeleted?.();
-            onBack();
-          }}
-          onDismiss={() => setUnknownDismissed(true)}
-        />
-      )}
+      {!chat.saved && e2eSec?.encrypted && <EncryptionBadge />}
 
       {ctxMenu && (() => {
         const m = messages.find(x => x.id === ctxMenu.msgId);
@@ -361,6 +348,12 @@ export function ChatWindow({
         <ScrollDownButton newCount={newCount} onClick={scrollToBottom} />
       )}
 
+      {chat.readOnly ? (
+        <div className="px-4 py-3 border-t border-white/5 text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+          <Icon name="BellRing" size={13} className="text-violet-400" />
+          Официальные уведомления Nova — ответить на них нельзя
+        </div>
+      ) : (
       <ChatInput
         input={input}
         setInput={setInput}
@@ -407,6 +400,7 @@ export function ChatWindow({
           />
         ) : null}
       />
+      )}
 
       <ChatModals
         forwardText={forwardMsgId !== null ? messages.find(m => m.id === forwardMsgId)?.text : undefined}

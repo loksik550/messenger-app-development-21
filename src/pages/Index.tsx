@@ -103,6 +103,20 @@ export default function Index() {
     return () => { cancelled = true; };
   }, []);
 
+  const meId = currentUser?.id;
+  useEffect(() => {
+    if (!meId) return;
+    api("get_me", {}, meId).then((r) => {
+      if (!r?.user || r.user.id !== meId) return;
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, ...r.user };
+        try { localStorage.setItem("nova_user", JSON.stringify(next)); } catch { /* ignore */ }
+        return next;
+      });
+    }).catch(() => { /* ignore */ });
+  }, [meId]);
+
   useEffect(() => onAuthExpired(() => {
     localStorage.removeItem("nova_user");
     setAuthToken(null);
@@ -564,14 +578,14 @@ export default function Index() {
               className="flex-1 min-w-0 bg-transparent outline-none text-sm text-foreground placeholder-muted-foreground"
             />
           </div>
-          <button
+          {currentUser.is_staff && <button
             onClick={() => { setView("search"); setSelectedChat(null); setShowSidebar(false); }}
             className="flex items-center gap-1.5 px-3 py-2 glass rounded-2xl text-xs font-semibold text-violet-300 hover:bg-white/8 transition-colors flex-shrink-0"
             title="Найти людей по имени, номеру или ID"
           >
             <Icon name="UserSearch" fallback="UserPlus" size={15} />
             Люди
-          </button>
+          </button>}
         </div>
 
         {/* Content */}

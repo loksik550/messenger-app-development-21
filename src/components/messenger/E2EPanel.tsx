@@ -20,6 +20,7 @@ export function useChatSecurity(chatId: number, userId: number, enabled: boolean
 export function E2EBadge({ sec, onClick }: { sec: ChatSecurity | null; onClick: () => void }) {
   if (!sec) return null;
   const warn = sec.conflicts.length > 0;
+  if (!sec.encrypted && !warn) return null;
   return (
     <span
       role="button"

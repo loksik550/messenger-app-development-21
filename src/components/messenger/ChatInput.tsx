@@ -220,6 +220,7 @@ export function ChatInput({
               autoCapitalize="sentences"
               spellCheck
               inputMode="text"
+              lang=""
               enterKeyHint="enter"
               aria-label="Сообщение"
               className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 text-foreground placeholder-muted-foreground resize-none break-words"

@@ -1029,10 +1029,22 @@ def _handle(event: dict, context) -> dict:
         _maybe_streak_bonus(cur, int(user_id))
         cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
         row = cur.fetchone()
-        conn.close()
         if not row:
+            conn.close()
             return err("Пользователь не найден", 404)
-        return ok({"user": serialize_user(row)})
+        _admin_env = os.environ.get("ADMIN_USER_ID", "").strip()
+        is_staff = _admin_env.isdigit() and int(_admin_env) == int(user_id)
+        if not is_staff:
+            cur.execute(
+                f"SELECT 1 FROM {SCHEMA}.dev_admins WHERE nova_user_id = %s AND COALESCE(disabled, FALSE) = FALSE "
+                f"AND role IN ('owner', 'admin', 'moderator') LIMIT 1",
+                (int(user_id),)
+            )
+            is_staff = cur.fetchone() is not None
+        conn.close()
+        u = serialize_user(row)
+        u["is_staff"] = bool(is_staff)
+        return ok({"user": u})
 
     # ── get_users ─────────────────────────────────────────────────────────────
     if action == "get_users":
@@ -1126,7 +1138,8 @@ def _handle(event: dict, context) -> dict:
                        COALESCE(cs.archived, FALSE),
                        COALESCE(un.cnt, 0),
                        COALESCE(u.verified, FALSE),
-                       lm.sender_id, lm.read_at
+                       lm.sender_id, lm.read_at,
+                       COALESCE(u.is_service, FALSE)
                 FROM my_chats mc
                 JOIN {SCHEMA}.users u ON u.id = mc.partner_id
                 LEFT JOIN LATERAL (
@@ -1161,7 +1174,8 @@ def _handle(event: dict, context) -> dict:
         chats = [{
             "id": r[0], "last_message": r[1], "last_message_at": r[2],
             "partner": {"id": r[3], "name": r[4], "phone": r[5], "avatar_url": r[6],
-                        "last_seen": r[7], "verified": bool(r[14]) if len(r) > 14 else False},
+                        "last_seen": r[7], "verified": bool(r[14]) if len(r) > 14 else False,
+                        "is_service": bool(r[17]) if len(r) > 17 else False},
             "unread": int(r[13] or 0),
             "last_mine": (r[15] == uid) if len(r) > 16 else False,
             "last_read": bool(r[16]) if len(r) > 16 and r[15] == uid else False,
@@ -1811,13 +1825,17 @@ def _handle(event: dict, context) -> dict:
         except Exception:
             conn.close(); return err("Неверный group_id")
         only_admins = bool(body.get("only_admins_post", False))
-        cur.execute(f"SELECT owner_id FROM {SCHEMA}.groups WHERE id=%s", (gid,))
+        cur.execute(
+            f"SELECT g.owner_id, gm.role FROM {SCHEMA}.groups g "
+            f"LEFT JOIN {SCHEMA}.group_members gm ON gm.group_id = g.id AND gm.user_id = %s WHERE g.id=%s",
+            (int(user_id), gid)
+        )
         rr = cur.fetchone()
-        if not rr or int(rr[0]) != int(user_id):
-            conn.close(); return err("Только владелец", 403)
+        if not rr or (int(rr[0]) != int(user_id) and rr[1] not in ("owner", "admin")):
+            conn.close(); return err("Только владелец или админ", 403)
         cur.execute(f"UPDATE {SCHEMA}.groups SET only_admins_post=%s WHERE id=%s", (only_admins, gid))
         conn.close()
-        return ok({"ok": True})
+        return ok({"ok": True, "only_admins_post": only_admins})
 
     # ── Saved Notes (заметки в избранном) ─────────────────────────────────────
     if action == "saved_notes_list":
@@ -2344,9 +2362,15 @@ def _handle(event: dict, context) -> dict:
         payload = body.get("payload") or None
         enc = body.get("enc") or None
         if enc is not None:
-            if not isinstance(enc, str) or len(enc) > 200000 or kind != "text" or media_url or image_url:
+            if not isinstance(enc, str) or len(enc) > 200000 or kind != "text" or image_url or payload:
                 conn.close(); return err("Неверное зашифрованное сообщение")
-            text = "🔒 Зашифрованное сообщение"
+            if media_url:
+                if media_type not in ("image", "video", "audio", "file"):
+                    conn.close(); return err("Неверный тип файла")
+                file_name = "encrypted.bin"
+                text = {"image": "🔒 Фото", "video": "🔒 Видео", "audio": "🔒 Голосовое", "file": "🔒 Файл"}[media_type]
+            else:
+                text = "🔒 Зашифрованное сообщение"
 
         # Совместимость: image_url → media
         if image_url and not media_url:
@@ -2371,6 +2395,11 @@ def _handle(event: dict, context) -> dict:
         )
         _pr = cur.fetchone()
         if _pr and _pr[0]:
+            cur.execute(f"SELECT COALESCE(is_service, FALSE) FROM {SCHEMA}.users WHERE id=%s", (int(_pr[0]),))
+            _svc = cur.fetchone()
+            if _svc and _svc[0]:
+                conn.close()
+                return err("На сообщения Nova нельзя ответить", 403)
             cur.execute(
                 f"SELECT 1 FROM {SCHEMA}.user_blocks WHERE blocker_id=%s AND blocked_id=%s",
                 (int(_pr[0]), int(user_id))
@@ -2440,7 +2469,7 @@ def _handle(event: dict, context) -> dict:
         msg_id = cur.fetchone()[0]
         cur.execute(
             f"UPDATE {SCHEMA}.chats SET last_message = %s, last_message_at = %s WHERE id = %s",
-            ("🔒 Сообщение" if enc else text[:100], now, int(chat_id))
+            ((text if media_url else "🔒 Сообщение") if enc else text[:100], now, int(chat_id))
         )
         cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = %s WHERE id = %s", (now, int(user_id)))
 
@@ -2504,7 +2533,7 @@ def _handle(event: dict, context) -> dict:
             # Push-уведомление — в фоне
             push_url = _push_notify_url()
             if push_url:
-                _preview = "🔒 Новое сообщение" if enc else (text or "").strip()[:100]
+                _preview = (text if media_url else "🔒 Новое сообщение") if enc else (text or "").strip()[:100]
                 if not _preview:
                     _preview = {
                         "image": "📷 Фото",
@@ -4198,21 +4227,24 @@ def _handle(event: dict, context) -> dict:
             return err("Укажите text или media_url")
         # Одним запросом: проверка членства + тип группы (канал/чат) + название
         cur.execute(
-            f"""SELECT gm.role, COALESCE(g.is_channel, FALSE), g.name
+            f"""SELECT gm.role, COALESCE(g.is_channel, FALSE), g.name, COALESCE(g.only_admins_post, FALSE)
                 FROM {SCHEMA}.groups g
                 LEFT JOIN {SCHEMA}.group_members gm
                   ON gm.group_id = g.id AND gm.user_id = %s
-                WHERE g.id = %s""",
+                WHERE g.id = %s AND g.removed_at IS NULL""",
             (int(user_id), int(group_id))
         )
         gr = cur.fetchone()
         if not gr:
             conn.close()
             return err("Группа не найдена", 404)
-        role, is_channel, group_name = gr
-        if not role:
+        role, is_channel, group_name, only_admins_g = gr
+        if not role or role == 'removed':
             conn.close()
             return err("Нет доступа", 403)
+        if only_admins_g and not is_channel and role not in ('owner', 'admin'):
+            conn.close()
+            return err("В этой группе писать могут только админы", 403)
         if is_channel and role not in ('owner', 'admin'):
             conn.close()
             return err("В канал могут писать только владельцы и администраторы", 403)
@@ -4539,7 +4571,8 @@ def _handle(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT g.id, g.name, g.description, g.avatar_url, g.owner_id, g.is_channel,
                        g.invite_link, g.created_at, g.last_message, g.last_message_at,
-                       (SELECT COUNT(*) FROM {SCHEMA}.group_members gm WHERE gm.group_id=g.id AND gm.role!='removed') AS members_count
+                       (SELECT COUNT(*) FROM {SCHEMA}.group_members gm WHERE gm.group_id=g.id AND gm.role!='removed') AS members_count,
+                       COALESCE(g.only_admins_post, FALSE)
                 FROM {SCHEMA}.groups g WHERE g.id=%s""",
             (gid,)
         )
@@ -4553,6 +4586,7 @@ def _handle(event: dict, context) -> dict:
             "invite_link": r[6], "created_at": int(r[7] or 0),
             "last_message": r[8] or "", "last_message_at": int(r[9] or 0),
             "members_count": int(r[10] or 0),
+            "only_admins_post": bool(r[11]),
             "my_role": me[0],
         }})
 

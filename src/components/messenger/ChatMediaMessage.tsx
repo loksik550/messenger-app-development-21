@@ -121,6 +121,7 @@ export function MediaMessage({ msg, gallery = [], galleryIndex = 0, out = false 
         href={mediaUrl}
         target="_blank"
         rel="noopener noreferrer"
+        download={mediaUrl?.startsWith("blob:") ? (msg.file_name || "file") : undefined}
         className="flex items-center gap-3 px-1 py-1 min-w-[200px] hover:opacity-80 transition-opacity"
       >
         <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(16,185,129,0.2)" }}>
