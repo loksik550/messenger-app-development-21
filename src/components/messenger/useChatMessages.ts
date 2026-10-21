@@ -23,6 +23,8 @@ export function useChatMessages(chat: Chat, currentUser: User) {
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
+  const readUpToRef = useRef(0);
+
   const mapMsg = useCallback((m: {
         id: number; text: string; created_at: number; sender_id: number; sender_name?: string; read_at?: number;
         image_url?: string; media_type?: string; media_url?: string;
@@ -68,6 +70,23 @@ export function useChatMessages(chat: Chat, currentUser: User) {
       const removedSet = new Set<number>(data.removed_ids);
       setMessages(prev => prev.some(m => removedSet.has(m.id)) ? prev.filter(m => !removedSet.has(m.id)) : prev);
       changed = true;
+    }
+
+    const readUpTo = Number(data.read_up_to) || 0;
+    if (readUpTo > readUpToRef.current) {
+      readUpToRef.current = readUpTo;
+      changed = true;
+      setMessages(prev => {
+        let touched = false;
+        const next = prev.map(m => {
+          if (m.out && !m.read && m.id > 0 && (m.created_at || 0) <= readUpTo) {
+            touched = true;
+            return { ...m, read: true };
+          }
+          return m;
+        });
+        return touched ? next : prev;
+      });
     }
 
     if (data.messages && data.messages.length > 0) {
@@ -163,6 +182,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
 
   useEffect(() => {
     setMessages(getPending(chat.id).map(pendingToMessage));
+    readUpToRef.current = 0;
     setLastSince(0);
     setHasMore(false);
     loadMessages(0);

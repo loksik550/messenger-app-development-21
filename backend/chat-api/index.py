@@ -1289,6 +1289,12 @@ def _handle(event: dict, context) -> dict:
             (cid,)
         )
         removed_ids = [r[0] for r in cur.fetchall()]
+        cur.execute(
+            f"SELECT COALESCE(MAX(created_at), 0) FROM {SCHEMA}.messages "
+            f"WHERE chat_id = %s AND sender_id = %s AND read_at IS NOT NULL",
+            (cid, uid_int)
+        )
+        read_up_to = int(cur.fetchone()[0] or 0)
         conn.close()
         def _parse_payload(raw):
             if not raw:
@@ -1318,7 +1324,7 @@ def _handle(event: dict, context) -> dict:
             "expires_at": int(r[18]) if r[18] else None,
             "reactions": r[23] or [],
         } for r in rows]
-        return ok({"messages": messages, "removed_ids": removed_ids, "now": int(time.time()), "has_more": has_more})
+        return ok({"messages": messages, "removed_ids": removed_ids, "read_up_to": read_up_to, "now": int(time.time()), "has_more": has_more})
 
     # ── scheduled_messages ────────────────────────────────────────────────────
     if action == "schedule_message":
