@@ -428,6 +428,17 @@
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "archive_group без входа отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "archive_group",
+        "group_id": 1
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

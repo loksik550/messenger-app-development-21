@@ -3917,13 +3917,19 @@ def _handle(event: dict, context) -> dict:
                                  WHERE v.message_id = m.id AND v.user_id = %s
                              )
                        ) AS unread_count,
-                       gm.role AS my_role
+                       gm.role AS my_role,
+                       EXISTS (
+                           SELECT 1 FROM {SCHEMA}.group_mute gmu
+                           WHERE gmu.user_id = %s AND gmu.group_id = g.id
+                             AND (gmu.muted_until = 0 OR gmu.muted_until > EXTRACT(EPOCH FROM NOW()))
+                       ) AS muted,
+                       gm.archived
                 FROM {SCHEMA}.groups g
                 JOIN {SCHEMA}.group_members gm ON gm.group_id = g.id AND gm.user_id = %s AND gm.role <> 'removed'
                 JOIN {SCHEMA}.group_members gm2 ON gm2.group_id = g.id
-                GROUP BY g.id, gm.cleared_at, gm.role
+                GROUP BY g.id, gm.cleared_at, gm.role, gm.archived
                 ORDER BY g.last_message_at DESC NULLS LAST""",
-            (int(user_id), int(user_id), int(user_id))
+            (int(user_id), int(user_id), int(user_id), int(user_id))
         )
         rows = cur.fetchall()
         groups = []
@@ -3934,6 +3940,8 @@ def _handle(event: dict, context) -> dict:
                 "last_message_at": r[7], "invite_link": r[8], "members_count": r[9],
                 "unread_count": r[10] or 0,
                 "my_role": r[11],
+                "muted": bool(r[12]),
+                "archived": bool(r[13]),
             })
         conn.close()
         return ok({"groups": groups})
@@ -4528,6 +4536,24 @@ def _handle(event: dict, context) -> dict:
         )
         conn.close()
         return ok({"ok": True})
+
+    # ── archive_group ─────────────────────────────────────────────────────────
+    if action == "archive_group":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        try:
+            gid = int(body.get("group_id") or 0)
+        except Exception:
+            conn.close(); return err("Неверный group_id")
+        if gid <= 0:
+            conn.close(); return err("Укажите group_id")
+        archived = bool(body.get("archived", True))
+        cur.execute(
+            f"UPDATE {SCHEMA}.group_members SET archived=%s WHERE group_id=%s AND user_id=%s AND role <> 'removed'",
+            (archived, gid, int(user_id))
+        )
+        conn.close()
+        return ok({"ok": True, "archived": archived})
 
     # ── delete_group ──────────────────────────────────────────────────────────
     if action == "delete_group":

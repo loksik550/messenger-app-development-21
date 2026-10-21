@@ -6,6 +6,7 @@ import { track, setTrackUser } from "@/lib/track";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import Icon from "@/components/ui/icon";
 import { api, prefetchIceServers, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
+import GroupList from "@/components/messenger/GroupList";
 import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
 import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger/Panels";
 import { AuthScreen } from "@/components/messenger/AuthScreen";
@@ -167,6 +168,7 @@ export default function Index() {
   const [archivedCount, setArchivedCount] = useState(0);
   const [chatFolder, setChatFolder] = useChatFolder();
   const [groups, setGroups] = useState<Group[]>([]);
+  const archivedTotal = archivedCount + groups.filter(g => g.archived).length;
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const groupsRef = useRef<Group[]>([]);
   groupsRef.current = groups;
@@ -592,7 +594,7 @@ export default function Index() {
                   <span className="text-sm font-medium">Назад к чатам</span>
                 </button>
               )}
-              {!showArchived && archivedCount > 0 && (
+              {!showArchived && archivedTotal > 0 && (
                 <button
                   onClick={() => setShowArchived(true)}
                   className="flex items-center gap-3 px-4 py-3 mx-2 rounded-2xl hover:bg-white/5 transition-colors animate-fade-in"
@@ -602,7 +604,7 @@ export default function Index() {
                   </div>
                   <div className="flex-1 text-left">
                     <div className="font-semibold text-sm">Архив</div>
-                    <div className="text-xs text-muted-foreground">{archivedCount} {archivedCount === 1 ? "чат" : archivedCount < 5 ? "чата" : "чатов"}</div>
+                    <div className="text-xs text-muted-foreground">{archivedTotal} {archivedTotal % 10 === 1 && archivedTotal % 100 !== 11 ? "чат" : [2, 3, 4].includes(archivedTotal % 10) && ![12, 13, 14].includes(archivedTotal % 100) ? "чата" : "чатов"}</div>
                   </div>
                   <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
                 </button>
@@ -686,58 +688,19 @@ export default function Index() {
               />
 
               {/* Группы и каналы */}
-              {groups.filter(g => {
-                if (!searchQuery) return true;
-                const q = searchQuery.toLocaleLowerCase().trim();
-                return !q || (g.name || "").toLocaleLowerCase().includes(q);
-              }).length > 0 && (
-                <div className="px-4 pt-2 pb-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Группы и каналы</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {groups.filter(g => {
-                      if (!searchQuery) return true;
-                      const q = searchQuery.toLocaleLowerCase().trim();
-                      return !q || (g.name || "").toLocaleLowerCase().includes(q);
-                    }).map(g => (
-                      <button
-                        key={g.id}
-                        onClick={() => { setSelectedGroup(g); setSelectedChat(null); setShowSidebar(false); }}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all ${selectedGroup?.id === g.id ? "bg-white/8 glass" : "hover:bg-white/4"}`}
-                      >
-                        {g.avatar_url
-                          ? <img src={g.avatar_url} className="w-11 h-11 rounded-2xl object-cover flex-shrink-0" />
-                          : <div className="w-11 h-11 rounded-2xl grad-primary flex items-center justify-center flex-shrink-0">
-                              <Icon name={g.is_channel ? "Radio" : "Users"} size={18} className="text-white" />
-                            </div>
-                        }
-                        <div className="flex-1 min-w-0 text-left">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-sm truncate">{g.name}</span>
-                            {g.last_message_at ? (
-                              <span className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">
-                                {new Date(g.last_message_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs text-muted-foreground truncate mt-0.5">
-                              {getDraft(`g${g.id}`) && selectedGroup?.id !== g.id
-                                ? <><span className="text-red-400">Черновик: </span>{getDraft(`g${g.id}`)}</>
-                                : (g.last_message || `${g.members_count ?? 0} участников`)}
-                            </div>
-                            {g.unread_count ? (
-                              <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold text-white flex items-center justify-center grad-primary">
-                                {g.unread_count > 99 ? "99+" : g.unread_count}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              {currentUser && (
+                <GroupList
+                  groups={groups.filter(g => {
+                    const q = searchQuery.toLocaleLowerCase().trim();
+                    return !q || (g.name || "").toLocaleLowerCase().includes(q);
+                  })}
+                  currentUser={currentUser}
+                  selectedId={selectedGroup?.id}
+                  showArchived={showArchived}
+                  onSelect={(g) => { setSelectedGroup(g); setSelectedChat(null); setShowSidebar(false); }}
+                  setGroups={setGroups}
+                  onSelectedRemoved={(id) => { if (selectedGroup?.id === id) setSelectedGroup(null); }}
+                />
               )}
 
               {/* Кнопки группы/каналы */}

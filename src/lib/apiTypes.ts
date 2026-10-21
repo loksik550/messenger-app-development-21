@@ -261,6 +261,8 @@ export interface Group {
   last_message_at?: number;
   members_count?: number;
   unread_count?: number;
+  muted?: boolean;
+  archived?: boolean;
 }
 
 export interface GroupMember {
