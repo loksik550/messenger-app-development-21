@@ -41,6 +41,9 @@ def _cloudflare_turn():
     return None
 
 
+OWN_TURN_IP = "159.194.235.102"
+
+
 def _own_turn():
     """Свой TURN-сервер turn.novaa.pro на coturn с use-auth-secret.
     Логин/пароль временные: username = unixtime истечения, пароль = HMAC-SHA1
@@ -54,8 +57,8 @@ def _own_turn():
         try:
             socket.getaddrinfo(host, 3478)
         except Exception:
-            print(f"[ice] TURN host {host} не найден в DNS — пропускаем")
-            return None
+            print(f"[ice] TURN host {host} не найден в DNS — используем IP {OWN_TURN_IP}")
+            host, is_ip = OWN_TURN_IP, True
     expiry = int(time.time()) + 24 * 3600
     username = str(expiry)
     digest = hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()
@@ -83,7 +86,7 @@ def _metered():
         return []
     try:
         url = f"https://{domain}/api/v1/turn/credentials?apiKey={key}"
-        with urllib.request.urlopen(urllib.request.Request(url), timeout=3) as resp:
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=1.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         if isinstance(data, list) and data:
             _METERED_CACHE.update(at=time.time(), data=data)

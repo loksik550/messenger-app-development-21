@@ -14,14 +14,6 @@ export const ICE_API = "https://functions.poehali.dev/b47750f2-27d7-416d-9a72-c9
 const FALLBACK_ICE: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun.cloudflare.com:3478" },
-  {
-    urls: [
-      "turn:relay1.expressturn.com:3478",
-      "turn:relay1.expressturn.com:3478?transport=tcp",
-    ],
-    username: "ef2X8ODBQZ8PXHNXQL",
-    credential: "ymS3tZmVQ0kR6Xt3",
-  },
 ];
 const ICE_CACHE_KEY = "nova_ice_cache";
 const ICE_CACHE_TTL = 6 * 3600 * 1000;
