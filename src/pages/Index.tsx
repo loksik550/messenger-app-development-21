@@ -112,6 +112,7 @@ export default function Index() {
       setCurrentUser((prev) => {
         if (!prev) return prev;
         const next = { ...prev, ...r.user };
+        if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
         try { localStorage.setItem("nova_user", JSON.stringify(next)); } catch { /* ignore */ }
         return next;
       });
@@ -211,7 +212,7 @@ export default function Index() {
     api("get_users", {}, currentUser.id).then((data) => {
       if (data.users) setUsers(data.users);
     });
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Глобальная отправка запланированных сообщений (раз в 2 минуты, только когда вкладка активна)
   useEffect(() => {
@@ -222,7 +223,7 @@ export default function Index() {
       api("scheduled_run_due", {}, currentUser.id);
     }, 120000);
     return () => clearInterval(t);
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const handleStartChat = async (partnerId: number, known?: Pick<User, "name" | "avatar_url">) => {
     if (!currentUser) return;

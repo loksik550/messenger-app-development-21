@@ -69,7 +69,7 @@ export function usePushSetup({
         window.removeEventListener("keydown", onUserGesture);
       };
     }
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // PWA badge на иконке приложения — считаем без замьюченных чатов
   useEffect(() => {

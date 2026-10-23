@@ -157,7 +157,18 @@ export async function api(action: string, body: Record<string, unknown> = {}, us
   return data;
 }
 
+const READ_ACTION = /^(get_|list_|e2e_chat_devices$|chat_get_settings$|scheduled_list$|refresh_me$|app_status$|app_version$|search_)/;
+
 async function apiRaw(action: string, body: Record<string, unknown>, userId?: number) {
+  const first = await apiRawOnce(action, body, userId);
+  if (first?.error === "bad_response" && (first.status === 502 || first.status === 503) && READ_ACTION.test(action)) {
+    await new Promise((r) => setTimeout(r, 400 + Math.random() * 900));
+    return apiRawOnce(action, body, userId);
+  }
+  return first;
+}
+
+async function apiRawOnce(action: string, body: Record<string, unknown>, userId?: number) {
   const url = POLL_ACTIONS.has(action) ? CHAT_POLL_API : CHAT_API;
   let res: Response;
   try {

@@ -333,49 +333,43 @@ PURGE_TABLES = [
 ]
 
 
+def _try(cur, sql, args=()):
+    """Выполняет запрос; ошибки отдельных таблиц не прерывают стирание (соединение в autocommit)."""
+    try:
+        cur.execute(sql, args)
+        return cur.rowcount
+    except Exception as e:
+        print(f"[purge] skip: {str(e)[:120]} :: {sql[:80]}")
+        return 0
+
+
 def _purge_user(cur, uid):
     """Полностью стирает пользователя: личные чаты, сообщения, ключи, сессии и сам аккаунт."""
     uid = int(uid)
-    cur.execute("SAVEPOINT purge_main")
     for table, col in PURGE_TABLES:
-        cur.execute("SAVEPOINT p")
-        try:
-            cur.execute(f"DELETE FROM {SCHEMA}.{table} WHERE {col} = %s", (uid,))
-            cur.execute("RELEASE SAVEPOINT p")
-        except Exception as e:
-            cur.execute("ROLLBACK TO SAVEPOINT p")
-            print(f"[purge] {table}.{col}: {str(e)[:120]}")
-    cur.execute(
-        f"DELETE FROM {SCHEMA}.messages WHERE chat_id IN "
-        f"(SELECT id FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s)",
-        (uid, uid),
-    )
-    cur.execute(f"DELETE FROM {SCHEMA}.messages WHERE sender_id = %s", (uid,))
-    cur.execute(f"DELETE FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s", (uid, uid))
-    for q in (
-        f"UPDATE {SCHEMA}.vk_logins SET user_id = NULL WHERE user_id = %s",
-        f"UPDATE {SCHEMA}.reports SET reported_user_id = 0 WHERE reported_user_id = %s",
-        f"UPDATE {SCHEMA}.dev_admins SET nova_user_id = NULL WHERE nova_user_id = %s",
-    ):
-        cur.execute("SAVEPOINT p")
-        try:
-            cur.execute(q, (uid,))
-            cur.execute("RELEASE SAVEPOINT p")
-        except Exception:
-            cur.execute("ROLLBACK TO SAVEPOINT p")
-    cur.execute("SAVEPOINT p")
-    try:
-        cur.execute(f"DELETE FROM {SCHEMA}.users WHERE id = %s", (uid,))
-        cur.execute("RELEASE SAVEPOINT p")
-    except Exception as e:
-        cur.execute("ROLLBACK TO SAVEPOINT p")
-        print(f"[purge] users row kept: {str(e)[:160]}")
-        cur.execute(
-            f"UPDATE {SCHEMA}.users SET vk_id = NULL, name = 'Удалённый аккаунт', avatar_url = NULL, about = NULL, "
-            f"nova_id = NULL WHERE id = %s",
-            (uid,),
-        )
-    cur.execute("RELEASE SAVEPOINT purge_main")
+        _try(cur, f"DELETE FROM {SCHEMA}.{table} WHERE {col} = %s", (uid,))
+    _try(cur, f"DELETE FROM {SCHEMA}.message_reactions WHERE message_id IN "
+              f"(SELECT m.id FROM {SCHEMA}.messages m JOIN {SCHEMA}.chats c ON c.id = m.chat_id "
+              f"WHERE c.user1_id = %s OR c.user2_id = %s)", (uid, uid))
+    _try(cur, f"DELETE FROM {SCHEMA}.favorite_messages WHERE message_id IN "
+              f"(SELECT m.id FROM {SCHEMA}.messages m JOIN {SCHEMA}.chats c ON c.id = m.chat_id "
+              f"WHERE c.user1_id = %s OR c.user2_id = %s)", (uid, uid))
+    _try(cur, f"DELETE FROM {SCHEMA}.messages WHERE chat_id IN "
+              f"(SELECT id FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s)", (uid, uid))
+    _try(cur, f"DELETE FROM {SCHEMA}.messages WHERE sender_id = %s", (uid,))
+    _try(cur, f"DELETE FROM {SCHEMA}.chat_settings WHERE chat_id IN "
+              f"(SELECT id FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s)", (uid, uid))
+    _try(cur, f"DELETE FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s", (uid, uid))
+    _try(cur, f"UPDATE {SCHEMA}.vk_logins SET user_id = NULL WHERE user_id = %s", (uid,))
+    _try(cur, f"UPDATE {SCHEMA}.reports SET reported_user_id = 0 WHERE reported_user_id = %s", (uid,))
+    _try(cur, f"UPDATE {SCHEMA}.dev_admins SET nova_user_id = NULL WHERE nova_user_id = %s", (uid,))
+    gone = _try(cur, f"DELETE FROM {SCHEMA}.users WHERE id = %s", (uid,))
+    if not gone:
+        _try(cur, f"UPDATE {SCHEMA}.users SET vk_id = NULL, name = 'Удалённый аккаунт', avatar_url = NULL, "
+                  f"about = NULL, nova_id = NULL, phone = %s WHERE id = %s AND phone NOT LIKE 'deleted_%%'",
+             (f"deleted_{uid}_{int(time.time())}", uid))
+        _try(cur, f"UPDATE {SCHEMA}.users SET vk_id = NULL, nova_id = NULL WHERE id = %s", (uid,))
+    return bool(gone)
 
 
 def send_from_nova(cur, user_id, text):
@@ -449,6 +443,15 @@ def _vk_auth_url(cur, purpose, admin_link_id=None):
 
 def handler(event: dict, context) -> dict:
     """Nova Dev Panel — вход по коду-приглашению, статистика, пользователи, логи, поддержка."""
+    try:
+        return _handler(event, context)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return err(f"Ошибка сервера: {type(e).__name__}. Попробуйте ещё раз", 500)
+
+
+def _handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -1359,7 +1362,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone LIKE 'deleted_%%' LIMIT 200")
                 ids = [r[0] for r in cur.fetchall()]
             nova = _nova_user_id(cur)
-            done = []
+            done, kept = [], []
             for uid in ids:
                 if uid <= 0 or uid == nova:
                     continue
@@ -1367,10 +1370,12 @@ def handler(event: dict, context) -> dict:
                 row = cur.fetchone()
                 if not row:
                     continue
-                _purge_user(cur, uid)
-                done.append(uid)
+                if _purge_user(cur, uid):
+                    done.append(uid)
+                else:
+                    kept.append(uid)
                 audit(cur, admin, "purge_user", f"Полностью стёрт аккаунт ID {uid} ({row[0]}, {row[1]})", ip)
-            return ok({"success": True, "purged": len(done)})
+            return ok({"success": True, "purged": len(done), "kept": len(kept)})
 
         # ── Каналы и группы ───────────────────────────────────────────────
         if action == "channels":

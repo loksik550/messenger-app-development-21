@@ -352,6 +352,7 @@ def handler(event: dict, context) -> dict:
                     data=payload,
                     vapid_private_key=vapid_private,
                     vapid_claims={"sub": "mailto:nova@poehali.dev"},
+                    timeout=4,
                 )
                 sent += 1
             except WebPushException as e:

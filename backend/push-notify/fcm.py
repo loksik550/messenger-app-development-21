@@ -72,7 +72,11 @@ def _token():
             _cache["project"] = info.get("project_id")
         creds = _cache["creds"]
         if not creds.valid:
-            creds.refresh(Request())
+            import requests as _rq
+            _sess = _rq.Session()
+            _orig = _sess.request
+            _sess.request = lambda *a, **kw: _orig(*a, **{**kw, "timeout": kw.get("timeout") or 4})
+            creds.refresh(Request(session=_sess))
         return creds.token, _cache["project"]
 
 

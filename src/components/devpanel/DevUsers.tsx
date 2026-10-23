@@ -54,6 +54,9 @@ export default function DevUsers({
   const [bulkOpen, setBulkOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [msgErr, setMsgErr] = useState(false);
+  const fail = (e: unknown, fallback: string) => { setMsgErr(true); setMsg(e instanceof Error ? e.message : fallback); };
+  const okMsg = (t: string, ms = 4000) => { setMsgErr(false); setMsg(t); setTimeout(() => setMsg(""), ms); };
 
   const canWrite = can("user_write");
   const canTeam = can("team");
@@ -100,6 +103,7 @@ export default function DevUsers({
     await devApi("filter_save", { name, filters });
     const r = await devApi<{ items: typeof saved }>("filters_list");
     setSaved(r.items);
+    setMsgErr(false);
     setMsg("Фильтр сохранён");
     setTimeout(() => setMsg(""), 3000);
   };
@@ -126,13 +130,14 @@ export default function DevUsers({
       const r = await devApi<{ affected: number; label: string }>("bulk_action", {
         ids: [...picked], bulk, days,
       });
+      setMsgErr(false);
       setMsg(`${r.label} — ${r.affected} чел.`);
       setTimeout(() => setMsg(""), 4000);
       setPicked(new Set());
       setBulkOpen(false);
       await load(query, filters);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Не удалось выполнить");
+      fail(e, "Не удалось выполнить");
     } finally {
       setBusy(false);
     }
@@ -157,10 +162,11 @@ export default function DevUsers({
         ]),
         [`Всего пользователей;${r.count}`],
       );
+      setMsgErr(false);
       setMsg(`Выгружено ${formatNum(r.count)} человек`);
       setTimeout(() => setMsg(""), 4000);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Не удалось выгрузить");
+      fail(e, "Не удалось выгрузить");
     } finally {
       setBusy(false);
     }
@@ -199,10 +205,10 @@ export default function DevUsers({
               setBusy(true);
               try {
                 const r = await devApi("purge_deleted", {});
-                setMsg(`Стёрто аккаунтов: ${r.purged ?? 0}`);
+                okMsg(r.purged ? `Стёрто аккаунтов: ${r.purged}` : "Удалённых аккаунтов не осталось");
                 await load(query, filters);
               } catch (e) {
-                setMsg(e instanceof Error ? e.message : "Не удалось стереть");
+                fail(e, "Не удалось стереть");
               } finally {
                 setBusy(false);
               }
@@ -304,9 +310,10 @@ export default function DevUsers({
       )}
 
       {msg && (
-        <div className="flex items-start gap-2 text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
-          <Icon name="CircleCheck" size={16} className="mt-0.5 shrink-0" />
-          <span>{msg}</span>
+        <div className={`flex items-start gap-2 text-sm rounded-xl px-3 py-2.5 border ${msgErr ? "text-red-300 bg-red-500/10 border-red-500/25" : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"}`}>
+          <Icon name={msgErr ? "CircleAlert" : "CircleCheck"} size={16} className="mt-0.5 shrink-0" />
+          <span className="flex-1">{msg}</span>
+          {msgErr && <button onClick={() => setMsg("")} className="text-red-300/70 hover:text-red-200"><Icon name="X" size={15} /></button>}
         </div>
       )}
 

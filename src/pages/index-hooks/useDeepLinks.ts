@@ -135,5 +135,5 @@ export function useJoinByInvite({
         api("get_groups", {}, currentUser.id).then(d => { if (d.groups) setGroups(d.groups); });
       }
     });
-  }, [currentUser, pendingJoin]);
+  }, [currentUser?.id, pendingJoin]);
 }

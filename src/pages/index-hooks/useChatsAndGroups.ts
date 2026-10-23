@@ -100,7 +100,7 @@ export function useChatsAndGroups({
     const onVis = () => { if (document.visibilityState === "visible") loadChats(); };
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVis); };
-  }, [currentUser, showArchived]);
+  }, [currentUser?.id, showArchived]);
 
   // Загрузка групп
   useEffect(() => {
@@ -116,5 +116,5 @@ export function useChatsAndGroups({
     const onVis = () => { if (document.visibilityState === "visible") loadGroups(); };
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
-  }, [currentUser]);
+  }, [currentUser?.id]);
 }

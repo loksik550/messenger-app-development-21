@@ -39,7 +39,7 @@ export function useIncomingCalls({
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [currentUser, activeCall]);
+  }, [currentUser?.id, activeCall]);
 
   // Приложение открыто по пушу звонка (?call_id=...) — открываем экран вызова.
   useEffect(() => {
@@ -55,7 +55,7 @@ export function useIncomingCalls({
       })
       .catch(() => { if (alive) setPendingCallId(null); });
     return () => { alive = false; };
-  }, [currentUser, pendingCallId, activeCall]);
+  }, [currentUser?.id, pendingCallId, activeCall]);
 
   // Сообщения от Service Worker: клик по пушу звонка (с заблокированного экрана)
   // сразу открывает экран входящего вызова, не дожидаясь поллинга.
@@ -82,5 +82,5 @@ export function useIncomingCalls({
     };
     navigator.serviceWorker.addEventListener("message", onSwMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
-  }, [currentUser, activeCall]);
+  }, [currentUser?.id, activeCall]);
 }
