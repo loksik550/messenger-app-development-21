@@ -11,13 +11,22 @@ import {
  */
 export function useChatScroll({ messages, isTyping, chatKey }: { messages: Message[]; isTyping: boolean; chatKey?: string | number }) {
   const [showScrollDown, setShowScrollDown] = useState(false);
-  const [newCount, setNewCount] = useState(0);
+  const [newCount, setNewCountRaw] = useState(0);
+  const newCountRef = useRef(0);
+  const setNewCount = (v: number | ((n: number) => number)) => {
+    const next = typeof v === "function" ? v(newCountRef.current) : v;
+    if (next === newCountRef.current) return;
+    newCountRef.current = next;
+    setNewCountRaw(next);
+  };
+  const showDownRef = useRef(false);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const pinUntil = useRef(0);
   const userMoved = useRef(false);
   const lastLen = useRef(0);
   const lastId = useRef<number | null>(null);
+  const lastTyping = useRef(false);
 
   const jumpToBottom = () => {
     const el = messagesScrollRef.current;
@@ -68,7 +77,10 @@ export function useChatScroll({ messages, isTyping, chatKey }: { messages: Messa
     const container = messagesScrollRef.current;
     if (!container) return;
     const first = lastLen.current === 0 && messages.length > 0;
+    const sameList = !first && messages.length === lastLen.current && (messages[messages.length - 1]?.id ?? null) === lastId.current;
     lastLen.current = messages.length;
+    if (sameList && isTyping === lastTyping.current && !(Date.now() < pinUntil.current && !userMoved.current)) return;
+    lastTyping.current = isTyping;
     if (first || (Date.now() < pinUntil.current && !userMoved.current)) {
       if (first) pinUntil.current = Date.now() + 2500;
       lastId.current = messages[messages.length - 1]?.id ?? null;
@@ -92,7 +104,8 @@ export function useChatScroll({ messages, isTyping, chatKey }: { messages: Messa
     const container = messagesScrollRef.current;
     if (!container) return;
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    setShowScrollDown(distanceFromBottom > SCROLL_SHOW_DOWN_PX);
+    const down = distanceFromBottom > SCROLL_SHOW_DOWN_PX;
+    if (down !== showDownRef.current) { showDownRef.current = down; setShowScrollDown(down); }
     if (distanceFromBottom < SCROLL_RESET_NEW_PX) setNewCount(0);
   };
 

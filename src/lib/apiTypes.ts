@@ -83,6 +83,9 @@ export interface Message {
   expires_at?: number | null;
   pending?: boolean;
   failed?: boolean;
+  enc_retry?: string;
+  e2e?: "ok" | "nokey" | "bad" | "retry";
+  media_retry?: string | null;
 }
 
 export interface Chat {

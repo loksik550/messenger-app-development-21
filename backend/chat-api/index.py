@@ -118,9 +118,18 @@ def _vk_post(url: str, fields: dict) -> dict:
             return {"error": f"http_{e.code}"}
 
 
+def _release_vk_from_deleted(cur, vk_id: int) -> None:
+    """ВКонтакте, привязанный к удалённому аккаунту, снова свободен для входа."""
+    cur.execute(
+        f"UPDATE {SCHEMA}.users SET vk_id = NULL WHERE vk_id = %s AND phone LIKE 'deleted_%%'",
+        (int(vk_id),),
+    )
+
+
 def _vk_login_user(cur, info: dict) -> int:
     """Находит или создаёт пользователя Nova по аккаунту ВК."""
     vk_id = int(info.get("user_id") or 0)
+    _release_vk_from_deleted(cur, vk_id)
     cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE vk_id = %s", (vk_id,))
     r = cur.fetchone()
     if r:
@@ -690,6 +699,7 @@ def _handle(event: dict, context) -> dict:
             return ok({"status": "done", "native": False, "admin": True})
         if link_uid:
             vk_id = int(info["user_id"])
+            _release_vk_from_deleted(cur, vk_id)
             cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE vk_id = %s AND id <> %s", (vk_id, int(link_uid)))
             if cur.fetchone():
                 cur.execute(f"UPDATE {SCHEMA}.vk_logins SET status = 'error', error = 'taken' WHERE id = %s", (lid,))

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import ChatErrorGuard from "@/components/messenger/ChatErrorGuard";
 import { toast } from "@/hooks/use-toast";
 import ConnectionBanner from "@/components/messenger/ConnectionBanner";
 import { getDraft, useDraftsVersion } from "@/lib/drafts";
@@ -816,6 +817,7 @@ export default function Index() {
             }}
           />
         ) : selectedChat ? (
+          <ChatErrorGuard resetKey={selectedChat.id} onBack={handleBack}>
           <ChatWindow
             chat={selectedChat}
             onBack={handleBack}
@@ -842,6 +844,7 @@ export default function Index() {
             onOpenFundraiser={(id) => setFundraiserView(id === -1 ? { mode: "create" } : { mode: "view", id })}
             onOpenStickersStore={() => openOverlay(setShowStickers)}
           />
+          </ChatErrorGuard>
         ) : view === "search" ? (
           <SearchPanel users={users} currentUser={currentUser} onStartChat={handleStartChat} onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "shop" ? (

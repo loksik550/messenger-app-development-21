@@ -351,6 +351,21 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
                   >
                     Удалить аккаунт
                   </button>
+                  <button
+                    onClick={() => {
+                      if (!confirm(`Стереть «${user.name}» полностью? Удалятся аккаунт, личные чаты, сообщения, ключи и привязка ВКонтакте. Отменить нельзя.`)) return;
+                      run(async () => {
+                        await devApi("purge_user", { user_id: user.id });
+                        alert("Пользователь стёрт полностью");
+                        onChanged();
+                        onClose();
+                      });
+                    }}
+                    disabled={busy}
+                    className="px-3 py-2 rounded-xl bg-red-700/30 border border-red-600/50 text-red-200 text-xs font-semibold hover:bg-red-700/45 transition disabled:opacity-50"
+                  >
+                    Стереть полностью
+                  </button>
                 </div>
               </Section>
             )}

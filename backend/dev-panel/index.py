@@ -40,7 +40,7 @@ ROLES = {
 # Действия, которые перед выполнением требуют повторно ввести пароль —
 # защита на случай, если админ отошёл от открытого компьютера
 CONFIRM_ACTIONS = {
-    "delete_user", "delete_chat", "bulk_action", "team_update", "team_remove",
+    "delete_user", "purge_user", "purge_deleted", "delete_chat", "bulk_action", "team_update", "team_remove",
     "wallet_set", "payment_refund", "settings_save", "broadcast_send",
     "channel_delete", "create_invite", "auth_strict_save", "reset_decide",
 }
@@ -48,7 +48,7 @@ CONFIRM_ACTIONS = {
 ACTION_PERMS = {
     "dashboard": "dashboard",
     "users": "users", "user_detail": "users", "user_devices": "users",
-    "ban_user": "user_write", "force_logout": "user_write", "delete_user": "user_write",
+    "ban_user": "user_write", "force_logout": "user_write", "delete_user": "user_write", "purge_user": "user_write", "purge_deleted": "user_write",
     "rename_user": "user_write",
     "topup_wallet": "wallet",
     "user_chats": "chats", "chat_messages": "chats", "delete_message": "chats",
@@ -311,6 +311,71 @@ def _nova_user_id(cur):
         (now, now),
     )
     return int(cur.fetchone()[0])
+
+
+PURGE_TABLES = [
+    ("password_resets", "user_id"), ("message_reactions", "user_id"), ("group_message_reactions", "user_id"),
+    ("group_message_views", "user_id"), ("favorite_messages", "user_id"), ("message_drafts", "user_id"),
+    ("scheduled_messages", "sender_id"), ("typing_status", "user_id"), ("story_views", "viewer_id"),
+    ("story_reactions", "user_id"), ("stories", "user_id"), ("close_friends", "user_id"), ("close_friends", "friend_id"),
+    ("contacts", "user_id"), ("contacts", "contact_id"), ("user_blocks", "blocker_id"), ("user_blocks", "blocked_id"),
+    ("user_sessions", "user_id"), ("user_badges", "user_id"), ("user_sticker_packs", "user_id"),
+    ("push_subscriptions", "user_id"), ("xp_daily_counters", "user_id"), ("xp_events", "user_id"),
+    ("group_mute", "user_id"), ("group_members", "user_id"), ("chat_settings", "user_id"),
+    ("call_signals", "from_user_id"), ("call_signals", "to_user_id"), ("saved_notes", "user_id"),
+    ("user_notifications", "user_id"), ("e2e_devices", "user_id"), ("login_events", "user_id"),
+    ("moderation_hits", "user_id"), ("auto_rule_hits", "user_id"), ("pending_contacts", "user_id"),
+    ("group_messages", "sender_id"), ("native_push_tokens", "user_id"), ("daily_active", "user_id"),
+    ("feature_events", "user_id"), ("verification_requests", "user_id"), ("promo_activations", "user_id"),
+    ("ban_history", "user_id"), ("reports", "reporter_id"), ("lightning_transactions", "user_id"),
+    ("wallet_transactions", "user_id"), ("payment_requests", "from_user_id"), ("payment_requests", "to_user_id"),
+    ("support_messages", "sender_id"), ("support_tickets", "user_id"),
+]
+
+
+def _purge_user(cur, uid):
+    """Полностью стирает пользователя: личные чаты, сообщения, ключи, сессии и сам аккаунт."""
+    uid = int(uid)
+    cur.execute("SAVEPOINT purge_main")
+    for table, col in PURGE_TABLES:
+        cur.execute("SAVEPOINT p")
+        try:
+            cur.execute(f"DELETE FROM {SCHEMA}.{table} WHERE {col} = %s", (uid,))
+            cur.execute("RELEASE SAVEPOINT p")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT p")
+            print(f"[purge] {table}.{col}: {str(e)[:120]}")
+    cur.execute(
+        f"DELETE FROM {SCHEMA}.messages WHERE chat_id IN "
+        f"(SELECT id FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s)",
+        (uid, uid),
+    )
+    cur.execute(f"DELETE FROM {SCHEMA}.messages WHERE sender_id = %s", (uid,))
+    cur.execute(f"DELETE FROM {SCHEMA}.chats WHERE user1_id = %s OR user2_id = %s", (uid, uid))
+    for q in (
+        f"UPDATE {SCHEMA}.vk_logins SET user_id = NULL WHERE user_id = %s",
+        f"UPDATE {SCHEMA}.reports SET reported_user_id = 0 WHERE reported_user_id = %s",
+        f"UPDATE {SCHEMA}.dev_admins SET nova_user_id = NULL WHERE nova_user_id = %s",
+    ):
+        cur.execute("SAVEPOINT p")
+        try:
+            cur.execute(q, (uid,))
+            cur.execute("RELEASE SAVEPOINT p")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT p")
+    cur.execute("SAVEPOINT p")
+    try:
+        cur.execute(f"DELETE FROM {SCHEMA}.users WHERE id = %s", (uid,))
+        cur.execute("RELEASE SAVEPOINT p")
+    except Exception as e:
+        cur.execute("ROLLBACK TO SAVEPOINT p")
+        print(f"[purge] users row kept: {str(e)[:160]}")
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET vk_id = NULL, name = 'Удалённый аккаунт', avatar_url = NULL, about = NULL, "
+            f"nova_id = NULL WHERE id = %s",
+            (uid,),
+        )
+    cur.execute("RELEASE SAVEPOINT purge_main")
 
 
 def send_from_nova(cur, user_id, text):
@@ -1275,7 +1340,7 @@ def handler(event: dict, context) -> dict:
             if not row:
                 return err("Пользователь не найден", 404)
             cur.execute(
-                f"UPDATE {SCHEMA}.users SET name = %s, phone = %s, avatar_url = NULL, about = NULL, "
+                f"UPDATE {SCHEMA}.users SET name = %s, phone = %s, avatar_url = NULL, about = NULL, vk_id = NULL, "
                 f"banned_until = %s, banned_reason = %s, banned_at = %s, last_seen = 0 WHERE id = %s",
                 ("Удалённый аккаунт", f"deleted_{uid}_{now}", now + 3650 * 86400,
                  "Аккаунт удалён администратором", now, uid),
@@ -1284,6 +1349,28 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"DELETE FROM {SCHEMA}.push_subscriptions WHERE user_id = %s", (uid,))
             audit(cur, admin, "delete_user", f"Удалён аккаунт ID {uid} ({row[0]}, {row[1]})", ip)
             return ok({"success": True})
+
+        if action in ("purge_user", "purge_deleted"):
+            if not has_perm(admin, "*") and admin.get("role") != "admin":
+                return err("Стирать пользователей может только владелец или администратор", 403)
+            if action == "purge_user":
+                ids = [int(body.get("user_id") or 0)]
+            else:
+                cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone LIKE 'deleted_%%' LIMIT 200")
+                ids = [r[0] for r in cur.fetchall()]
+            nova = _nova_user_id(cur)
+            done = []
+            for uid in ids:
+                if uid <= 0 or uid == nova:
+                    continue
+                cur.execute(f"SELECT name, phone FROM {SCHEMA}.users WHERE id = %s AND COALESCE(is_service, FALSE) = FALSE", (uid,))
+                row = cur.fetchone()
+                if not row:
+                    continue
+                _purge_user(cur, uid)
+                done.append(uid)
+                audit(cur, admin, "purge_user", f"Полностью стёрт аккаунт ID {uid} ({row[0]}, {row[1]})", ip)
+            return ok({"success": True, "purged": len(done)})
 
         # ── Каналы и группы ───────────────────────────────────────────────
         if action == "channels":

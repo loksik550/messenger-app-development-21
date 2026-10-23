@@ -3,8 +3,13 @@ import { api, type Chat, type Message, type Reaction, type User } from "@/lib/ap
 import { playMessageSound } from "@/lib/sounds";
 import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
 import { getPending, subscribeOutbox, flush as flushOutbox, type OutboxItem } from "@/lib/outbox";
+import { retryDecrypt } from "@/lib/e2e";
 
 const PAGE = 50;
+
+// Сообщения, которые нельзя открыть на этом устройстве (пришли до входа на нём
+// или не прошли проверку подлинности), в ленте не показываем.
+const isVisible = (m: Message) => m.e2e !== "nokey" && m.e2e !== "bad";
 
 function pendingToMessage(i: OutboxItem): Message {
   return {
@@ -36,7 +41,13 @@ export function useChatMessages(chat: Chat, currentUser: User) {
         edited_at?: number | null;
         kind?: "text" | "missed_call" | "system";
         payload?: Message["payload"];
+        enc_retry?: string;
+        media_retry?: string | null;
+        e2e?: string;
       }): Message => ({
+        e2e: m.e2e as Message["e2e"],
+        enc_retry: m.enc_retry,
+        media_retry: m.media_retry,
         id: m.id,
         text: m.text,
         time: new Date(m.created_at * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
@@ -91,7 +102,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
 
     if (data.messages && data.messages.length > 0) {
       changed = true;
-      const mapped: Message[] = data.messages.map(mapMsg);
+      const mapped: Message[] = data.messages.map(mapMsg).filter(isVisible);
       if (since === 0) {
         setMessages([...mapped, ...getPending(chat.id).map(pendingToMessage)]);
       } else {
@@ -111,11 +122,17 @@ export function useChatMessages(chat: Chat, currentUser: User) {
             );
           };
           const newMsgs = mapped.filter(m => !isDuplicate(m));
+          let touched = false;
           const updated = prev.map(pm => {
             const fresh = mapped.find(m => m.id === pm.id);
-            return fresh ? { ...pm, reactions: fresh.reactions, read: fresh.read || pm.read } : pm;
+            if (!fresh) return pm;
+            const read = fresh.read || pm.read;
+            if (read === pm.read && JSON.stringify(fresh.reactions || []) === JSON.stringify(pm.reactions || [])) return pm;
+            touched = true;
+            return { ...pm, reactions: fresh.reactions, read };
           });
-          return newMsgs.length > 0 ? [...updated, ...newMsgs] : updated;
+          if (newMsgs.length > 0) return [...updated, ...newMsgs];
+          return touched ? updated : prev;
         });
       }
       const maxTs = Math.max(...data.messages.map((m: { created_at: number }) => m.created_at));
@@ -132,7 +149,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
     setLoadingOlder(true);
     try {
       const data = await api("get_messages", { chat_id: chat.id, limit: PAGE, before_id: firstId }, currentUser.id);
-      const older: Message[] = (data.messages || []).map(mapMsg);
+      const older: Message[] = (data.messages || []).map(mapMsg).filter(isVisible);
       setHasMore(!!data.has_more);
       setMessages(prev => {
         const ids = new Set(prev.map(m => m.id));
@@ -188,7 +205,30 @@ export function useChatMessages(chat: Chat, currentUser: User) {
     loadMessages(0);
   }, [chat.id]);
 
-  useAdaptivePoll(() => loadMessages(lastSinceRef.current), [chat.id, loadMessages], 3000, 10000);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const retryingRef = useRef(false);
+  const retryEncrypted = useCallback(async () => {
+    if (retryingRef.current) return;
+    const pending = messagesRef.current.filter(m => m.enc_retry);
+    if (!pending.length) return;
+    retryingRef.current = true;
+    try {
+      const fixed = await retryDecrypt(chat.id, currentUser.id, pending);
+      if (fixed.size) setMessages(prev => prev.map(m => {
+        const f = fixed.get(m.id);
+        return f ? { ...m, ...f, enc_retry: undefined, media_retry: undefined } as Message : m;
+      }));
+    } finally {
+      retryingRef.current = false;
+    }
+  }, [chat.id, currentUser.id]);
+
+  useAdaptivePoll(async () => {
+    const changed = await loadMessages(lastSinceRef.current);
+    retryEncrypted().catch(() => { /* ignore */ });
+    return changed;
+  }, [chat.id, loadMessages, retryEncrypted], 3000, 10000);
 
   const typingRef = useRef(false);
   useAdaptivePoll(async () => {

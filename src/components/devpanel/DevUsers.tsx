@@ -192,6 +192,29 @@ export default function DevUsers({
           <Icon name="Download" size={15} className="text-slate-400" />
           <span className="hidden sm:inline">Выгрузить</span>
         </button>
+        {canWrite && (
+          <button
+            onClick={async () => {
+              if (!confirm("Стереть полностью все удалённые аккаунты? Их чаты, сообщения и привязки ВКонтакте исчезнут навсегда.")) return;
+              setBusy(true);
+              try {
+                const r = await devApi("purge_deleted", {});
+                setMsg(`Стёрто аккаунтов: ${r.purged ?? 0}`);
+                await load(query, filters);
+              } catch (e) {
+                setMsg(e instanceof Error ? e.message : "Не удалось стереть");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+            title="Стереть удалённые аккаунты полностью"
+            className="px-3.5 py-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 hover:bg-red-500/20 transition flex items-center gap-2 text-xs disabled:opacity-50"
+          >
+            <Icon name="Trash2" size={15} />
+            <span className="hidden sm:inline">Стереть удалённых</span>
+          </button>
+        )}
         <button
           onClick={() => setFilterOpen(!filterOpen)}
           title="Фильтры"

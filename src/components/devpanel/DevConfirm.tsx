@@ -3,6 +3,8 @@ import Icon from "@/components/ui/icon";
 
 const LABELS: Record<string, string> = {
   delete_user: "Удаление пользователя",
+  purge_user: "Полное стирание пользователя",
+  purge_deleted: "Стирание всех удалённых аккаунтов",
   delete_chat: "Удаление переписки",
   bulk_action: "Действие сразу для нескольких",
   team_update: "Изменение прав сотрудника",

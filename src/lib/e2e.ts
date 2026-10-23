@@ -5,6 +5,16 @@
 // каждого устройства собеседника и своих устройств через одноразовый ECDH P-256
 // + HKDF-SHA-256; весь конверт подписывается ECDSA P-256 ключом устройства отправителя.
 import { api } from "@/lib/api";
+import { track } from "@/lib/track";
+
+const seenErr = new Set<string>();
+function report(code: string, e?: unknown) {
+  const name = e instanceof Error ? (e.name || "Error") : "";
+  const tag = `e2e_${code}${name ? "." + name.replace(/[^a-zA-Z]/g, "").slice(0, 20) : ""}`;
+  if (seenErr.has(tag)) return;
+  seenErr.add(tag);
+  track(tag);
+}
 
 const DB = "nova_e2e";
 const STORE = "keys";
@@ -37,7 +47,8 @@ interface Envelope {
   sg: string;
 }
 
-export type DecryptState = "ok" | "nokey" | "bad";
+export type DecryptState = "ok" | "nokey" | "bad" | "retry";
+const RETRY_TEXT = "…";
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -110,9 +121,29 @@ async function createKeys(userId: number): Promise<DeviceKeys> {
   return keys;
 }
 
+async function keysWork(k: DeviceKeys): Promise<boolean> {
+  try {
+    const pub = JSON.parse(k.pub) as { e: string; s: string };
+    const eP = await crypto.subtle.importKey("spki", unb64(pub.e), { name: "ECDH", namedCurve: "P-256" }, false, []);
+    await crypto.subtle.deriveBits({ name: "ECDH", public: eP }, k.ePriv, 256);
+    const data = te.encode("nova-selftest") as Uint8Array<ArrayBuffer>;
+    const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, k.sPriv, data);
+    const sP = await crypto.subtle.importKey("spki", unb64(pub.s), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+    return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, sP, sig, data);
+  } catch (e) {
+    console.warn("[e2e] stored keys unusable", e instanceof Error ? e.message : e);
+    report("keys_bad", e);
+    return false;
+  }
+}
+
 async function loadKeys(userId: number): Promise<DeviceKeys | null> {
   if (!e2eSupported()) return null;
   let keys = await idbGet<DeviceKeys>(`u${userId}`).catch(() => undefined);
+  if (keys && !(await keysWork(keys))) {
+    api("e2e_revoke", { device_id: keys.dev }, userId).catch(() => { /* ignore */ });
+    keys = undefined;
+  }
   if (!keys) keys = await createKeys(userId);
   const r = await api("e2e_register", { device_id: keys.dev, pub: keys.pub, name: deviceName() }, userId);
   if (r?.error && /другим ключом/.test(r.error)) {
@@ -141,7 +172,7 @@ export async function myDeviceFingerprint(userId: number): Promise<string | null
 }
 
 // ── Каталог ключей собеседников + защита от подмены ─────────────────────────
-const dirCache = new Map<number, Directory>();
+const dirCache = new Map<string, Directory>();
 
 function readPins(me: number): Record<string, Record<string, string>> {
   try { return JSON.parse(localStorage.getItem(LS_PINS + me) || "{}"); } catch { return {}; }
@@ -157,14 +188,43 @@ export interface ChatSecurity {
   conflicts: string[];
 }
 
+const dirInflight = new Map<string, Promise<Directory>>();
+
+async function fetchDirectory(chatId: number, userId: number): Promise<Directory> {
+  let lastErr: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await api("e2e_chat_devices", { chat_id: chatId }, userId);
+      if (r && !r.error && r.devices) {
+        const d: Directory = { ...(r as Omit<Directory, "at">), at: Date.now() };
+        dirCache.set(`${userId}:${chatId}`, d);
+        return d;
+      }
+      lastErr = new Error(r?.error || "Нет связи");
+      if (r?.status === undefined && r?.error && r.error !== "bad_response") break;
+    } catch (e) {
+      lastErr = e;
+    }
+    await new Promise((res) => setTimeout(res, 600 * (i + 1)));
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Нет связи");
+}
+
 async function getDirectory(chatId: number, userId: number, fresh = false): Promise<Directory> {
-  const c = dirCache.get(chatId);
+  const key = `${userId}:${chatId}`;
+  const c = dirCache.get(key);
   if (c && !fresh && Date.now() - c.at < 60_000) return c;
-  const r = await api("e2e_chat_devices", { chat_id: chatId }, userId);
-  if (!r || r.error || !r.devices) throw new Error(r?.error || "Нет связи");
-  const d: Directory = { ...(r as Omit<Directory, "at">), at: Date.now() };
-  dirCache.set(chatId, d);
-  return d;
+  let p = dirInflight.get(key);
+  if (!p) {
+    p = fetchDirectory(chatId, userId).finally(() => dirInflight.delete(key));
+    dirInflight.set(key, p);
+  }
+  try {
+    return await p;
+  } catch (e) {
+    if (c) return c;
+    throw e;
+  }
 }
 
 function trustedDevices(d: Directory, uid: number, me: number, includeRevoked: boolean): { list: DirDevice[]; conflicts: string[]; fresh: string[] } {
@@ -231,7 +291,7 @@ export async function safetyCode(chatId: number, userId: number): Promise<{ code
 }
 
 export function markVerified(chatId: number, userId: number) {
-  const d = dirCache.get(chatId);
+  const d = dirCache.get(`${userId}:${chatId}`);
   if (d) {
     const pins = readPins(userId);
     for (const [uid, devs] of Object.entries(d.devices)) {
@@ -353,11 +413,17 @@ async function decryptEnvelope(chatId: number, userId: number, senderId: number,
       const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(env.iv), additionalData: te.encode(`${INFO}|${chatId}`) }, k, unb64(env.ct));
       const obj = JSON.parse(td.decode(pt)) as { t?: string; m?: MediaKey };
       return { text: String(obj.t ?? ""), state: "ok", media: obj.m && typeof obj.m.k === "string" ? obj.m : undefined };
-    } catch {
+    } catch (e) {
+      console.warn("[e2e] unwrap failed", e instanceof Error ? e.message : e);
+      report("unwrap", e);
       return { text: "⚠️ Не удалось расшифровать сообщение", state: "bad" };
     }
-  })().catch(() => ({ text: "🔒 Не удалось расшифровать — проверьте интернет", state: "nokey" as DecryptState }));
-  if (res.state !== "nokey" || !/интернет/.test(res.text)) {
+  })().catch((e) => {
+    console.warn("[e2e] decrypt failed", e instanceof Error ? e.message : e);
+    report("retry", e);
+    return { text: RETRY_TEXT, state: "retry" as DecryptState };
+  });
+  if (res.state !== "retry") {
     if (plainCache.size > 3000) plainCache.clear();
     plainCache.set(cacheKey, res);
   }
@@ -409,6 +475,10 @@ export async function processIncoming(action: string, body: Record<string, unkno
       if (m.enc && m.sender_id) {
         const r = await decryptEnvelope(chatId, userId, m.sender_id, m.enc);
         m.e2e = r.state;
+        if (r.state === "retry") {
+          (m as RawMsg & { enc_retry?: string; media_retry?: string | null }).enc_retry = m.enc;
+          (m as RawMsg & { media_retry?: string | null }).media_retry = m.media_url || null;
+        }
         delete m.enc;
         if (m.media_url) {
           const url = r.media && r.state === "ok" ? await openMedia(m.media_url, r.media).catch(() => null) : null;
@@ -421,7 +491,7 @@ export async function processIncoming(action: string, body: Record<string, unkno
           } else {
             m.media_url = null;
             m.image_url = null;
-            m.text = r.state === "ok" ? "⚠️ Не удалось загрузить зашифрованный файл" : r.text;
+            m.text = r.state === "ok" ? "⚠️ Не удалось загрузить зашифрованный файл" : r.state === "retry" ? RETRY_TEXT : r.text;
           }
         } else {
           m.text = r.text;
@@ -432,7 +502,7 @@ export async function processIncoming(action: string, body: Record<string, unkno
         const sid = original?.sender_id;
         if (sid) {
           const r = await decryptEnvelope(chatId, userId, sid, m.reply_to.enc);
-          m.reply_to.text = r.text;
+          m.reply_to.text = r.state === "ok" ? r.text : "🔒 Сообщение";
         } else {
           m.reply_to.text = await decryptAnySender(chatId, userId, m.reply_to.enc);
         }
@@ -443,7 +513,8 @@ export async function processIncoming(action: string, body: Record<string, unkno
   if (action === "get_pinned_message" && data.pinned && typeof data.pinned === "object") {
     const p = data.pinned as RawMsg;
     if (p.enc && p.sender_id) {
-      p.text = (await decryptEnvelope(chatId, userId, p.sender_id, p.enc)).text;
+      const r = await decryptEnvelope(chatId, userId, p.sender_id, p.enc);
+      p.text = r.state === "ok" ? r.text : "🔒 Сообщение";
       delete p.enc;
     }
   }
@@ -452,7 +523,8 @@ export async function processIncoming(action: string, body: Record<string, unkno
 async function decryptAnySender(chatId: number, userId: number, enc: string): Promise<string> {
   try {
     const su = (JSON.parse(enc) as Envelope).su;
-    return (await decryptEnvelope(chatId, userId, su, enc)).text;
+    const r = await decryptEnvelope(chatId, userId, su, enc);
+    return r.state === "ok" ? r.text : "🔒 Сообщение";
   } catch {
     return ENC_PLACEHOLDER;
   }
@@ -509,4 +581,27 @@ export async function canEncryptChat(chatId: number, userId: number): Promise<bo
   } catch {
     return false;
   }
+}
+
+
+/** Повторная расшифровка сообщений, которые не удалось открыть из-за сети. */
+export async function retryDecrypt<T extends { id: number; sender_id?: number; media_type?: string | null; enc_retry?: string; media_retry?: string | null }>(
+  chatId: number, userId: number, list: T[],
+): Promise<Map<number, Partial<T> & { text: string; e2e: DecryptState }>> {
+  const out = new Map<number, Partial<T> & { text: string; e2e: DecryptState }>();
+  for (const m of list) {
+    if (!m.enc_retry || !m.sender_id) continue;
+    const raw: RawMsg = {
+      sender_id: m.sender_id, enc: m.enc_retry, media_type: m.media_type || null,
+      media_url: m.media_retry || null, text: "",
+    };
+    await processIncoming("get_messages", { chat_id: chatId }, { messages: [raw] }, userId);
+    if (raw.e2e === "retry") continue;
+    out.set(m.id, {
+      text: raw.text || "", e2e: raw.e2e || "ok",
+      media_url: raw.media_url, image_url: raw.image_url, file_name: raw.file_name, file_size: raw.file_size,
+      enc_retry: undefined, media_retry: undefined,
+    } as unknown as Partial<T> & { text: string; e2e: DecryptState });
+  }
+  return out;
 }
