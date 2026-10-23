@@ -1,4 +1,5 @@
 import os
+import errlog
 import json
 import time
 import uuid
@@ -33,7 +34,7 @@ MEDIA_TYPE_MAP = {
 }
 
 
-def handler(event: dict, context) -> dict:
+def _entry(event: dict, context) -> dict:
     """Загрузка медиа файлов (фото/видео/аудио/файлы) в S3, возврат CDN-ссылки и типа."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
@@ -142,3 +143,7 @@ def handler(event: dict, context) -> dict:
             "file_size": len(file_data),
         })
     }
+
+def handler(event: dict, context) -> dict:
+    """Точка входа: выполняет запрос и записывает сбои в журнал ошибок."""
+    return errlog.guard("upload-image", _entry, event, context)

@@ -26,6 +26,7 @@ import DevStatusBar from "@/components/devpanel/DevStatusBar";
 import DevModeration from "@/components/devpanel/DevModeration";
 import DevGrowth from "@/components/devpanel/DevGrowth";
 import DevAutoRules from "@/components/devpanel/DevAutoRules";
+import DevErrors from "@/components/devpanel/DevErrors";
 import DevSearch, { DevShortcuts } from "@/components/devpanel/DevSearch";
 import DevUndoBar from "@/components/devpanel/DevUndoBar";
 
@@ -37,7 +38,8 @@ type Section =
   | "usage"
   | "rustore"
   | "rustore_reviews"
-  | "autorules";
+  | "autorules"
+  | "errors";
 
 const NAV: { key: Section; label: string; icon: string; perm: string; hint: string; keywords: string }[] = [
   { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard", hint: "Главные цифры и что требует внимания", keywords: "статистика главная обзор цифры" },
@@ -54,6 +56,7 @@ const NAV: { key: Section; label: string; icon: string; perm: string; hint: stri
   { key: "payments", label: "Платежи", icon: "Receipt", perm: "dashboard", hint: "Кто и сколько заплатил, возвраты, отчёты", keywords: "деньги доход оплата возврат выручка чеки экспорт" },
   { key: "moderation", label: "Автомодерация", icon: "ShieldCheck", perm: "settings", hint: "Стоп-слова и защита от спама", keywords: "фильтр мат стоп-слова антиспам блокировка" },
   { key: "autorules", label: "Автоправила", icon: "Bot", perm: "dashboard", hint: "Само блокирует спамеров и нарушителей", keywords: "автобан автоматически правила модерация спам жалобы" },
+  { key: "errors", label: "Ошибки", icon: "Bug", perm: "logs", hint: "Сбои сервера и приложения за сутки", keywords: "ошибки сбои баги падения краш проблемы 500 502" },
   { key: "logs", label: "Логи и события", icon: "ScrollText", perm: "logs", hint: "Кто из команды что сделал", keywords: "история действия журнал аудит" },
   { key: "rustore", label: "Публикация в RuStore", icon: "Send", perm: "services", hint: "Отправить новую сборку на проверку в один клик", keywords: "rustore рустор публикация релиз сборка aab модерация обновление скриншоты рейтинг" },
   { key: "rustore_reviews", label: "Отзывы RuStore", icon: "MessageSquareText", perm: "support", hint: "Читать отзывы и отвечать на них", keywords: "rustore рустор отзывы оценки рейтинг звёзды ответ комментарии" },
@@ -429,6 +432,7 @@ export default function DevPanel() {
           {activeSection === "autorules" && <DevAutoRules can={can} />}
           {activeSection === "moderation" && <DevModeration can={can} />}
           {activeSection === "logs" && <DevLogs />}
+          {activeSection === "errors" && <DevErrors />}
           {activeSection === "services" && <DevServices />}
           {activeSection === "rustore" && <DevRuStore onOpenReviews={can("support") ? () => go("rustore_reviews") : undefined} />}
           {activeSection === "rustore_reviews" && <DevRuStoreReviews />}

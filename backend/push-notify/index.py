@@ -1,4 +1,5 @@
 import os
+import errlog
 import json
 import time
 import threading
@@ -136,7 +137,7 @@ def _preview_on(cur, uid):
     return bool(r[0]) if r else True
 
 
-def handler(event: dict, context) -> dict:
+def _entry(event: dict, context) -> dict:
     """
     Push-уведомления для Nova.
     subscribe   — сохранить подписку браузера
@@ -557,3 +558,7 @@ def handler(event: dict, context) -> dict:
 
     conn.close()
     return err("Неизвестный action")
+
+def handler(event: dict, context) -> dict:
+    """Точка входа: выполняет запрос и записывает сбои в журнал ошибок."""
+    return errlog.guard("push-notify", _entry, event, context)

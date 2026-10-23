@@ -136,7 +136,7 @@ export default function Index() {
 
   useEffect(() => {
     checkMaintenance();
-    const timer = setInterval(checkMaintenance, 15000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") checkMaintenance(); }, 60000);
     // Вернулись во вкладку — проверяем сразу, не дожидаясь таймера
     const onFocus = () => {
       if (document.visibilityState === "visible") checkMaintenance();

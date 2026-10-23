@@ -1,4 +1,5 @@
 import os
+import errlog
 import json
 import time
 import random
@@ -22,7 +23,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-def handler(event: dict, context) -> dict:
+def _entry(event: dict, context) -> dict:
     """
     Лёгкий polling-эндпоинт для Nova: typing-индикатор, опрос звонков и доспевших отложенных сообщений.
     Вынесен из chat-api ради скорости и снижения compute-секунд.
@@ -190,3 +191,7 @@ def handler(event: dict, context) -> dict:
 
     conn.close()
     return err(f"Неизвестное действие: {action}", 404)
+
+def handler(event: dict, context) -> dict:
+    """Точка входа: выполняет запрос и записывает сбои в журнал ошибок."""
+    return errlog.guard("chat-poll", _entry, event, context)

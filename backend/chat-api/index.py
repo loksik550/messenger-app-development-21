@@ -1,4 +1,5 @@
 import os
+import errlog
 import json
 import time
 import hashlib
@@ -512,7 +513,7 @@ def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
         pass
 
 
-def handler(event: dict, context) -> dict:
+def _entry(event: dict, context) -> dict:
     """Chat API Nova: выполняет действие и дожидается фоновых уведомлений."""
     _PENDING.clear()
     _LONG_WAIT[0] = False
@@ -6543,3 +6544,7 @@ def _handle(event: dict, context) -> dict:
 
     conn.close()
     return err("Неизвестный action")
+
+def handler(event: dict, context) -> dict:
+    """Точка входа: выполняет запрос и записывает сбои в журнал ошибок."""
+    return errlog.guard("chat-api", _entry, event, context)

@@ -24,9 +24,13 @@ export function useIncomingCalls({
   useEffect(() => {
     if (!currentUser) return;
     const since = { val: Math.floor(Date.now() / 1000) - 5 };
+    let tickN = 0;
     const interval = setInterval(async () => {
       if (activeCall) return;
-      const data = await api("poll_incoming_call", { since: since.val }, currentUser.id);
+      tickN++;
+      if (document.visibilityState !== "visible" && (native.isNative || tickN % 4 !== 0)) return;
+      const data = await api("poll_incoming_call", { since: since.val }, currentUser.id).catch(() => null);
+      if (!data) return;
       if (data.call) {
         since.val = data.call.created_at;
         if (document.visibilityState === "visible") {

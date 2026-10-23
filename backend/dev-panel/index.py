@@ -1,4 +1,5 @@
 import os
+import errlog
 import json
 import time
 import hashlib
@@ -57,7 +58,7 @@ ACTION_PERMS = {
     "reports": "reports", "report_resolve": "reports",
     "support_tickets": "support", "support_messages": "support",
     "support_reply": "support", "support_close": "support",
-    "logs": "logs",
+    "logs": "logs", "errors": "logs", "errors_clear": "logs",
     "services": "services", "invites": "services", "create_invite": "services",
     "channels": "channels", "channel_update": "channels", "channel_delete": "channels",
     "channel_messages": "channels", "channel_message_delete": "channels",
@@ -448,6 +449,7 @@ def handler(event: dict, context) -> dict:
     except Exception as e:
         import traceback
         traceback.print_exc()
+        errlog.record("dev-panel", event, e)
         return err(f"Ошибка сервера: {type(e).__name__}. Попробуйте ещё раз", 500)
 
 
@@ -3709,6 +3711,37 @@ def _handler(event: dict, context) -> dict:
             })
 
         # ── Логи и события ────────────────────────────────────────────────
+        if action == "errors":
+            hours = max(1, min(int(body.get("hours") or 24), 24 * 7))
+            since = int(time.time()) - hours * 3600
+            cur.execute(
+                f"SELECT source, action, kind, COUNT(*), MAX(created_at), "
+                f"(ARRAY_AGG(message ORDER BY created_at DESC))[1], COUNT(DISTINCT user_id) "
+                f"FROM {SCHEMA}.error_log WHERE created_at >= %s "
+                f"GROUP BY source, action, kind ORDER BY COUNT(*) DESC LIMIT 100",
+                (since,),
+            )
+            groups = [{"source": r[0], "action": r[1] or "", "kind": r[2], "count": int(r[3]), "last_at": int(r[4]),
+                       "message": r[5] or "", "users": int(r[6] or 0)} for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT feature, COUNT(*), COUNT(DISTINCT user_id), MAX(created_at) FROM {SCHEMA}.feature_events "
+                f"WHERE created_at >= %s AND (feature LIKE 'e2e\\_%%' OR feature LIKE 'chat\\_crash%%') "
+                f"GROUP BY feature ORDER BY COUNT(*) DESC LIMIT 50",
+                (since,),
+            )
+            client = [{"code": r[0], "count": int(r[1]), "users": int(r[2] or 0), "last_at": int(r[3])} for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT created_at / 3600 AS h, COUNT(*) FROM {SCHEMA}.error_log WHERE created_at >= %s GROUP BY h ORDER BY h",
+                (since,),
+            )
+            hourly = [{"hour": int(r[0]) * 3600, "count": int(r[1])} for r in cur.fetchall()]
+            return ok({"groups": groups, "client": client, "hourly": hourly, "total": sum(g["count"] for g in groups)})
+
+        if action == "errors_clear":
+            cur.execute(f"UPDATE {SCHEMA}.error_log SET created_at = 0 WHERE created_at > 0")
+            audit(cur, admin, "errors_clear", "Журнал ошибок очищен", ip)
+            return ok({"success": True})
+
         if action == "logs":
             limit = min(int(body.get("limit") or 100), 300)
             cur.execute(
