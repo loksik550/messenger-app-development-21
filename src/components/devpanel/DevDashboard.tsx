@@ -64,18 +64,12 @@ export default function DevDashboard({ onNavigate, canSend = false }: { onNaviga
     try {
       const res = await devApi<DashboardData>("dashboard");
       setData(res);
-      try {
-        const m = await devApi<{ moderation: ModerationData }>("moderation_summary");
-        setMod(m.moderation);
-      } catch {
-        /* раздел модерации может быть недоступен по правам */
-      }
-      try {
-        const sres = await devApi<{ subscriptions: SubsData }>("subscriptions_summary");
-        setSubs(sres.subscriptions);
-      } catch {
-        /* раздел подписок может быть недоступен по правам */
-      }
+      const [m, sres] = await Promise.allSettled([
+        devApi<{ moderation: ModerationData }>("moderation_summary"),
+        devApi<{ subscriptions: SubsData }>("subscriptions_summary"),
+      ]);
+      if (m.status === "fulfilled") setMod(m.value.moderation);
+      if (sres.status === "fulfilled") setSubs(sres.value.subscriptions);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
@@ -86,7 +80,7 @@ export default function DevDashboard({ onNavigate, canSend = false }: { onNaviga
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 30000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
     devApi<{ items: FeedItem[] }>("live_feed")
       .then((r) => setFeed(r.items))
       .catch(() => {});

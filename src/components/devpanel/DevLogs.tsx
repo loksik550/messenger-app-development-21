@@ -46,7 +46,7 @@ export default function DevLogs() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 30000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 30000);
     return () => clearInterval(t);
   }, []);
 

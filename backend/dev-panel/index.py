@@ -450,6 +450,8 @@ def handler(event: dict, context) -> dict:
         import traceback
         traceback.print_exc()
         errlog.record("dev-panel", event, e)
+        if "rate limit" in str(e).lower():
+            return err("Сервер сейчас занят, повторите через пару секунд", 503)
         return err(f"Ошибка сервера: {type(e).__name__}. Попробуйте ещё раз", 500)
 
 
@@ -1050,19 +1052,19 @@ def _handler(event: dict, context) -> dict:
                 cur.execute(
                     f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id, nova_id "
                     f"FROM {SCHEMA}.users "
-                    f"WHERE name ILIKE %s OR phone ILIKE %s OR CAST(vk_id AS TEXT) ILIKE %s OR nova_id = %s "
+                    f"WHERE id > 0 AND (name ILIKE %s OR phone ILIKE %s OR CAST(vk_id AS TEXT) ILIKE %s OR nova_id = %s) "
                     f"ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
                     (like, like, like, q.replace(" ", ""), limit, offset),
                 )
             else:
                 cur.execute(
                     f"SELECT id, name, phone, created_at, last_seen, avatar_url, COALESCE(verified, FALSE), vk_id, nova_id "
-                    f"FROM {SCHEMA}.users "
+                    f"FROM {SCHEMA}.users WHERE id > 0 "
                     f"ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
                     (limit, offset),
                 )
             rows = cur.fetchall()
-            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users")
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.users WHERE id > 0")
             total = cur.fetchone()[0]
 
             now = int(time.time())
@@ -1359,6 +1361,8 @@ def _handler(event: dict, context) -> dict:
             if not has_perm(admin, "*") and admin.get("role") != "admin":
                 return err("Стирать пользователей может только владелец или администратор", 403)
             if action == "purge_user":
+                if int(body.get("user_id") or 0) <= 0:
+                    return err("Это служебная запись системы, её удалять нельзя")
                 ids = [int(body.get("user_id") or 0)]
             else:
                 cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone LIKE 'deleted_%%' LIMIT 200")
@@ -2898,7 +2902,7 @@ def _handler(event: dict, context) -> dict:
         if action == "users_filtered":
             f = body.get("filters") or {}
             now_ts = int(time.time())
-            where, params = ["1=1"], []
+            where, params = ["id > 0"], []
 
             if f.get("premium") == "yes":
                 where.append("COALESCE(pro_until, 0) > %s"); params.append(now_ts)

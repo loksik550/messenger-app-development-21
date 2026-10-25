@@ -16,7 +16,7 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 const KIND_LABEL: Record<string, string> = {
-  DbBusy: "База перегружена",
+  DbBusy: "База была перегружена (запрос повторён)",
   QueryCanceled: "Запрос к базе прерван",
   KeyError: "Не хватает данных в запросе",
   ValueError: "Неверные данные",
@@ -24,6 +24,26 @@ const KIND_LABEL: Record<string, string> = {
   UndefinedColumn: "Нет колонки в базе",
   UndefinedTable: "Нет таблицы в базе",
   InFailedSqlTransaction: "Сбой транзакции",
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  spark: "графики дашборда",
+  dashboard: "дашборд",
+  subscriptions_summary: "сводка подписок",
+  moderation_summary: "сводка модерации",
+  app_versions_stats: "версии приложения",
+  app_version_get: "текущая версия",
+  undo_list: "отмена действий",
+  system_health: "состояние серверов",
+  purge_deleted: "стирание удалённых",
+  purge_user: "стирание пользователя",
+  users: "список пользователей",
+  get_messages: "загрузка сообщений",
+  send_message: "отправка сообщения",
+  get_chats: "список чатов",
+  e2e_register: "ключи шифрования",
+  e2e_chat_devices: "ключи собеседника",
+  poll_incoming_call: "входящие звонки",
 };
 
 const CLIENT_LABEL: Record<string, string> = {
@@ -61,7 +81,7 @@ export default function DevErrors() {
   useEffect(() => {
     setLoading(true);
     load();
-    const t = setInterval(load, 30000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -131,7 +151,7 @@ export default function DevErrors() {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{KIND_LABEL[g.kind] || g.kind}</div>
                 <div className="text-xs text-slate-400 truncate">
-                  {SOURCE_LABEL[g.source] || g.source}{g.action ? ` · ${g.action}` : ""} · {g.users} чел. · {formatTs(g.last_at)}
+                  {SOURCE_LABEL[g.source] || g.source}{g.action ? ` · ${ACTION_LABEL[g.action] || g.action}` : ""} · {g.users} чел. · {formatTs(g.last_at)}
                 </div>
               </div>
               <Icon name={open === i ? "ChevronUp" : "ChevronDown"} size={16} className="text-slate-500" />

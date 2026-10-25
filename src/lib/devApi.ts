@@ -45,6 +45,8 @@ export function setPasswordAsker(fn: (action: string) => Promise<string | null>)
   passwordAsker = fn;
 }
 
+const WRITE_RE = /^(ban|unban|delete|purge|bulk|wallet|channel_(update|delete)|team_|force_)/;
+
 export async function devApi<T = Record<string, unknown>>(
   action: string,
   payload: Record<string, unknown> = {},
@@ -89,9 +91,14 @@ export async function devApi<T = Record<string, unknown>>(
     return devApi<T>(action, { ...payload, confirm_password: pwd });
   }
 
+  if ((res.status === 503 || res.status === 502) && !payload.__retried) {
+    await new Promise((r) => setTimeout(r, 700 + Math.random() * 800));
+    return devApi<T>(action, { ...payload, __retried: true });
+  }
   if (!res.ok) {
     throw new Error((data as { error?: string }).error || "Ошибка запроса");
   }
+  if (WRITE_RE.test(action) && typeof window !== "undefined") window.dispatchEvent(new Event("dev-action-done"));
   return data as T;
 }
 

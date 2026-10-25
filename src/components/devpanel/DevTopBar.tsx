@@ -61,7 +61,7 @@ export default function DevTopBar({
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 30000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
     return () => clearInterval(t);
   }, []);
 
