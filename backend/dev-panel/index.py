@@ -3800,13 +3800,30 @@ def _handler(event: dict, context) -> dict:
             text = (body.get("text") or "").strip()
             if not text:
                 return err("Пустой ответ")
+            cur.execute(f"SELECT user_id, subject FROM {SCHEMA}.support_tickets WHERE id = %s", (tid,))
+            trow = cur.fetchone()
+            if not trow:
+                return err("Обращение не найдено", 404)
+            now = int(time.time())
             cur.execute(
-                f"INSERT INTO {SCHEMA}.support_messages (ticket_id, sender_id, is_admin, text) "
-                f"VALUES (%s, NULL, true, %s)",
-                (tid, text),
+                f"INSERT INTO {SCHEMA}.support_messages (ticket_id, sender_id, is_admin, text, created_at) "
+                f"VALUES (%s, NULL, true, %s, %s)",
+                (tid, text[:4000], now),
             )
+            cur.execute(
+                f"UPDATE {SCHEMA}.support_tickets SET last_message_at = %s, unread_for_user = unread_for_user + 1, "
+                f"unread_for_admin = 0, status = 'open', closed_at = NULL WHERE id = %s",
+                (now, tid),
+            )
+            delivered = False
+            try:
+                subj = (trow[1] or "").strip()
+                head = f"Поддержка Nova ответила на обращение #{tid}" + (f" «{subj[:60]}»" if subj else "")
+                delivered = send_from_nova(cur, int(trow[0]), f"{head}:\n\n{text}\n\nОтветить можно в Настройки → Поддержка.") is not None
+            except Exception as e:
+                print(f"[support_reply] deliver: {e}")
             audit(cur, admin, "support_reply", f"Ответ в обращение #{tid}", ip)
-            return ok({"success": True})
+            return ok({"success": True, "delivered": delivered})
 
         if action == "support_close":
             tid = int(body.get("ticket_id") or 0)
