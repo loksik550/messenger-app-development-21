@@ -2740,6 +2740,12 @@ def _handle(event: dict, context) -> dict:
                 )
             except Exception:
                 pass
+            try:
+                from owner_notify import daily_summary_due
+                daily_summary_due(cur, SCHEMA, push=lambda pl: _fire_and_forget_http(
+                    _push_notify_url(), json.dumps(pl).encode("utf-8"), timeout=5.0))
+            except Exception as e:
+                print(f"[daily_summary] {e}")
         conn.commit()
         conn.close()
         return ok({"ok": True, "ts": ts})

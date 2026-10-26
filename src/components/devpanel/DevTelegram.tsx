@@ -91,6 +91,20 @@ export default function DevTelegram() {
     }
   };
 
+  const testSummary = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      await devApi<{ sent: number }>("daily_summary_test");
+      setMsg("Отправил сводку за сегодня в чат с Nova");
+      setTimeout(() => setMsg(""), 5000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Не удалось отправить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleEvent = (k: string) => {
     setEvents((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
   };
@@ -217,6 +231,17 @@ export default function DevTelegram() {
         <Icon name="MessageCircle" size={14} />
         Проверить уведомление в Nova
       </button>
+      <button
+        onClick={testSummary}
+        disabled={busy}
+        className="w-full mt-2 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+      >
+        <Icon name="ChartColumn" size={14} />
+        Прислать сводку за сегодня
+      </button>
+      <p className="text-[11px] text-slate-500 mt-2 text-center">
+        Сводка за день приходит в Nova каждый вечер после 21:00 по Москве
+      </p>
     </div>
   );
 }

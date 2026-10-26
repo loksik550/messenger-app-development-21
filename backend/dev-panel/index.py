@@ -103,7 +103,7 @@ ACTION_PERMS = {
     "referral_settings": "dashboard",
     "promo_save": "settings", "promo_toggle": "settings", "referral_settings_save": "settings",
     "gift_premium": "wallet",
-    "tg_get": "settings", "tg_save": "settings", "tg_test": "settings", "nova_notify_test": "settings",
+    "tg_get": "settings", "tg_save": "settings", "tg_test": "settings", "nova_notify_test": "settings", "daily_summary_test": "settings",
     "users_export": "users", "bulk_action": "user_write",
     "canned_list": "support", "canned_save": "support", "canned_delete": "support",
     "payment_refund": "settings", "subscription_extend": "settings",
@@ -2782,6 +2782,13 @@ def _handler(event: dict, context) -> dict:
             if pairs.get("tg_bot_token") and tg_down:
                 return ok({"success": True, "warning": TG_UNREACHABLE, "chat_id": pairs.get("tg_chat_id")})
             return ok({"success": True, "bot": bot_name, "chat_id": pairs.get("tg_chat_id")})
+
+        if action == "daily_summary_test":
+            from owner_notify import send_daily_summary
+            n = send_daily_summary(cur, SCHEMA)
+            if not n:
+                return err("Ни один владелец не привязан к аккаунту Nova. Привяжите аккаунт в разделе «Команда»")
+            return ok({"sent": n})
 
         if action == "nova_notify_test":
             cur.execute(
