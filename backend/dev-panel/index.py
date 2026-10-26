@@ -142,6 +142,19 @@ def _tg_send(token: str, chat_id: str, text: str) -> bool:
         return False
 
 
+def _tg_call(token: str, method: str) -> dict:
+    try:
+        with urlopen(Request(f"https://api.telegram.org/bot{token}/{method}"), timeout=4) as r:
+            return json.loads(r.read())
+    except HTTPError as e:
+        try:
+            return json.loads(e.read())
+        except Exception:
+            return {"ok": False}
+    except Exception:
+        return {"ok": False}
+
+
 def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
     """Шлёт уведомление владельцу в Telegram, если это включено."""
     try:
@@ -2710,15 +2723,29 @@ def _handler(event: dict, context) -> dict:
                 pairs["tg_events"] = ",".join(body.get("events") or [])
             pairs["tg_enabled"] = "1" if body.get("enabled") else "0"
 
+            bot_name = ""
+            if pairs.get("tg_bot_token"):
+                me = _tg_call(pairs["tg_bot_token"], "getMe")
+                if not me.get("ok"):
+                    return err("Telegram не принял ключ бота. Скопируйте его из @BotFather целиком, без пробелов")
+                bot_name = (me.get("result") or {}).get("username") or ""
+                if not pairs.get("tg_chat_id"):
+                    upd = _tg_call(pairs["tg_bot_token"], "getUpdates")
+                    for u in reversed(upd.get("result") or []):
+                        chat = ((u.get("message") or u.get("my_chat_member") or {}).get("chat") or {})
+                        if chat.get("id"):
+                            pairs["tg_chat_id"] = str(chat["id"])
+                            break
+            now_ts = int(time.time())
             for k, v in pairs.items():
                 cur.execute(
-                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_by) "
-                    f"VALUES (%s, %s, %s) ON CONFLICT (key) DO UPDATE "
-                    f"SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by",
-                    (k, v, admin["email"]),
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) "
+                    f"VALUES (%s, %s, %s, %s) ON CONFLICT (key) DO UPDATE "
+                    f"SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
+                    (k, v, now_ts, admin["id"]),
                 )
             audit(cur, admin, "tg_save", "Настроены уведомления в Telegram", ip)
-            return ok({"success": True})
+            return ok({"success": True, "bot": bot_name, "chat_id": pairs.get("tg_chat_id")})
 
         if action == "tg_test":
             cur.execute(
@@ -2732,7 +2759,11 @@ def _handler(event: dict, context) -> dict:
             sent = _tg_send(token, chat,
                             "Проверка связи\n\nУведомления Nova настроены — сообщения будут приходить сюда.")
             if not sent:
-                return err("Не удалось отправить. Проверьте ключ бота и что вы написали ему первым")
+                me = _tg_call(token, "getMe")
+                if not me.get("ok"):
+                    return err("Telegram не принял ключ бота. Вставьте ключ из @BotFather заново")
+                bn = (me.get("result") or {}).get("username") or "вашему боту"
+                return err(f"Бот не может написать получателю. Откройте @{bn} в Telegram, нажмите «Старт» и проверьте номер получателя (его показывает @userinfobot)")
             return ok({"success": True})
 
         # ── Карточка пользователя целиком ─────────────────────────────────

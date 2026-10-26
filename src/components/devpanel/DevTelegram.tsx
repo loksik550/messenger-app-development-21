@@ -40,16 +40,18 @@ export default function DevTelegram() {
     setErr("");
     try {
       const next = on ?? enabled;
-      await devApi("tg_save", {
+      const cleanToken = token.replace(/\s+/g, "");
+      const r = await devApi<{ bot?: string; chat_id?: string }>("tg_save", {
         enabled: next,
         events,
-        ...(token ? { token } : {}),
-        chat_id: chatId,
+        ...(cleanToken ? { token: cleanToken } : {}),
+        chat_id: chatId.trim(),
       });
-      if (token) setHasToken(true);
+      if (cleanToken) setHasToken(true);
+      if (r?.chat_id) setChatId(r.chat_id);
       setToken("");
       setEnabled(next);
-      setMsg("Сохранено");
+      setMsg(r?.bot ? `Бот @${r.bot} привязан` : "Сохранено");
       setTimeout(() => setMsg(""), 3000);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Не удалось сохранить");
@@ -111,8 +113,8 @@ export default function DevTelegram() {
           <div><b className="text-slate-300">1.</b> В Telegram найдите бота @BotFather</div>
           <div><b className="text-slate-300">2.</b> Отправьте ему команду /newbot и придумайте имя</div>
           <div><b className="text-slate-300">3.</b> Он выдаст длинный ключ — вставьте его ниже</div>
-          <div><b className="text-slate-300">4.</b> Найдите бота @userinfobot, он покажет ваш номер получателя</div>
-          <div><b className="text-slate-300">5.</b> Напишите своему новому боту любое сообщение</div>
+          <div><b className="text-slate-300">4.</b> Откройте своего нового бота и нажмите «Старт»</div>
+          <div><b className="text-slate-300">5.</b> Нажмите «Сохранить» — номер получателя подставится сам</div>
           <div className="text-slate-500 pt-1">Всё бесплатно, ограничений нет.</div>
         </div>
       )}
@@ -132,7 +134,7 @@ export default function DevTelegram() {
       <input
         value={chatId}
         onChange={(e) => setChatId(e.target.value)}
-        placeholder="Ваш номер получателя, например 123456789"
+        placeholder="Пусто — определю сам, если вы написали боту"
         className="w-full bg-black/30 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-sky-500/50 transition mb-4 placeholder-slate-600"
       />
 
