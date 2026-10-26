@@ -103,7 +103,7 @@ ACTION_PERMS = {
     "referral_settings": "dashboard",
     "promo_save": "settings", "promo_toggle": "settings", "referral_settings_save": "settings",
     "gift_premium": "wallet",
-    "tg_get": "settings", "tg_save": "settings", "tg_test": "settings",
+    "tg_get": "settings", "tg_save": "settings", "tg_test": "settings", "nova_notify_test": "settings",
     "users_export": "users", "bulk_action": "user_write",
     "canned_list": "support", "canned_save": "support", "canned_delete": "support",
     "payment_refund": "settings", "subscription_extend": "settings",
@@ -2782,6 +2782,18 @@ def _handler(event: dict, context) -> dict:
             if pairs.get("tg_bot_token") and tg_down:
                 return ok({"success": True, "warning": TG_UNREACHABLE, "chat_id": pairs.get("tg_chat_id")})
             return ok({"success": True, "bot": bot_name, "chat_id": pairs.get("tg_chat_id")})
+
+        if action == "nova_notify_test":
+            cur.execute(
+                f"SELECT DISTINCT nova_user_id FROM {SCHEMA}.dev_admins "
+                f"WHERE role = 'owner' AND COALESCE(disabled, FALSE) = FALSE AND nova_user_id IS NOT NULL"
+            )
+            owners = [int(r[0]) for r in cur.fetchall()]
+            if not owners:
+                return err("Ни один владелец не привязан к аккаунту Nova. Привяжите аккаунт в разделе «Команда»")
+            for uid in owners:
+                send_from_nova(cur, uid, "Проверка уведомлений\n\nСюда будут приходить жалобы, оплаты и обращения в поддержку.")
+            return ok({"sent": len(owners)})
 
         if action == "tg_test":
             cur.execute(

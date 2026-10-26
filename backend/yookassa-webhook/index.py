@@ -109,9 +109,12 @@ def handler(event, context):
                 f"payment_method=%s WHERE id=%s AND status <> 'paid' RETURNING id",
                 (now_iso, now_iso, payment_method or 'card', order_id),
             )
+            _owner_push = []
             if cur.fetchone():
                 amt = float(order_amount)
                 uid = int(nova_user_id) if nova_user_id else None
+
+                _owner_push.append((amt, uid, order_id))
 
                 # Уведомление владельцу в Telegram, если включено в панели
                 try:
@@ -253,6 +256,24 @@ def handler(event, context):
                     cur.execute(f"UPDATE {S}users SET stickers_subscription_until=%s WHERE id=%s", (new_su, uid))
 
                 conn.commit()
+                if _owner_push:
+                    try:
+                        from owner_notify import notify_owners, _push
+                        _amt, _uid, _oid = _owner_push[0]
+                        _nr = None
+                        if _uid:
+                            cur.execute(f"SELECT name FROM {S}users WHERE id = %s", (_uid,))
+                            _nr = cur.fetchone()
+                        _pls = []
+                        notify_owners(cur, S, "pay", f"Оплата {_amt:.0f} ₽",
+                                      f"От: {(_nr[0] if _nr else '') or 'гость'}\nЗаказ №{_oid}",
+                                      push=_pls.append)
+                        conn.commit()
+                        for _pl in _pls:
+                            _push(_pl, timeout=2.0)
+                    except Exception as e:
+                        conn.rollback()
+                        print(f"[owner_notify] {e}")
 
         elif status == 'canceled':
             if current_status not in ('paid', 'canceled'):

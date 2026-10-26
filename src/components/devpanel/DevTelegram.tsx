@@ -77,6 +77,20 @@ export default function DevTelegram() {
     }
   };
 
+  const testNova = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await devApi<{ sent: number }>("nova_notify_test");
+      setMsg(`Отправил в приложение Nova (получателей: ${r.sent}) — проверьте чат с Nova`);
+      setTimeout(() => setMsg(""), 5000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Не удалось отправить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleEvent = (k: string) => {
     setEvents((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
   };
@@ -88,9 +102,9 @@ export default function DevTelegram() {
           <Icon name="Send" size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold">Уведомления в Telegram</h3>
+          <h3 className="font-semibold">Уведомления в Telegram и Nova</h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Жалобы, оплаты и обращения приходят вам на телефон
+            Жалобы, оплаты и обращения всегда дублируются вам в чат с Nova в приложении
           </p>
         </div>
         <button
@@ -195,6 +209,14 @@ export default function DevTelegram() {
           Проверить
         </button>
       </div>
+      <button
+        onClick={testNova}
+        disabled={busy}
+        className="w-full mt-2 py-2.5 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-200 text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+      >
+        <Icon name="MessageCircle" size={14} />
+        Проверить уведомление в Nova
+      </button>
     </div>
   );
 }

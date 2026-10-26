@@ -491,7 +491,13 @@ def track_login(cur, uid: int, event: dict) -> None:
 
 
 def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
-    """Шлёт владельцу уведомление в Telegram, если это включено в панели."""
+    """Шлёт владельцу уведомление в Telegram (если включено) и дублирует в приложение Nova."""
+    try:
+        from owner_notify import notify_owners
+        notify_owners(cur, SCHEMA, kind, title, body_text,
+                      push=lambda pl: _fire_and_forget_http(_push_notify_url(), json.dumps(pl).encode("utf-8"), timeout=5.0))
+    except Exception as e:
+        print(f"[owner_notify] {e}")
     try:
         cur.execute(
             f"SELECT key, value FROM {SCHEMA}.dev_settings "
