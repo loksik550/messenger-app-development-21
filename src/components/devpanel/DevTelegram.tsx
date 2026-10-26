@@ -41,7 +41,7 @@ export default function DevTelegram() {
     try {
       const next = on ?? enabled;
       const cleanToken = token.replace(/\s+/g, "");
-      const r = await devApi<{ bot?: string; chat_id?: string }>("tg_save", {
+      const r = await devApi<{ bot?: string; chat_id?: string; warning?: string }>("tg_save", {
         enabled: next,
         events,
         ...(cleanToken ? { token: cleanToken } : {}),
@@ -51,6 +51,7 @@ export default function DevTelegram() {
       if (r?.chat_id) setChatId(r.chat_id);
       setToken("");
       setEnabled(next);
+      if (r?.warning) setErr(r.warning);
       setMsg(r?.bot ? `Бот @${r.bot} привязан` : "Сохранено");
       setTimeout(() => setMsg(""), 3000);
     } catch (e) {

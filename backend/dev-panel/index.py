@@ -137,9 +137,10 @@ def _tg_send(token: str, chat_id: str, text: str) -> bool:
     try:
         data = urlencode({"chat_id": chat_id, "text": text}).encode()
         req = Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
-        with urlopen(req, timeout=4) as r:
+        with urlopen(req, timeout=2.5) as r:
             return json.loads(r.read()).get("ok", False)
-    except Exception:
+    except Exception as e:
+        print(f"[tg] sendMessage: {type(e).__name__}: {e}")
         return False
 
 
@@ -149,15 +150,20 @@ def _looks_like_tg_token(v: str) -> bool:
 
 def _tg_call(token: str, method: str) -> dict:
     try:
-        with urlopen(Request(f"https://api.telegram.org/bot{token}/{method}"), timeout=4) as r:
+        with urlopen(Request(f"https://api.telegram.org/bot{token}/{method}"), timeout=2.5) as r:
             return json.loads(r.read())
     except HTTPError as e:
         try:
             return json.loads(e.read())
         except Exception:
             return {"ok": False}
-    except Exception:
-        return {"ok": False}
+    except Exception as e:
+        print(f"[tg] {method}: {type(e).__name__}: {e}")
+        return {"ok": False, "network": True}
+
+
+TG_UNREACHABLE = ("Сервер не смог связаться с Telegram (нет ответа). Ключ сохранён. "
+                  "Похоже, Telegram недоступен с сервера — это не ошибка в ключе")
 
 
 def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
@@ -2748,12 +2754,16 @@ def _handler(event: dict, context) -> dict:
             pairs["tg_enabled"] = "1" if body.get("enabled") else "0"
 
             bot_name = ""
+            tg_down = False
             if pairs.get("tg_bot_token"):
+                if not _looks_like_tg_token(pairs["tg_bot_token"]):
+                    return err("Это не похоже на ключ бота. Он выглядит так: 1234567890:AAH… — с двоеточием посередине")
                 me = _tg_call(pairs["tg_bot_token"], "getMe")
-                if not me.get("ok"):
-                    return err("Telegram не принял ключ бота. Скопируйте его из @BotFather целиком, без пробелов")
+                tg_down = bool(me.get("network"))
+                if not me.get("ok") and not tg_down:
+                    return err("Telegram ответил, что такого ключа нет. Возьмите актуальный ключ в @BotFather → /mybots → бот → API Token")
                 bot_name = (me.get("result") or {}).get("username") or ""
-                if not pairs.get("tg_chat_id"):
+                if not pairs.get("tg_chat_id") and not tg_down:
                     upd = _tg_call(pairs["tg_bot_token"], "getUpdates")
                     for u in reversed(upd.get("result") or []):
                         chat = ((u.get("message") or u.get("my_chat_member") or {}).get("chat") or {})
@@ -2769,6 +2779,8 @@ def _handler(event: dict, context) -> dict:
                     (k, v, now_ts, admin["id"]),
                 )
             audit(cur, admin, "tg_save", "Настроены уведомления в Telegram", ip)
+            if pairs.get("tg_bot_token") and tg_down:
+                return ok({"success": True, "warning": TG_UNREACHABLE, "chat_id": pairs.get("tg_chat_id")})
             return ok({"success": True, "bot": bot_name, "chat_id": pairs.get("tg_chat_id")})
 
         if action == "tg_test":
@@ -2785,6 +2797,8 @@ def _handler(event: dict, context) -> dict:
                 return err("Вставьте ключ бота из @BotFather в поле «Ключ бота» и нажмите «Сохранить»")
             if not chat:
                 upd = _tg_call(token, "getUpdates")
+                if upd.get("network"):
+                    return err(TG_UNREACHABLE)
                 for u in reversed(upd.get("result") or []):
                     c = ((u.get("message") or u.get("my_chat_member") or {}).get("chat") or {})
                     if c.get("id"):
@@ -2792,8 +2806,10 @@ def _handler(event: dict, context) -> dict:
                         break
                 if not chat:
                     me = _tg_call(token, "getMe")
+                    if me.get("network"):
+                        return err(TG_UNREACHABLE)
                     if not me.get("ok"):
-                        return err("Telegram не принял ключ бота. Вставьте ключ из @BotFather заново")
+                        return err("Telegram ответил, что такого ключа нет. Возьмите актуальный ключ в @BotFather → /mybots → бот → API Token")
                     bn = (me.get("result") or {}).get("username") or "вашего бота"
                     return err(f"Откройте @{bn} в Telegram, нажмите «Старт» и снова нажмите «Проверить»")
             for k, v in (("tg_bot_token", token), ("tg_chat_id", chat)):
@@ -2807,8 +2823,10 @@ def _handler(event: dict, context) -> dict:
                             "Проверка связи\n\nУведомления Nova настроены — сообщения будут приходить сюда.")
             if not sent:
                 me = _tg_call(token, "getMe")
+                if me.get("network"):
+                    return err(TG_UNREACHABLE)
                 if not me.get("ok"):
-                    return err("Telegram не принял ключ бота. Вставьте ключ из @BotFather заново")
+                    return err("Telegram ответил, что такого ключа нет. Возьмите актуальный ключ в @BotFather → /mybots → бот → API Token")
                 bn = (me.get("result") or {}).get("username") or "вашему боту"
                 return err(f"Бот не может написать получателю. Откройте @{bn} в Telegram, нажмите «Старт» и проверьте номер получателя (его показывает @userinfobot)")
             return ok({"success": True, "chat_id": chat})
