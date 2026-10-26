@@ -79,17 +79,39 @@ const SPLASH_CSS = `html, body { background: #0a0a0f; }
         #nova-splash * { animation-duration: .01s !important; animation-iteration-count: 1 !important; }
       }`;
 
+const RUSTORE_URL = "https://www.rustore.ru/catalog/app/ru.nova.messenger";
+
 const NOSCRIPT_HTML = `<div style="max-width:720px;margin:0 auto;padding:24px;font-family:sans-serif;color:#111;line-height:1.6">
         <h1>Nova — мессенджер для общения</h1>
-        <h2>Политика конфиденциальности</h2>
-        <p>Nova — мессенджер для приватного общения (личные и групповые чаты, звонки, фото, видео и голосовые сообщения). Приложение обрабатывает персональные данные в соответствии с Федеральным законом № 152-ФЗ «О персональных данных».</p>
-        <p><strong>Регистрация и вход:</strong> по номеру мобильного телефона и имени. Пароль и SMS-код не используются.</p>
-        <p><strong>Собираемые данные:</strong> номер телефона, имя, аватар, «О себе», пол и дата рождения (по желанию); содержимое переписки (сообщения, фото, видео, аудио, документы, голосовые и видео-кружки, стикеры, реакции); служебные данные звонков; список контактов (с согласия); push-токен устройства; IP-адрес и данные об устройстве; данные о платежах (через ЮKassA; реквизиты карт не хранятся).</p>
-        <p><strong>Хранение:</strong> на серверах в Российской Федерации, передача защищена TLS 1.2+.</p>
-        <p><strong>Передача третьим лицам:</strong> только платёжному сервису ЮKassA, сервису push-уведомлений FCM (обезличенный токен) и уполномоченным госорганам по законным запросам. В рекламных целях данные не передаются.</p>
-        <p><strong>Права пользователя:</strong> удаление аккаунта и данных прямо в приложении (Настройки → Аккаунт → Удалить аккаунт), отзыв согласия, обращение в Роскомнадзор.</p>
-        <p>Полный текст: <a href="/privacy">novaa.pro/privacy</a></p>
+        <p>Nova — российский мессенджер для личного и группового общения. Переписка, аудио- и видеозвонки, обмен фото, видео и файлами — в одном приложении. Регистрация по номеру телефона за минуту, без пароля.</p>
+        <h2>Возможности</h2>
+        <ul>
+            <li><strong>Личные и групповые чаты</strong> — общайтесь один на один или собирайте друзей, семью и коллег в группы.</li>
+            <li><strong>Аудио- и видеозвонки</strong> — стабильная связь через Wi-Fi и мобильный интернет.</li>
+            <li><strong>Голосовые сообщения и видео-кружки</strong> — когда проще сказать, чем написать.</li>
+            <li><strong>Фото, видео и документы</strong> — делитесь файлами прямо в чате.</li>
+            <li><strong>Истории, стикеры и реакции</strong> — живое общение с эмоциями.</li>
+            <li><strong>Отложенные сообщения и избранное</strong> — отправка в нужное время и важное под рукой.</li>
+            <li><strong>Приватность</strong> — данные хранятся на серверах в России, соединение защищено, аккаунт можно удалить в любой момент.</li>
+            <li><strong>Nova Pro</strong> — расширенные возможности и оформление профиля.</li>
+        </ul>
+        <h2>Скачать Nova</h2>
+        <p><a href="${RUSTORE_URL}">Скачать Nova для Android в RuStore</a> — бесплатно. Также Nova работает в браузере на <a href="https://novaa.pro/">novaa.pro</a>.</p>
+        <p><a href="/privacy">Политика конфиденциальности</a> · <a href="/terms">Пользовательское соглашение</a> · <a href="/security">Безопасность</a></p>
     </div>`;
+
+const JSON_LD = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "MobileApplication",
+    name: "Nova",
+    description: DESCRIPTION,
+    applicationCategory: "CommunicationApplication",
+    operatingSystem: "Android",
+    url: "https://novaa.pro/",
+    downloadUrl: RUSTORE_URL,
+    inLanguage: "ru",
+    offers: {"@type": "Offer", price: "0", priceCurrency: "RUB"},
+});
 
 const METRIKA = `(function (m, e, t, r, i, k, a) {
     m[i] = m[i] || function () { (m[i].a = m[i].a || []).push(arguments) };
@@ -139,6 +161,7 @@ export const Route = createRootRoute({
             ...(import.meta.env.DEV ? [{children: HMR_CLIENT}] : []),
             ...PLATFORM_SCRIPTS,
             {children: METRIKA},
+            {type: "application/ld+json", children: JSON_LD},
         ],
     }),
     component: RootComponent,

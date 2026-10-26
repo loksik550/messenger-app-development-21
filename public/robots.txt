@@ -19,3 +19,7 @@ Disallow: /dev
 Disallow: /shots
 Disallow: /banner
 Disallow: /store-assets
+Disallow: /vk-callback
+Disallow: /check.html
+
+Sitemap: https://novaa.pro/sitemap.xml
