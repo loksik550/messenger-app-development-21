@@ -34,7 +34,7 @@ export function ProfileHeader({
 }: {
   currentUser: User;
   onBack?: () => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   uploadingAvatar: boolean;
   avatarError: string;
   onPickAvatar: () => void;

@@ -100,8 +100,8 @@ export async function flush() {
   }
 }
 
-onConnectionChange(on => { if (on) flush(); });
 if (typeof window !== "undefined") {
+  onConnectionChange(on => { if (on) flush(); });
   setTimeout(flush, 1500);
   setInterval(() => { if (load().some(i => !i.failed)) flush(); }, 15000);
 }

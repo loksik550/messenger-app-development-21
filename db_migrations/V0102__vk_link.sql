@@ -1,1 +1,0 @@
-ALTER TABLE t_p67547116_messenger_app_develo.vk_logins ADD COLUMN IF NOT EXISTS link_user_id INTEGER;

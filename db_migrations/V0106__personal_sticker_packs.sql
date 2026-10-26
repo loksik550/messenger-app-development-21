@@ -1,2 +1,0 @@
-ALTER TABLE t_p67547116_messenger_app_develo.sticker_packs ADD COLUMN IF NOT EXISTS is_personal BOOLEAN NOT NULL DEFAULT FALSE;
-CREATE INDEX IF NOT EXISTS idx_sticker_packs_personal_author ON t_p67547116_messenger_app_develo.sticker_packs(author_id) WHERE is_personal = TRUE;

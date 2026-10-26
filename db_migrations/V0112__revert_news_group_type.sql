@@ -1,1 +1,0 @@
-UPDATE t_p67547116_messenger_app_develo.groups SET is_channel = FALSE WHERE id = 13;

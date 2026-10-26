@@ -1,4 +1,4 @@
-import { type RefObject } from "react";
+import { type RefObject, type JSX } from "react";
 import Icon from "@/components/ui/icon";
 import { type Chat, type Message, type User } from "@/lib/api";
 import { MediaMessage, ReactionBar } from "@/components/messenger/ChatMediaMessage";
@@ -25,8 +25,8 @@ export interface MessageListProps {
   isTyping: boolean;
   highlightId: number | null;
   heartBurst: number | null;
-  messagesScrollRef: RefObject<HTMLDivElement>;
-  endRef: RefObject<HTMLDivElement>;
+  messagesScrollRef: RefObject<HTMLDivElement | null>;
+  endRef: RefObject<HTMLDivElement | null>;
   onScroll: () => void;
   onBackgroundClick: () => void;
   onReply: (id: number) => void;

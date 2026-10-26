@@ -1,1 +1,0 @@
-UPDATE t_p67547116_messenger_app_develo.error_log SET created_at = 0 WHERE created_at > 0;

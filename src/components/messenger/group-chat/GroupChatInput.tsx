@@ -17,7 +17,7 @@ interface Props {
   recording: boolean;
   recordSec: number;
   mentionCandidates: GroupMember[];
-  fileInputRef: RefObject<HTMLInputElement>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
   onInputChange: (v: string) => void;
   onSend: () => void;
   onSendFile: (file: File) => void;

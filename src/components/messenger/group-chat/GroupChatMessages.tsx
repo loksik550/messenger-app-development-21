@@ -13,8 +13,8 @@ interface Props {
   groupedMessages: { date: string; msgs: GroupMessage[] }[];
   pinned: { id: number; text: string; sender_name: string; media_type?: string } | null;
   isAdminHere: boolean;
-  scrollRef: RefObject<HTMLDivElement>;
-  endRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  endRef: RefObject<HTMLDivElement | null>;
   onUnpin: () => void;
   onOpenContext: (ctx: { msgId: number; out: boolean }) => void;
   selectedIds?: Set<number> | null;

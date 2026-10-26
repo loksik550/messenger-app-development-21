@@ -43,7 +43,7 @@ export function ChatInput({
   uploadLabel: string;
   recording: boolean;
   recordSec: number;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   onSend: () => void;
   onNotifyTyping: () => void;
   onStartRecording: () => void;

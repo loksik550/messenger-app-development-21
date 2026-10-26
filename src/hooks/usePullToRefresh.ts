@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export function usePullToRefresh(
-  containerRef: React.RefObject<HTMLElement>,
+  containerRef: React.RefObject<HTMLElement | null>,
   onRefresh: () => Promise<void> | void,
   threshold = 70,
 ) {
