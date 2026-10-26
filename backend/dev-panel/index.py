@@ -137,7 +137,7 @@ def _tg_send(token: str, chat_id: str, text: str) -> bool:
     try:
         data = urlencode({"chat_id": chat_id, "text": text}).encode()
         req = Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
-        with urlopen(req, timeout=2.5) as r:
+        with urlopen(req, timeout=2) as r:
             return json.loads(r.read()).get("ok", False)
     except Exception as e:
         print(f"[tg] sendMessage: {type(e).__name__}: {e}")
@@ -150,7 +150,7 @@ def _looks_like_tg_token(v: str) -> bool:
 
 def _tg_call(token: str, method: str) -> dict:
     try:
-        with urlopen(Request(f"https://api.telegram.org/bot{token}/{method}"), timeout=2.5) as r:
+        with urlopen(Request(f"https://api.telegram.org/bot{token}/{method}"), timeout=2) as r:
             return json.loads(r.read())
     except HTTPError as e:
         try:

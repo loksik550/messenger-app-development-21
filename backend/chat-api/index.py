@@ -508,7 +508,7 @@ def tg_notify(cur, kind: str, title: str, body_text: str) -> None:
         from urllib.parse import urlencode as _ue
         from urllib.request import Request as _Rq, urlopen as _uo
         data = _ue({"chat_id": chat, "text": f"{title}\n\n{body_text}"}).encode()
-        _uo(_Rq(f"https://api.telegram.org/bot{token}/sendMessage", data=data), timeout=4)
+        _uo(_Rq(f"https://api.telegram.org/bot{token}/sendMessage", data=data), timeout=1.5)
     except Exception:
         pass
 

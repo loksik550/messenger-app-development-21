@@ -134,7 +134,7 @@ def handler(event, context):
                         _uo(_Rq(
                             f"https://api.telegram.org/bot{_st['tg_bot_token']}/sendMessage",
                             data=_ue({"chat_id": _st["tg_chat_id"], "text": _txt}).encode(),
-                        ), timeout=4)
+                        ), timeout=1.5)
                 except Exception:
                     pass
 
