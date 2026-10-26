@@ -29,7 +29,7 @@ export default function DevTelegram() {
       .then((r) => {
         setEnabled(r.enabled);
         setHasToken(r.has_token);
-        setChatId(r.chat_id);
+        setChatId(/^\d{5,}:/.test(r.chat_id) ? "" : r.chat_id);
         setEvents(r.events);
       })
       .catch(() => {});
@@ -64,7 +64,9 @@ export default function DevTelegram() {
     setBusy(true);
     setErr("");
     try {
-      await devApi("tg_test");
+      const r = await devApi<{ chat_id?: string }>("tg_test");
+      setHasToken(true);
+      if (r?.chat_id) setChatId(r.chat_id);
       setMsg("Отправил проверочное сообщение — проверьте Telegram");
       setTimeout(() => setMsg(""), 5000);
     } catch (e) {
@@ -186,7 +188,7 @@ export default function DevTelegram() {
         </button>
         <button
           onClick={test}
-          disabled={busy || (!hasToken && !token) || !chatId}
+          disabled={busy || (!hasToken && !token)}
           className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm disabled:opacity-40"
         >
           Проверить

@@ -1,6 +1,7 @@
 import os
 import errlog
 import json
+import re
 import time
 import hashlib
 import secrets
@@ -140,6 +141,10 @@ def _tg_send(token: str, chat_id: str, text: str) -> bool:
             return json.loads(r.read()).get("ok", False)
     except Exception:
         return False
+
+
+def _looks_like_tg_token(v: str) -> bool:
+    return bool(re.fullmatch(r"\d{5,}:[A-Za-z0-9_-]{25,}", (v or "").strip()))
 
 
 def _tg_call(token: str, method: str) -> dict:
@@ -2716,9 +2721,28 @@ def _handler(event: dict, context) -> dict:
         if action == "tg_save":
             pairs = {}
             if body.get("token") is not None:
-                pairs["tg_bot_token"] = (body.get("token") or "").strip()
+                pairs["tg_bot_token"] = re.sub(r"\s+", "", body.get("token") or "")
             if body.get("chat_id") is not None:
-                pairs["tg_chat_id"] = (body.get("chat_id") or "").strip()
+                pairs["tg_chat_id"] = re.sub(r"\s+", "", body.get("chat_id") or "")
+            if _looks_like_tg_token(pairs.get("tg_chat_id", "")):
+                if not pairs.get("tg_bot_token"):
+                    pairs["tg_bot_token"] = pairs["tg_chat_id"]
+                pairs["tg_chat_id"] = ""
+            cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key IN ('tg_bot_token', 'tg_chat_id')")
+            prev = {r[0]: r[1] for r in cur.fetchall()}
+            if not pairs.get("tg_bot_token") and not prev.get("tg_bot_token") and _looks_like_tg_token(prev.get("tg_chat_id") or ""):
+                pairs["tg_bot_token"] = prev["tg_chat_id"].strip()
+            if not pairs.get("tg_bot_token") and not pairs.get("tg_chat_id"):
+                saved = [prev.get("tg_bot_token")]
+                if saved and saved[0]:
+                    upd = _tg_call(saved[0], "getUpdates")
+                    for u in reversed(upd.get("result") or []):
+                        chat = ((u.get("message") or u.get("my_chat_member") or {}).get("chat") or {})
+                        if chat.get("id"):
+                            pairs["tg_chat_id"] = str(chat["id"])
+                            break
+            if pairs.get("tg_chat_id") and not re.fullmatch(r"-?\d{3,20}|@[A-Za-z0-9_]{4,64}", pairs["tg_chat_id"]):
+                return err("«Кому отправлять» — это номер из цифр. Оставьте поле пустым, панель найдёт его сама")
             if body.get("events") is not None:
                 pairs["tg_events"] = ",".join(body.get("events") or [])
             pairs["tg_enabled"] = "1" if body.get("enabled") else "0"
@@ -2754,8 +2778,31 @@ def _handler(event: dict, context) -> dict:
             )
             st = {r[0]: r[1] for r in cur.fetchall()}
             token, chat = st.get("tg_bot_token"), st.get("tg_chat_id")
-            if not token or not chat:
-                return err("Сначала укажите ключ бота и получателя")
+            if _looks_like_tg_token(chat or ""):
+                token = token or chat
+                chat = ""
+            if not token:
+                return err("Вставьте ключ бота из @BotFather в поле «Ключ бота» и нажмите «Сохранить»")
+            if not chat:
+                upd = _tg_call(token, "getUpdates")
+                for u in reversed(upd.get("result") or []):
+                    c = ((u.get("message") or u.get("my_chat_member") or {}).get("chat") or {})
+                    if c.get("id"):
+                        chat = str(c["id"])
+                        break
+                if not chat:
+                    me = _tg_call(token, "getMe")
+                    if not me.get("ok"):
+                        return err("Telegram не принял ключ бота. Вставьте ключ из @BotFather заново")
+                    bn = (me.get("result") or {}).get("username") or "вашего бота"
+                    return err(f"Откройте @{bn} в Telegram, нажмите «Старт» и снова нажмите «Проверить»")
+            for k, v in (("tg_bot_token", token), ("tg_chat_id", chat)):
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) "
+                    f"VALUES (%s, %s, %s, %s) ON CONFLICT (key) DO UPDATE "
+                    f"SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
+                    (k, v, int(time.time()), admin["id"]),
+                )
             sent = _tg_send(token, chat,
                             "Проверка связи\n\nУведомления Nova настроены — сообщения будут приходить сюда.")
             if not sent:
@@ -2764,7 +2811,7 @@ def _handler(event: dict, context) -> dict:
                     return err("Telegram не принял ключ бота. Вставьте ключ из @BotFather заново")
                 bn = (me.get("result") or {}).get("username") or "вашему боту"
                 return err(f"Бот не может написать получателю. Откройте @{bn} в Telegram, нажмите «Старт» и проверьте номер получателя (его показывает @userinfobot)")
-            return ok({"success": True})
+            return ok({"success": True, "chat_id": chat})
 
         # ── Карточка пользователя целиком ─────────────────────────────────
         if action == "user_full":
