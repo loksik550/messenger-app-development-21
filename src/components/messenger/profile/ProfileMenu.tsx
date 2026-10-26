@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { native } from "@/lib/native";
 import { type User, type IconName } from "@/lib/api";
 import { useT } from "@/hooks/useT";
+import { useSupportUnread } from "@/hooks/useSupportUnread";
 
 const MyStickersPanel = lazy(() => import("@/components/messenger/MyStickersPanel"));
 
@@ -41,6 +42,7 @@ export function ProfileMenu({
 }: Props) {
   const { t: tr } = useT();
   const [showMyStickers, setShowMyStickers] = useState(false);
+  const supportUnread = useSupportUnread(currentUser?.id);
 
   return (
     <>
@@ -109,8 +111,15 @@ export function ProfileMenu({
           </div>
           <div className="flex-1 text-left min-w-0">
             <div className="text-sm font-bold truncate">Поддержка Nova</div>
-            <div className="text-[11px] text-muted-foreground truncate">Помощь, баги, идеи</div>
+            <div className={`text-[11px] truncate ${supportUnread > 0 ? "text-red-400 font-medium" : "text-muted-foreground"}`}>
+              {supportUnread > 0 ? (supportUnread === 1 ? "Новый ответ от поддержки" : "Новые ответы от поддержки") : "Помощь, баги, идеи"}
+            </div>
           </div>
+          {supportUnread > 0 && (
+            <span className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/30">
+              {supportUnread > 99 ? "99+" : supportUnread}
+            </span>
+          )}
           <Icon name="ChevronRight" size={16} className="text-muted-foreground flex-shrink-0" />
         </button>
       </div>

@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
+import { refreshSupportUnread } from "@/hooks/useSupportUnread";
 
 interface Ticket {
   id: number;
@@ -54,7 +55,7 @@ export default function SupportPanel({
     setLoading(false);
   };
 
-  useEffect(() => { loadTickets(); }, [currentUser.id]);
+  useEffect(() => { if (!activeTicket) loadTickets(); }, [currentUser.id, activeTicket]);
 
   useEffect(() => {
     if (!activeTicket) return;
@@ -64,6 +65,7 @@ export default function SupportPanel({
       if (cancel) return;
       if (Array.isArray(r?.messages)) {
         setMessages(r.messages);
+        refreshSupportUnread();
         setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
       }
     };
@@ -254,7 +256,7 @@ export default function SupportPanel({
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm truncate flex-1">{t.subject || "Без темы"}</span>
                 {t.unread > 0 && (
-                  <span className="px-1.5 min-w-[18px] h-[18px] rounded-full grad-primary text-white text-[10px] font-bold flex items-center justify-center">
+                  <span className="px-1.5 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
                     {t.unread}
                   </span>
                 )}
