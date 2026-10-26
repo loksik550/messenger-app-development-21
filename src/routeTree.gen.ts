@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as BannerRouteImport } from './routes/banner'
 import { Route as DevRouteImport } from './routes/dev'
 import { Route as PolitikaKonfidencialnostiRouteImport } from './routes/politika-konfidencialnosti'
@@ -26,6 +27,11 @@ import { Route as VkCallbackRouteImport } from './routes/vk-callback'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BannerRoute = BannerRouteImport.update({
@@ -93,6 +99,7 @@ const VkCallbackRoute = VkCallbackRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/banner': typeof BannerRoute
   '/dev': typeof DevRoute
   '/politika-konfidencialnosti': typeof PolitikaKonfidencialnostiRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/banner': typeof BannerRoute
   '/dev': typeof DevRoute
   '/politika-konfidencialnosti': typeof PolitikaKonfidencialnostiRoute
@@ -124,6 +132,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/banner': typeof BannerRoute
   '/dev': typeof DevRoute
   '/politika-konfidencialnosti': typeof PolitikaKonfidencialnostiRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/banner'
     | '/dev'
     | '/politika-konfidencialnosti'
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/banner'
     | '/dev'
     | '/politika-konfidencialnosti'
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/banner'
     | '/dev'
     | '/politika-konfidencialnosti'
@@ -187,6 +199,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   BannerRoute: typeof BannerRoute
   DevRoute: typeof DevRoute
   PolitikaKonfidencialnostiRoute: typeof PolitikaKonfidencialnostiRoute
@@ -208,6 +221,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/banner': {
@@ -299,6 +319,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   BannerRoute: BannerRoute,
   DevRoute: DevRoute,
   PolitikaKonfidencialnostiRoute: PolitikaKonfidencialnostiRoute,

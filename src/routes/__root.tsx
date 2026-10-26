@@ -97,7 +97,7 @@ const NOSCRIPT_HTML = `<div style="max-width:720px;margin:0 auto;padding:24px;fo
         </ul>
         <h2>Скачать Nova</h2>
         <p><a href="${RUSTORE_URL}">Скачать Nova для Android в RuStore</a> — бесплатно. Также Nova работает в браузере на <a href="https://novaa.pro/">novaa.pro</a>.</p>
-        <p><a href="/privacy">Политика конфиденциальности</a> · <a href="/terms">Пользовательское соглашение</a> · <a href="/security">Безопасность</a></p>
+        <p><a href="/about">Подробнее о Nova</a> · <a href="/privacy">Политика конфиденциальности</a> · <a href="/terms">Пользовательское соглашение</a> · <a href="/security">Безопасность</a></p>
     </div>`;
 
 const JSON_LD = JSON.stringify({
