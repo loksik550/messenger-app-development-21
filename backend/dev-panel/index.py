@@ -1919,15 +1919,16 @@ def _handler(event: dict, context) -> dict:
                 f"SELECT COUNT(*) FILTER (WHERE COALESCE(incognito, FALSE)), "
                 f"COUNT(*) FILTER (WHERE emoji_status IS NOT NULL AND emoji_status <> ''), "
                 f"COUNT(*) FILTER (WHERE name_color IS NOT NULL AND name_color <> ''), "
-                f"COUNT(*) FILTER (WHERE avatar_video_url IS NOT NULL AND avatar_video_url <> '') "
+                f"COUNT(*) FILTER (WHERE avatar_video_url IS NOT NULL AND avatar_video_url <> ''), "
+                f"COUNT(*) FILTER (WHERE app_icon IS NOT NULL AND app_icon <> 'classic') "
                 f"FROM {SCHEMA}.users WHERE COALESCE(pro_until, 0) > %s",
                 (now,),
             )
-            inc, emo, col, avv = cur.fetchone()
+            inc, emo, col, avv, aic = cur.fetchone()
             return ok({
                 "file_limit_free_mb": _int(cfg.get("file_limit_free_mb"), 50),
                 "file_limit_pro_mb": _int(cfg.get("file_limit_pro_mb"), 1024),
-                "usage": {"incognito": inc or 0, "emoji_status": emo or 0, "name_color": col or 0, "avatar_video": avv or 0},
+                "usage": {"incognito": inc or 0, "emoji_status": emo or 0, "name_color": col or 0, "avatar_video": avv or 0, "app_icon": aic or 0},
             })
 
         if action == "pro_features_save":

@@ -1,0 +1,1 @@
+UPDATE t_p67547116_messenger_app_develo.dev_settings SET value = 'classic,ocean,sunset,mono' WHERE key = 'app_icons_enabled';

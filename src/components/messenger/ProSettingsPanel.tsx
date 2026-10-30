@@ -87,6 +87,18 @@ export default function ProSettingsPanel({ currentUser, onClose, onUserUpdate, o
           <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
         </button>
 
+        <button
+          onClick={() => window.dispatchEvent(new Event("nova:open-app-icon"))}
+          className="w-full glass rounded-2xl p-4 flex items-center gap-3 text-left hover:bg-white/8"
+        >
+          <img src={`/app-icons/${currentUser.app_icon || "classic"}.webp`} alt="" className="w-10 h-10 rounded-xl" />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-sm">Значок приложения</div>
+            <div className="text-xs text-muted-foreground">Классика, Океан, Закат или Монохром</div>
+          </div>
+          <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
+        </button>
+
         <div className="glass rounded-2xl p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-fuchsia-500/80">
             <Icon name="Video" size={18} className="text-white" />

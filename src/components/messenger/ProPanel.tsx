@@ -36,6 +36,7 @@ const FEATURES = [
   { icon: "FileUp", text: "Большие файлы", color: "#34d399" },
   { icon: "Video", text: "Видео вместо фото профиля", color: "#e879f9" },
   { icon: "Hash", text: "Красивый короткий ID (666, 7777)", color: "#fb923c" },
+  { icon: "Smartphone", text: "Свой значок приложения", color: "#38bdf8" },
 ];
 
 const SPARKS = Array.from({ length: 46 }, (_, i) => {

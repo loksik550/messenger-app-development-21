@@ -127,6 +127,7 @@ export interface User {
   name: string;
   avatar_url?: string;
   avatar_video_url?: string | null;
+  app_icon?: string;
   last_seen?: number;
   about?: string | null;
   gender?: "male" | "female" | null;

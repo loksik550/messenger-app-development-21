@@ -99,7 +99,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE), avatar_video_url"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE), avatar_video_url, app_icon"
 
 
 
@@ -281,6 +281,7 @@ def serialize_user(row):
         "last_seen_visibility": row[34] if len(row) > 34 and row[34] else "everyone",
         "read_receipts_enabled": bool(row[35]) if len(row) > 35 else True,
         "avatar_video_url": (row[36] if len(row) > 36 and row[36] and bool(row[9]) and int(row[9]) > int(time.time()) else None),
+        "app_icon": (row[37] if len(row) > 37 and row[37] and bool(row[9]) and int(row[9]) > int(time.time()) else "classic"),
     }
 
 
@@ -3185,6 +3186,21 @@ def _handle(event: dict, context) -> dict:
                 sets.append("name_color = %s"); vals.append(str(nc))
         if "incognito" in body:
             sets.append("incognito = %s"); vals.append(bool(body.get("incognito")))
+        if "app_icon" in body:
+            _icon = str(body.get("app_icon") or "classic")
+            cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'app_icons_enabled'")
+            _r = cur.fetchone()
+            _allowed = {x.strip() for x in ((_r[0] if _r else "") or "").split(",") if x.strip()} | {"classic"}
+            if _icon not in _allowed:
+                conn.close()
+                return err("Такой значок недоступен")
+            if _icon != "classic":
+                cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+                _pu3 = cur.fetchone()
+                if not _pu3 or int(_pu3[0] or 0) <= int(time.time()):
+                    conn.close()
+                    return err("Смена значка доступна с Nova Pro", 402)
+            sets.append("app_icon = %s"); vals.append(_icon)
         if "who_can_message" in body:
             v = body.get("who_can_message")
             if v not in ("everyone", "contacts", "nobody"):
@@ -5334,6 +5350,15 @@ def _handle(event: dict, context) -> dict:
         conn.commit()
         conn.close()
         return ok({"success": True, "granted_days": invited_days})
+
+    if action == "app_icons":
+        cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'app_icons_enabled'")
+        _r = cur.fetchone()
+        conn.close()
+        enabled = [x.strip() for x in ((_r[0] if _r else "") or "").split(",") if x.strip()]
+        if "classic" not in enabled:
+            enabled.insert(0, "classic")
+        return ok({"icons": enabled})
 
     # ── Красивый короткий ID (Nova Pro) ──────────────────────────────────────
     if action in ("nova_id_info", "nova_id_check", "nova_id_buy"):
