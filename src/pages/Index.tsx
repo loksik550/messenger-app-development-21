@@ -865,15 +865,16 @@ export default function Index() {
             onOpenFavorites={openSavedChat}
             onOpenInvite={() => openOverlay(setShowInvite)}
             onOpenPayments={() => openOverlay(setShowPayments)}
-          />
-        ) : view === "settings" ? (
-          <SettingsPanel
             onLogout={logout}
-            onBack={() => setView("profile")}
             onDeleteAccount={() => setShowAccountDelete(true)}
             onOpenPrivacyPolicy={() => setShowPrivacyPolicy(true)}
             onOpenTerms={() => setShowTerms(true)}
             onOpenHelp={() => setShowHelp(true)}
+          />
+        ) : view === "settings" ? (
+          <SettingsPanel
+            currentUser={currentUser}
+            onBack={() => setView("profile")}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8 animate-fade-in">

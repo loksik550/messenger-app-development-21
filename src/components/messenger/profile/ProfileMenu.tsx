@@ -4,6 +4,7 @@ import { native } from "@/lib/native";
 import { type User, type IconName } from "@/lib/api";
 import { useT } from "@/hooks/useT";
 import { useSupportUnread } from "@/hooks/useSupportUnread";
+import { APP_VERSION } from "@/lib/version";
 
 const MyStickersPanel = lazy(() => import("@/components/messenger/MyStickersPanel"));
 
@@ -24,6 +25,11 @@ export interface ProfileMenuActions {
   onOpenCalls?: () => void;
   onOpenFavorites?: () => void;
   onOpenInvite?: () => void;
+  onLogout?: () => void;
+  onDeleteAccount?: () => void;
+  onOpenHelp?: () => void;
+  onOpenPrivacyPolicy?: () => void;
+  onOpenTerms?: () => void;
 }
 
 interface Props extends ProfileMenuActions {
@@ -40,6 +46,7 @@ export function ProfileMenu({
   onOpenWallet, onOpenProSettings, onOpenSupport,
   onOpenPrivacy, onOpenNotifications, onOpenAppearance,
   onOpenVerification, onOpenPromo, onOpenCalls, onOpenFavorites, onOpenInvite,
+  onLogout, onDeleteAccount, onOpenHelp, onOpenPrivacyPolicy, onOpenTerms,
 }: Props) {
   const { t: tr } = useT();
   const [showMyStickers, setShowMyStickers] = useState(false);
@@ -74,8 +81,8 @@ export function ProfileMenu({
       title: "Настройки",
       rows: [
         !!onOpenNotifications && { icon: "Bell", label: tr("nav.notifications"), sub: "Звуки, вибрация, тихие часы", action: onOpenNotifications, color: "#ef4444" },
-        !!onOpenPrivacy && { icon: "Shield", label: "Безопасность и приватность", sub: "PIN-код, кто видит, устройства", action: onOpenPrivacy, color: "#22c55e" },
-        { icon: "Lock", label: "Шифрование", sub: "Исчезающие сообщения", action: onSettings, color: "#64748b" },
+        { icon: "ShieldCheck", label: "Безопасность", sub: "PIN-код, биометрия, шифрование", action: onSettings, color: "#22c55e" },
+        !!onOpenPrivacy && { icon: "EyeOff", label: "Приватность", sub: "Кто видит номер, фото, «в сети»; устройства", action: onOpenPrivacy, color: "#0ea5e9" },
         !!onOpenAppearance && { icon: "Palette", label: tr("nav.appearance"), sub: "Темы, обои, шрифт", action: onOpenAppearance, color: "#ec4899" },
       ],
     },
@@ -90,10 +97,13 @@ export function ProfileMenu({
     {
       title: "Помощь",
       rows: [
+        !!onOpenHelp && { icon: "CircleHelp", label: "Частые вопросы", sub: "Ответы на популярные вопросы", action: onOpenHelp, color: "#14b8a6" },
         !!onOpenSupport && {
           icon: "LifeBuoy", label: "Поддержка Nova", color: "#a855f7", action: onOpenSupport, badge: supportUnread, alert: supportUnread > 0,
           sub: supportUnread > 0 ? (supportUnread === 1 ? "Новый ответ от поддержки" : "Новые ответы от поддержки") : "Вопросы, ошибки, идеи",
         },
+        !!onOpenPrivacyPolicy && { icon: "FileText", label: "Политика конфиденциальности", action: onOpenPrivacyPolicy, color: "#64748b" },
+        !!onOpenTerms && { icon: "ScrollText", label: "Пользовательское соглашение", action: onOpenTerms, color: "#64748b" },
       ],
     },
   ];
@@ -151,6 +161,23 @@ export function ProfileMenu({
           </div>
         );
       })}
+
+      <div className="space-y-2 pt-1">
+        {onLogout && (
+          <button onClick={onLogout} className="w-full glass rounded-2xl px-3.5 py-3 flex items-center gap-3 hover:bg-red-500/10 transition text-left">
+            <div className="w-8 h-8 rounded-lg bg-red-500/15 flex items-center justify-center flex-shrink-0">
+              <Icon name="LogOut" size={17} className="text-red-400" />
+            </div>
+            <span className="text-sm font-medium text-red-400">Выйти из аккаунта</span>
+          </button>
+        )}
+        {onDeleteAccount && (
+          <button onClick={onDeleteAccount} className="w-full py-2 text-xs text-red-400/70 hover:text-red-400 transition">
+            Удалить аккаунт
+          </button>
+        )}
+        <div className="text-center text-[11px] text-muted-foreground/60 select-none">Nova {APP_VERSION}</div>
+      </div>
     </div>
     </>
   );

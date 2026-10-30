@@ -1,14 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { myDeviceFingerprint } from "@/lib/e2e";
 import Icon from "@/components/ui/icon";
-import { api, type User, type IconName } from "@/lib/api";
+import { api, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
-import { useSettingsSounds } from "@/components/messenger/settings/useSettingsSounds";
-import { SoundsSection } from "@/components/messenger/settings/SoundsSection";
 import { PinDialog, type PinFlow } from "@/components/messenger/settings/PinDialog";
 import { LoginEventsList, type LoginEvent } from "@/components/messenger/settings/LoginEventsList";
-import { NotificationsInfo } from "@/components/messenger/settings/NotificationsInfo";
-import { SettingsActions } from "@/components/messenger/settings/SettingsActions";
 import { VkLinkRow } from "@/components/messenger/settings/VkLinkRow";
 import { saveFile } from "@/lib/saveFile";
 
@@ -29,21 +25,11 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 export function SettingsPanel({
-  onLogout,
   onBack,
   currentUser,
-  onDeleteAccount,
-  onOpenPrivacyPolicy,
-  onOpenTerms,
-  onOpenHelp,
 }: {
-  onLogout: () => void;
   onBack?: () => void;
   currentUser?: User;
-  onDeleteAccount?: () => void;
-  onOpenPrivacyPolicy?: () => void;
-  onOpenTerms?: () => void;
-  onOpenHelp?: () => void;
 }) {
   useEdgeSwipeBack(onBack);
   const readBool = (k: string, def: boolean) => {
@@ -54,23 +40,6 @@ export function SettingsPanel({
 
   const [twofa, setTwofa] = useState(() => Boolean(localStorage.getItem("nova_sec_pin")));
   const [biometric, setBiometric] = useState(() => Boolean(localStorage.getItem("nova_sec_bio_cred")));
-  const [notifications, setNotifications] = useState(() => currentUser?.notify_messages ?? readBool("nova_sec_notifications", true));
-  const [msgPreview, setMsgPreview] = useState(() => currentUser?.notify_preview ?? readBool("nova_sec_msg_preview", true));
-  const saveServer = (field: "notify_messages" | "notify_groups" | "notify_preview", value: boolean) => {
-    if (currentUser?.id) api("update_user_settings", { [field]: value }, currentUser.id).catch(() => { /* ignore */ });
-  };
-  const toggleNotifications = () => setNotifications(v => {
-    const next = !v;
-    saveServer("notify_messages", next);
-    saveServer("notify_groups", next);
-    return next;
-  });
-  const toggleMsgPreview = () => setMsgPreview(v => {
-    const next = !v;
-    saveServer("notify_preview", next);
-    return next;
-  });
-
   // Оповещения о входе с нового устройства — хранятся на сервере
   const [loginAlerts, setLoginAlerts] = useState(() => readBool("nova_sec_login_alerts", true));
   const [loginEvents, setLoginEvents] = useState<LoginEvent[]>([]);
@@ -114,15 +83,10 @@ export function SettingsPanel({
     if (userId) myDeviceFingerprint(userId).then(setE2eFp).catch(() => { /* ignore */ });
   }, [userId]);
 
-  const sounds = useSettingsSounds();
-  const { pushPerm, requestPushPerm } = sounds;
-
   const [pinFlow, setPinFlow] = useState<null | PinFlow>(null);
 
 
   useEffect(() => { writeBool("nova_sec_biometric", biometric && Boolean(localStorage.getItem("nova_sec_bio_cred"))); }, [biometric]);
-  useEffect(() => { writeBool("nova_sec_notifications", notifications); }, [notifications]);
-  useEffect(() => { writeBool("nova_sec_msg_preview", msgPreview); }, [msgPreview]);
 
   const toggle2FA = () => {
     if (twofa) setPinFlow({ step: "verify", value: "" });
@@ -254,94 +218,122 @@ export function SettingsPanel({
     }
   };
 
+  const [showE2e, setShowE2e] = useState(false);
+
+  const Group = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-1.5">{title}</div>
+      <div className="glass rounded-2xl overflow-hidden [&>*+*]:border-t [&>*+*]:border-white/[0.06]">{children}</div>
+    </div>
+  );
+  const RowIcon = ({ icon, color }: { icon: string; color: string }) => (
+    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color }}>
+      <Icon name={icon} fallback="Circle" size={17} className="text-white" />
+    </div>
+  );
+  const ToggleRow = ({ icon, color, label, sub, on, onToggle }: { icon: string; color: string; label: string; sub: string; on: boolean; onToggle: () => void }) => (
+    <div className="flex items-center gap-3 px-3.5 py-3">
+      <RowIcon icon={icon} color={color} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium truncate">{label}</div>
+        <div className="text-xs text-muted-foreground truncate">{sub}</div>
+      </div>
+      <Toggle on={on} onToggle={onToggle} />
+    </div>
+  );
+  const LinkRow = ({ icon, color, label, sub, onClick, right }: { icon: string; color: string; label: string; sub?: string; onClick?: () => void; right?: React.ReactNode }) => (
+    <button type="button" onClick={onClick} className="w-full flex items-center gap-3 px-3.5 py-3 hover:bg-white/5 active:bg-white/8 transition text-left disabled:opacity-80">
+      <RowIcon icon={icon} color={color} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium truncate">{label}</div>
+        {sub && <div className="text-xs text-muted-foreground truncate">{sub}</div>}
+      </div>
+      {right ?? <Icon name="ChevronRight" size={16} className="text-muted-foreground flex-shrink-0" />}
+    </button>
+  );
+
   return (
     <div className="flex flex-col h-full animate-fade-in overflow-y-auto">
-      <div className="px-4 pt-4 pb-4 flex items-start gap-2" style={{ paddingTop: "calc(1rem + env(safe-area-inset-top))" }}>
+      <div className="px-4 pb-4 flex items-center gap-2" style={{ paddingTop: "calc(1rem + env(safe-area-inset-top))" }}>
         {onBack && (
-          <button onClick={onBack} className="md:hidden p-2 -ml-2 rounded-xl hover:bg-white/8 transition-colors flex-shrink-0">
+          <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-white/8 transition-colors flex-shrink-0" aria-label="Назад">
             <Icon name="ChevronLeft" size={20} />
           </button>
         )}
         <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold mb-1">Безопасность</h2>
-          <p className="text-sm text-muted-foreground">Управление защитой аккаунта</p>
+          <h2 className="text-xl font-bold">Безопасность</h2>
+          <p className="text-sm text-muted-foreground">Защита аккаунта и входа</p>
         </div>
       </div>
 
-      <div className="mx-4 mb-4 glass rounded-2xl p-4 border border-emerald-500/25">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-            <Icon name="Lock" size={20} className="text-emerald-400" />
-          </div>
-          <div className="min-w-0">
-            <div className="font-semibold text-sm flex items-center gap-2">
-              Сквозное шифрование
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">ВКЛ</span>
+      <div className="px-4 space-y-5" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom) + 80px)" }}>
+        <div className="glass rounded-2xl p-4 border border-emerald-500/25">
+          <button type="button" onClick={() => setShowE2e(v => !v)} className="w-full flex items-center gap-3 text-left">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+              <Icon name="Lock" size={20} className="text-emerald-400" />
             </div>
-            <div className="text-xs text-emerald-400">Личные чаты · всегда включено</div>
-          </div>
-        </div>
-        <div className="text-xs text-muted-foreground leading-relaxed space-y-1.5">
-          <p>Текст личных сообщений шифруется на вашем устройстве и читается только на устройствах собеседника и ваших. Сервер Nova хранит лишь шифр — ни мы, ни кто-либо ещё прочитать его не может.</p>
-          <p>Ключи создаются на устройстве и не покидают его. Каждое сообщение подписано, поэтому подделку или подмену видно сразу. Сверить ключи с собеседником можно в чате: нажмите «Зашифровано» под именем.</p>
-          <p className="text-muted-foreground/70">Не шифруются: группы и каналы, фото и файлы, звонки (они защищены при передаче DTLS-SRTP), а также переписка с ботами и аккаунтом Nova.</p>
-        </div>
-        {e2eFp && (
-          <div className="mt-3 pt-3 border-t border-white/5 text-[11px] text-muted-foreground">
-            Отпечаток ключа этого устройства: <span className="font-mono text-foreground/80">{e2eFp}</span>
-          </div>
-        )}
-      </div>
-
-      <div className="px-4 space-y-2 pb-6">
-        {[
-          { icon: "KeyRound", label: "PIN-код на вход", sub: twofa ? "PIN установлен — спросим при открытии" : "Код при открытии приложения", state: twofa, toggle: toggle2FA },
-          { icon: "Fingerprint", label: "Биометрия", sub: biometric ? "Включена — вход по отпечатку или лицу" : "Вход по отпечатку или лицу", state: biometric, toggle: toggleBiometric },
-          { icon: "Bell", label: "Уведомления", sub: "Показывать оповещения", state: notifications, toggle: toggleNotifications },
-          { icon: "Eye", label: "Предпросмотр сообщений", sub: "Текст в уведомлениях", state: msgPreview, toggle: toggleMsgPreview },
-          { icon: "ShieldAlert", label: "Оповещать о входах", sub: devicesCount > 1 ? `Ваших устройств: ${devicesCount}` : "Новое устройство в аккаунте", state: loginAlerts, toggle: toggleLoginAlerts },
-        ].map((item, i) => (
-          <div key={item.icon} className={`flex items-center gap-3 px-4 py-3 glass rounded-2xl animate-fade-in stagger-${Math.min(i + 1, 5)}`}>
-            <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
-              <Icon name={item.icon as IconName} size={18} className="text-violet-400" />
-            </div>
-            <div className="flex-1 min-w-0 overflow-hidden">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium truncate">{item.label}</span>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-sm flex items-center gap-2">
+                Сквозное шифрование
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">ВКЛ</span>
               </div>
-              <div className="text-xs text-muted-foreground truncate">{item.sub}</div>
+              <div className="text-xs text-emerald-400">Личные чаты защищены всегда</div>
             </div>
-            <Toggle on={item.state} onToggle={item.toggle} />
-          </div>
-        ))}
+            <Icon name={showE2e ? "ChevronUp" : "ChevronDown"} size={16} className="text-muted-foreground flex-shrink-0" />
+          </button>
+          {showE2e && (
+            <div className="text-xs text-muted-foreground leading-relaxed space-y-1.5 mt-3">
+              <p>Текст личных сообщений шифруется на вашем устройстве и читается только у вас и собеседника. Сервер Nova хранит лишь шифр — прочитать его не может никто.</p>
+              <p>Сверить ключи с собеседником можно в чате: нажмите «Зашифровано» под именем.</p>
+              <p className="text-muted-foreground/70">Не шифруются сквозным шифрованием: группы и каналы, фото и файлы. Звонки защищены при передаче.</p>
+              {e2eFp && (
+                <p className="pt-2 border-t border-white/5 text-[11px]">
+                  Отпечаток ключа этого устройства: <span className="font-mono text-foreground/80">{e2eFp}</span>
+                </p>
+              )}
+            </div>
+          )}
+        </div>
 
-        {currentUser && <VkLinkRow userId={currentUser.id} />}
-
-        {loginEvents.length > 0 && (
-          <LoginEventsList loginEvents={loginEvents} showLogins={showLogins} setShowLogins={setShowLogins} />
-        )}
+        <Group title="Вход в приложение">
+          <ToggleRow icon="KeyRound" color="#f59e0b" label="PIN-код" sub={twofa ? "Спросим при открытии приложения" : "Код при открытии приложения"} on={twofa} onToggle={toggle2FA} />
+          <ToggleRow icon="Fingerprint" color="#22c55e" label="Биометрия" sub={biometric ? "Вход по отпечатку или лицу" : "Нужен включённый PIN-код"} on={biometric} onToggle={toggleBiometric} />
+        </Group>
 
         {bioError && (
-          <div className="px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-sm text-red-400 animate-fade-in flex items-center gap-2">
+          <div className="px-4 py-3 -mt-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-sm text-red-400 animate-fade-in flex items-center gap-2">
             <Icon name="TriangleAlert" size={16} className="flex-shrink-0" />
             {bioError}
           </div>
         )}
 
-        <NotificationsInfo notifications={notifications} msgPreview={msgPreview} pushPerm={pushPerm} requestPushPerm={requestPushPerm} />
+        <Group title="Защита аккаунта">
+          <ToggleRow icon="ShieldAlert" color="#ef4444" label="Оповещать о входах" sub={devicesCount > 1 ? `Ваших устройств: ${devicesCount}` : "Если войдут с нового устройства"} on={loginAlerts} onToggle={toggleLoginAlerts} />
+        </Group>
 
-        <SoundsSection sounds={sounds} />
+        {loginEvents.length > 0 && (
+          <div className="-mt-2">
+            <LoginEventsList loginEvents={loginEvents} showLogins={showLogins} setShowLogins={setShowLogins} />
+          </div>
+        )}
 
-        <SettingsActions
-          exportBackup={exportBackup}
-          backupBusy={backupBusy}
-          backupProgress={backupProgress}
-          onLogout={onLogout}
-          onDeleteAccount={onDeleteAccount}
-          onOpenPrivacyPolicy={onOpenPrivacyPolicy}
-          onOpenTerms={onOpenTerms}
-          onOpenHelp={onOpenHelp}
-        />
+        {currentUser && (
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-1.5">Способы входа</div>
+            <VkLinkRow userId={currentUser.id} />
+          </div>
+        )}
+
+        <Group title="Данные">
+          <LinkRow
+            icon={backupProgress === "Готово" ? "Check" : "Download"}
+            color="#10b981"
+            label="Резервная копия чатов"
+            sub={backupProgress || "Сохранить переписку в файл"}
+            onClick={exportBackup}
+            right={backupBusy ? <div className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" /> : undefined}
+          />
+        </Group>
       </div>
 
       {pinFlow && (

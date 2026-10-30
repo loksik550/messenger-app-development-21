@@ -3,6 +3,8 @@ import Icon from "@/components/ui/icon";
 import { api, subscribeToPush, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
+import { useSettingsSounds } from "@/components/messenger/settings/useSettingsSounds";
+import { SoundsSection } from "@/components/messenger/settings/SoundsSection";
 
 export default function NotificationsPanel({
   currentUser, onClose, onUserUpdate,
@@ -15,7 +17,7 @@ export default function NotificationsPanel({
   const [grp, setGrp] = useState<boolean>(currentUser.notify_groups ?? true);
   const [calls, setCalls] = useState<boolean>(currentUser.notify_calls ?? true);
   const [vibr, setVibr] = useState<boolean>(currentUser.notify_vibration ?? true);
-  const [sound, setSound] = useState<string>(currentUser.notify_sound || "default");
+  const sounds = useSettingsSounds();
   const [qFrom, setQFrom] = useState<number | null>(currentUser.quiet_hours_from ?? null);
   const [qTo, setQTo] = useState<number | null>(currentUser.quiet_hours_to ?? null);
 
@@ -97,23 +99,7 @@ export default function NotificationsPanel({
         <Toggle label="Звонки" icon="Phone" color="text-emerald-400" value={calls} onChange={v => { setCalls(v); update("notify_calls", v); }} />
         <Toggle label="Вибрация" icon="Vibrate" color="text-amber-400" value={vibr} onChange={v => { setVibr(v); update("notify_vibration", v); }} />
 
-        <div className="glass rounded-2xl p-4">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon name="Music" size={20} className="text-pink-400" />
-            <div className="font-semibold text-sm flex-1">Звук</div>
-          </div>
-          <div className="grid grid-cols-3 gap-1">
-            {(["default", "soft", "loud", "none"] as const).map(s => (
-              <button
-                key={s}
-                onClick={() => { setSound(s); update("notify_sound", s); }}
-                className={`py-2 rounded-xl text-xs font-semibold ${sound === s ? "grad-primary text-white" : "glass text-muted-foreground"}`}
-              >
-                {s === "default" ? "Стандарт" : s === "soft" ? "Тихий" : s === "loud" ? "Громкий" : "Без звука"}
-              </button>
-            ))}
-          </div>
-        </div>
+        <SoundsSection sounds={sounds} />
 
         <div className="glass rounded-2xl p-4">
           <div className="flex items-center gap-3 mb-3">

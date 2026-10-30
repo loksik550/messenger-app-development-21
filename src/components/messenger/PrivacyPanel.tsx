@@ -3,7 +3,6 @@ import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { useT } from "@/hooks/useT";
-import { VkLinkRow } from "@/components/messenger/settings/VkLinkRow";
 
 type Vis = "everyone" | "contacts" | "nobody";
 
@@ -30,13 +29,6 @@ export default function PrivacyPanel({
   const [photoVis, setPhotoVis] = useState<Vis>((currentUser.profile_photo_visibility as Vis) || "everyone");
   const [phoneVis, setPhoneVis] = useState<Vis>((currentUser.phone_visibility as Vis) || "contacts");
 
-  // App lock
-  const [lockEnabled, setLockEnabled] = useState<boolean>(currentUser.app_lock_enabled ?? false);
-  const [pinDialog, setPinDialog] = useState<"set" | "off" | null>(null);
-  const [pin, setPin] = useState("");
-  const [pin2, setPin2] = useState("");
-  const [busy, setBusy] = useState(false);
-
   // Sessions
   const [sessions, setSessions] = useState<{ id: number; device_name: string; device_info: string; ip_addr: string; last_active_at: number; revoked: boolean }[]>([]);
 
@@ -50,27 +42,6 @@ export default function PrivacyPanel({
       if (Array.isArray(d?.sessions)) setSessions(d.sessions);
     });
   }, [currentUser.id]);
-
-  const setupPin = async () => {
-    if (pin.length < 4 || pin !== pin2) { alert("PIN должен быть 4-8 цифр и совпадать"); return; }
-    setBusy(true);
-    const r = await api("set_app_lock", { pin, enabled: true }, currentUser.id);
-    setBusy(false);
-    if (r?.error) { alert(r.error); return; }
-    setLockEnabled(true);
-    onUserUpdate({ ...currentUser, app_lock_enabled: true } as User);
-    setPinDialog(null); setPin(""); setPin2("");
-    alert("Защита кодом включена");
-  };
-
-  const turnOffLock = async () => {
-    setBusy(true);
-    await api("set_app_lock", { enabled: false }, currentUser.id);
-    setBusy(false);
-    setLockEnabled(false);
-    onUserUpdate({ ...currentUser, app_lock_enabled: false } as User);
-    setPinDialog(null);
-  };
 
   const revokeAll = async () => {
     if (!confirm("Выйти со всех устройств кроме этого?")) return;
@@ -125,27 +96,6 @@ export default function PrivacyPanel({
         <VisRow label="Кому видно фото профиля" value={photoVis} onChange={(v) => { setPhotoVis(v); update("profile_photo_visibility", v); }} />
         <VisRow label="Кому виден номер телефона" sub="«Только контакты» — самый рекомендуемый вариант" value={phoneVis} onChange={(v) => { setPhoneVis(v); update("phone_visibility", v); }} />
 
-        <VkLinkRow userId={currentUser.id} />
-
-        {/* App Lock */}
-        <div className="glass rounded-2xl p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <Icon name="Lock" size={20} className="text-amber-400" />
-            <div className="flex-1">
-              <div className="font-semibold text-sm">Код-пароль</div>
-              <p className="text-[11px] text-muted-foreground">PIN на вход в приложение</p>
-            </div>
-            <span className={`text-xs font-bold ${lockEnabled ? "text-emerald-400" : "text-muted-foreground"}`}>
-              {lockEnabled ? "Вкл" : "Выкл"}
-            </span>
-          </div>
-          {lockEnabled ? (
-            <button onClick={turnOffLock} disabled={busy} className="w-full py-2 rounded-xl bg-red-500/15 text-red-300 text-sm font-semibold">Отключить защиту</button>
-          ) : (
-            <button onClick={() => setPinDialog("set")} className="w-full py-2 rounded-xl grad-primary text-white text-sm font-semibold">Установить PIN</button>
-          )}
-        </div>
-
         {/* Sessions */}
         <div className="glass rounded-2xl p-4">
           <div className="flex items-center gap-3 mb-3">
@@ -184,30 +134,6 @@ export default function PrivacyPanel({
         </div>
       </div>
 
-      {pinDialog === "set" && (
-        <div className="fixed inset-0 z-[270] bg-black/60 backdrop-blur flex items-center justify-center p-4" onClick={() => setPinDialog(null)}>
-          <div className="glass-strong rounded-3xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-base mb-3">Новый PIN</h3>
-            <input
-              type="password" inputMode="numeric" maxLength={8}
-              value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
-              placeholder="4-8 цифр"
-              className="w-full glass rounded-xl px-4 py-3 text-center text-lg tracking-widest mb-2"
-              autoFocus
-            />
-            <input
-              type="password" inputMode="numeric" maxLength={8}
-              value={pin2} onChange={e => setPin2(e.target.value.replace(/\D/g, ""))}
-              placeholder="Повторите"
-              className="w-full glass rounded-xl px-4 py-3 text-center text-lg tracking-widest mb-3"
-            />
-            <div className="flex gap-2">
-              <button onClick={() => setPinDialog(null)} className="flex-1 glass rounded-xl py-2 text-sm">Отмена</button>
-              <button onClick={setupPin} disabled={busy || pin.length < 4 || pin !== pin2} className="flex-1 grad-primary text-white rounded-xl py-2 text-sm font-bold disabled:opacity-50">Сохранить</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

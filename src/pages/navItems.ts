@@ -12,5 +12,4 @@ export const NAV_ITEMS: NavItem[] = [
   { tab: "contacts", icon: "BookUser", labelKey: "nav.contacts" },
   { tab: "shop", icon: "ShoppingBag", labelKey: "nav.shop" },
   { tab: "profile", icon: "User", labelKey: "nav.profile" },
-  { tab: "settings", icon: "Shield", labelKey: "profile.security" },
 ];
