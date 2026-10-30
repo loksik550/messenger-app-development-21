@@ -119,7 +119,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE), avatar_video_url, app_icon"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE), avatar_video_url, app_icon, profile_bg"
 
 
 
@@ -203,13 +203,13 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
                           WHERE c.user_id = u.id AND c.contact_id = %s
                             AND (c.name_override IS NULL OR c.name_override <> 'DELETED')),
                    COALESCE(u.pro_until, 0), u.emoji_status, u.name_color, COALESCE(u.incognito, FALSE),
-                   u.avatar_video_url
+                   u.avatar_video_url, u.profile_bg
             FROM {SCHEMA}.users u WHERE u.id IN ({in_ids})""",
         (int(viewer_id),),
     )
     out = {}
     now_ts = int(time.time())
-    for uid, ph, photo, seen, receipts, is_contact, pro_until, emoji, color, incognito, avatar_video in cur.fetchall():
+    for uid, ph, photo, seen, receipts, is_contact, pro_until, emoji, color, incognito, avatar_video, profile_bg in cur.fetchall():
         def allowed(v):
             if uid == int(viewer_id):
                 return True
@@ -223,15 +223,30 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
             "emoji_status": emoji if is_pro else None,
             "name_color": color if is_pro else None,
             "avatar_video_url": avatar_video if (is_pro and allowed(photo)) else None,
+            "profile_bg": _bg_visible(profile_bg, is_pro) if allowed(photo) else None,
         }
     return out
+
+
+PROFILE_BG_PRESETS = {"aurora", "sunset", "ocean", "forest", "rose", "space", "gold", "mono"}
+
+
+def _bg_visible(bg, is_pro: bool):
+    """Фон профиля: готовые фоны — всем, своё фото (ссылка) — только с Pro."""
+    if not bg:
+        return None
+    if bg in PROFILE_BG_PRESETS:
+        return bg
+    if bg.startswith("https://cdn.poehali.dev/") and is_pro:
+        return bg
+    return None
 
 
 def _pro_fields(pv: dict, uid) -> dict:
     """Публичные Pro-поля пользователя для показа другим."""
     d = pv.get(uid) or {}
     return {"is_pro": bool(d.get("pro")), "emoji_status": d.get("emoji_status"), "name_color": d.get("name_color"),
-            "avatar_video_url": d.get("avatar_video_url")}
+            "avatar_video_url": d.get("avatar_video_url"), "profile_bg": d.get("profile_bg")}
 
 
 def _receipts_on(cur, user_id: int) -> bool:
@@ -302,6 +317,7 @@ def serialize_user(row):
         "read_receipts_enabled": bool(row[35]) if len(row) > 35 else True,
         "avatar_video_url": (row[36] if len(row) > 36 and row[36] and bool(row[9]) and int(row[9]) > int(time.time()) else None),
         "app_icon": (row[37] if len(row) > 37 and row[37] and bool(row[9]) and int(row[9]) > int(time.time()) else "classic"),
+        "profile_bg": _bg_visible(row[38] if len(row) > 38 else None, bool(row[9]) and int(row[9] or 0) > int(time.time())),
     }
 
 
@@ -3138,6 +3154,23 @@ def _handle(event: dict, context) -> dict:
                     return err("Видео-аватар доступен с Nova Pro", 402)
             sets.append("avatar_video_url = %s")
             vals.append(av)
+        if "profile_bg" in body:
+            bg = body.get("profile_bg") or None
+            if bg is not None:
+                if not isinstance(bg, str) or len(bg) > 500:
+                    conn.close()
+                    return err("Неверный фон")
+                if bg not in PROFILE_BG_PRESETS:
+                    if not bg.startswith("https://cdn.poehali.dev/"):
+                        conn.close()
+                        return err("Неверный фон")
+                    cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+                    _pu4 = cur.fetchone()
+                    if not _pu4 or int(_pu4[0] or 0) <= int(time.time()):
+                        conn.close()
+                        return err("Своё фото на фон доступно с Nova Pro", 402)
+            sets.append("profile_bg = %s")
+            vals.append(bg)
         if "avatar_url" in body:
             avatar_url = body.get("avatar_url") or None
             if avatar_url is not None and not isinstance(avatar_url, str):

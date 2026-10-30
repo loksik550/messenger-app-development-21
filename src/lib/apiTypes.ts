@@ -117,6 +117,7 @@ export interface Chat {
   emojiStatus?: string | null;
   nameColor?: string | null;
   avatarVideo?: string | null;
+  profileBg?: string | null;
 }
 
 // "был в сети N назад" / "в сети" по unix-времени last_seen
@@ -128,6 +129,7 @@ export interface User {
   avatar_url?: string;
   avatar_video_url?: string | null;
   app_icon?: string;
+  profile_bg?: string | null;
   last_seen?: number;
   about?: string | null;
   gender?: "male" | "female" | null;

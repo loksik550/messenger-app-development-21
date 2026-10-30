@@ -4,6 +4,7 @@ import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { applyTheme, getStoredTheme, getStoredFontSize } from "@/lib/theme";
 import { BirthdayPickerModal } from "@/components/messenger/BirthdayPickerModal";
 import { ProfileHeader } from "@/components/messenger/profile/ProfileHeader";
+import ProfileBgPicker from "@/components/messenger/profile/ProfileBgPicker";
 import { ProfileMenu, type ProfileMenuActions } from "@/components/messenger/profile/ProfileMenu";
 import { parseBd } from "@/components/messenger/profileUtils";
 
@@ -27,6 +28,7 @@ export function ProfilePanel({ currentUser, onUserUpdate, onBack, chatsCount = 0
   const [editingAbout, setEditingAbout] = useState(false);
   const [aboutDraft, setAboutDraft] = useState(currentUser.about || "");
   const [savingAbout, setSavingAbout] = useState(false);
+  const [bgPicker, setBgPicker] = useState(false);
 
   const saveAbout = async () => {
     setSavingAbout(true);
@@ -213,7 +215,16 @@ export function ProfilePanel({ currentUser, onUserUpdate, onBack, chatsCount = 0
         onVideoFile={onVideoFile}
         removeVideo={removeVideo}
         onOpenPro={actions.onOpenPro}
+        onPickBg={() => setBgPicker(true)}
       />
+      {bgPicker && (
+        <ProfileBgPicker
+          currentUser={currentUser}
+          onUserUpdate={onUserUpdate}
+          onClose={() => setBgPicker(false)}
+          onOpenPro={() => { setBgPicker(false); actions.onOpenPro?.(); }}
+        />
+      )}
 
       <ProfileMenu
         {...actions}

@@ -1,6 +1,7 @@
 import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
 import { type User, type IconName } from "@/lib/api";
+import ProfileBackdrop from "@/components/messenger/profile/ProfileBackdrop";
 import { formatBirthdate, calcAge, parseBd, formatPhone } from "@/components/messenger/profileUtils";
 
 const MAX_ABOUT_LEN = 200;
@@ -36,6 +37,7 @@ export function ProfileHeader({
   onVideoFile,
   removeVideo,
   onOpenPro,
+  onPickBg,
 }: {
   currentUser: User;
   onBack?: () => void;
@@ -67,6 +69,7 @@ export function ProfileHeader({
   onVideoFile?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   removeVideo?: () => void;
   onOpenPro?: () => void;
+  onPickBg?: () => void;
 }) {
   return (
     <>
@@ -79,6 +82,16 @@ export function ProfileHeader({
         </div>
       )}
       <div className="relative px-6 pt-4 pb-6 text-center">
+        <ProfileBackdrop bg={currentUser.profile_bg} />
+        {onPickBg && (
+          <button
+            onClick={onPickBg}
+            className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-black/40 backdrop-blur border border-white/15 text-white hover:bg-black/55"
+          >
+            <Icon name="Paintbrush" fallback="Palette" size={13} />
+            Фон
+          </button>
+        )}
         <div className="relative inline-block mb-4">
           <div className="w-24 h-24 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-4xl font-bold text-white overflow-hidden animate-pulse-glow">
             {currentUser.avatar_video_url ? (
