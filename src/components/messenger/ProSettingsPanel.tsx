@@ -162,68 +162,6 @@ export default function ProSettingsPanel({ currentUser, onClose, onUserUpdate, o
           </button>
         </div>
 
-        {/* Приватность — кто может писать */}
-        <div>
-          <h3 className="flex items-center gap-2 font-semibold mb-2 text-sm">
-            <Icon name="MessageSquareLock" size={15} className="text-emerald-400" fallback="Lock" />
-            Кто может писать сообщения
-          </h3>
-          <div className="space-y-1">
-            {[
-              { v: "everyone", label: "Все", icon: "Globe", sub: "Любой пользователь Nova" },
-              { v: "contacts", label: "Только контакты", icon: "BookUser", sub: "Сообщения от незнакомцев скрыты" },
-              { v: "nobody", label: "Никто", icon: "Lock", sub: "Полная блокировка незнакомцев" },
-            ].map(opt => (
-              <button key={opt.v}
-                onClick={() => update({ who_can_message: opt.v as "everyone" | "contacts" | "nobody" })}
-                className={`w-full flex items-center gap-3 p-3 rounded-2xl transition ${
-                  (currentUser.who_can_message || "everyone") === opt.v
-                    ? "bg-emerald-500/15 ring-1 ring-emerald-400/40"
-                    : "bg-white/5 hover:bg-white/10"
-                }`}>
-                <Icon name={opt.icon} size={16} className="text-emerald-400" />
-                <div className="flex-1 text-left">
-                  <div className="text-sm font-medium">{opt.label}</div>
-                  <div className="text-xs text-muted-foreground">{opt.sub}</div>
-                </div>
-                {(currentUser.who_can_message || "everyone") === opt.v && (
-                  <Icon name="Check" size={16} className="text-emerald-400" />
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Приватность — кто может звонить */}
-        <div>
-          <h3 className="flex items-center gap-2 font-semibold mb-2 text-sm">
-            <Icon name="PhoneOff" size={15} className="text-rose-400" />
-            Кто может звонить
-          </h3>
-          <div className="space-y-1">
-            {[
-              { v: "everyone", label: "Все", icon: "Globe" },
-              { v: "contacts", label: "Только контакты", icon: "BookUser" },
-              { v: "nobody", label: "Никто", icon: "PhoneOff" },
-            ].map(opt => (
-              <button key={opt.v}
-                onClick={() => update({ who_can_call: opt.v as "everyone" | "contacts" | "nobody" })}
-                className={`w-full flex items-center gap-3 p-3 rounded-2xl transition ${
-                  (currentUser.who_can_call || "everyone") === opt.v
-                    ? "bg-rose-500/15 ring-1 ring-rose-400/40"
-                    : "bg-white/5 hover:bg-white/10"
-                }`}>
-                <Icon name={opt.icon} size={16} className="text-rose-400" />
-                <div className="flex-1 text-left">
-                  <div className="text-sm font-medium">{opt.label}</div>
-                </div>
-                {(currentUser.who_can_call || "everyone") === opt.v && (
-                  <Icon name="Check" size={16} className="text-rose-400" />
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

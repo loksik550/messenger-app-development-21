@@ -11,7 +11,7 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-6 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[320] bg-black/60 flex items-center justify-center p-6 animate-fade-in" onClick={onClose}>
       <div className="glass-strong rounded-2xl p-5 max-w-sm w-full animate-scale-in" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-semibold mb-2">{confirm.title}</h3>
         <p className="text-sm text-muted-foreground mb-4">{confirm.text}</p>

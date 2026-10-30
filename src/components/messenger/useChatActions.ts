@@ -45,12 +45,14 @@ export function useChatActions({ chat, currentUser, onBack, onChatUpdated, onCha
     if (!chat.partner_id) return;
     setConfirm({
       title: "Заблокировать пользователя?",
-      text: `${chat.name} больше не сможет писать вам сообщения. Чат скроется из списка.`,
+      text: `${chat.name} больше не сможет писать и звонить вам. Разблокировать можно в профиле собеседника или в «Приватности».`,
       danger: true,
       action: async () => {
-        await api("block_user", { target_user_id: chat.partner_id }, currentUser.id);
-        onChatDeleted?.();
-        onBack();
+        const r = await api("block_user", { target_user_id: chat.partner_id }, currentUser.id).catch(() => null);
+        if (r && !r.error) {
+          window.dispatchEvent(new CustomEvent("nova:blocks-changed", { detail: { userId: chat.partner_id, blocked: true } }));
+          onChatDeleted?.();
+        }
       },
     });
   };

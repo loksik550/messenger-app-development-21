@@ -428,7 +428,14 @@ export function useCallConnection({ currentUser, remoteUserId, callId, isIncomin
     startPolling();
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await sendSignal("offer", { sdp: offer.sdp, type: offer.type });
+    const r = await api("call_signal", { call_id: callId, to_user_id: remoteUserId, type: "offer", payload: { sdp: offer.sdp, type: offer.type } }, currentUser.id).catch(() => null);
+    if (r?.error) {
+      endedRef.current = true;
+      setMediaError(r.error);
+      stopDialTone();
+      setState("ended");
+      setTimeout(() => { cleanup(); onClose(); }, 2800);
+    }
   };
 
   // Принимающий: создаёт PC, ждёт offer (polling сам обработает и ответит)

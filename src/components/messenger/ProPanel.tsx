@@ -31,7 +31,6 @@ const FEATURES = [
   { icon: "Crown", text: "Эмодзи-статус и цветной ник", color: "#a78bfa" },
   { icon: "Eye", text: "Инкогнито (скрыть «в сети»)", color: "#818cf8" },
   { icon: "Image", text: "Файлы до 4 ГБ", color: "#60a5fa" },
-  { icon: "Lock", text: "Контроль входящих", color: "#38bdf8" },
   { icon: "Zap", text: "Без рекламы", color: "#22d3ee" },
   { icon: "Headphones", text: "Приоритетная поддержка", color: "#34d399" },
   { icon: "Palette", text: "Эксклюзивные темы", color: "#facc15" },

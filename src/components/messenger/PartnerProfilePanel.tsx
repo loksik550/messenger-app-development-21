@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { type Chat, type IconName, api, getCallAvatar, setCallAvatar, clearCallAvatar, fileToCallAvatar, formatLastSeen } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatAtoms";
@@ -40,6 +40,35 @@ export default function PartnerProfilePanel({
   const [comment, setComment] = useState("");
   const [toast, setToast] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [blocked, setBlocked] = useState<boolean | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
+
+  useEffect(() => {
+    if (!chat.partner_id) return;
+    let alive = true;
+    api("is_blocked", { target_user_id: chat.partner_id }, currentUserId)
+      .then(r => { if (alive && r && typeof r.blocked === "boolean") setBlocked(r.blocked); })
+      .catch(() => null);
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ userId?: number; blocked?: boolean }>).detail;
+      if (d && d.userId === chat.partner_id && typeof d.blocked === "boolean") setBlocked(d.blocked);
+    };
+    window.addEventListener("nova:blocks-changed", on);
+    return () => { alive = false; window.removeEventListener("nova:blocks-changed", on); };
+  }, [chat.partner_id, currentUserId]);
+
+  const unblock = async () => {
+    if (!chat.partner_id) return;
+    setBlockBusy(true);
+    const r = await api("unblock_user", { target_user_id: chat.partner_id }, currentUserId).catch(() => null);
+    setBlockBusy(false);
+    if (r && !r.error) {
+      setBlocked(false);
+      window.dispatchEvent(new CustomEvent("nova:blocks-changed", { detail: { userId: chat.partner_id, blocked: false } }));
+      setToast(`${chat.name} разблокирован(а)`);
+      setTimeout(() => setToast(""), 2500);
+    }
+  };
   const callAvatarFileRef = useRef<HTMLInputElement | null>(null);
   const [callAvatar, setCallAvatarState] = useState<string | null>(() => chat.partner_id ? getCallAvatar(chat.partner_id) : null);
 
@@ -194,7 +223,11 @@ export default function PartnerProfilePanel({
             </>
           )}
           <div className="h-px bg-white/5 ml-12" />
-          <Row icon="Ban" label={t("partner.block")} red onClick={() => { onClose(); onBlock(); }} />
+          {blocked ? (
+            <Row icon="ShieldCheck" label={blockBusy ? "Разблокируем..." : "Разблокировать"} hint="Пользователь заблокирован" disabled={blockBusy} onClick={unblock} />
+          ) : (
+            <Row icon="Ban" label="Заблокировать" red onClick={() => onBlock()} />
+          )}
         </div>
       </div>
 

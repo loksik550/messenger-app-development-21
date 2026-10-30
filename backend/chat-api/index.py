@@ -98,7 +98,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE)"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE)"
 
 
 
@@ -200,6 +200,31 @@ def _receipts_on(cur, user_id: int) -> bool:
     return bool(r[0]) if r else True
 
 
+def _inbound_denied(cur, sender_id: int, recipient_id: int, kind: str):
+    """Проверка «кто может мне писать/звонить» получателя. Возвращает текст ошибки или None."""
+    if not sender_id or not recipient_id or int(sender_id) == int(recipient_id):
+        return None
+    col = "who_can_message" if kind == "message" else "who_can_call"
+    cur.execute(f"SELECT COALESCE({col}, 'everyone'), COALESCE(is_service, FALSE) FROM {SCHEMA}.users WHERE id = %s", (int(recipient_id),))
+    r = cur.fetchone()
+    if not r or r[1]:
+        return None
+    mode = r[0]
+    if mode == "everyone":
+        return None
+    if mode == "contacts":
+        cur.execute(
+            f"""SELECT 1 FROM {SCHEMA}.contacts WHERE user_id = %s AND contact_id = %s
+                AND (name_override IS NULL OR name_override <> 'DELETED')""",
+            (int(recipient_id), int(sender_id)),
+        )
+        if cur.fetchone():
+            return None
+    if kind == "message":
+        return "Пользователь принимает сообщения только от своих контактов" if mode == "contacts" else "Пользователь ограничил входящие сообщения"
+    return "Пользователь принимает звонки только от своих контактов" if mode == "contacts" else "Пользователь ограничил входящие звонки"
+
+
 def serialize_user(row):
     if not row:
         return None
@@ -231,6 +256,10 @@ def serialize_user(row):
         "notify_messages": bool(row[29]) if len(row) > 29 else True,
         "notify_groups": bool(row[30]) if len(row) > 30 else True,
         "notify_preview": bool(row[31]) if len(row) > 31 else True,
+        "phone_visibility": row[32] if len(row) > 32 and row[32] else "contacts",
+        "profile_photo_visibility": row[33] if len(row) > 33 and row[33] else "everyone",
+        "last_seen_visibility": row[34] if len(row) > 34 and row[34] else "everyone",
+        "read_receipts_enabled": bool(row[35]) if len(row) > 35 else True,
     }
 
 
@@ -2477,6 +2506,10 @@ def _handle(event: dict, context) -> dict:
             if cur.fetchone():
                 conn.close()
                 return err("Вы не можете писать этому пользователю", 403)
+            _deny = _inbound_denied(cur, int(user_id), int(_pr[0]), "message")
+            if _deny:
+                conn.close()
+                return err(_deny, 403)
 
         # Валидация sticker: юзер должен владеть паком
         if kind == "sticker":
@@ -3483,6 +3516,18 @@ def _handle(event: dict, context) -> dict:
         if not call_id or not to_user_id or not signal_type:
             conn.close()
             return err("Укажите call_id, to_user_id, type")
+        if signal_type == "offer":
+            cur.execute(
+                f"SELECT 1 FROM {SCHEMA}.user_blocks WHERE blocker_id=%s AND blocked_id=%s",
+                (int(to_user_id), int(user_id)),
+            )
+            if cur.fetchone():
+                conn.close()
+                return err("Пользователь недоступен для звонков", 403)
+            _deny = _inbound_denied(cur, int(user_id), int(to_user_id), "call")
+            if _deny:
+                conn.close()
+                return err(_deny, 403)
         now = int(time.time())
         cur.execute(
             f"""INSERT INTO {SCHEMA}.call_signals (call_id, from_user_id, to_user_id, type, payload, created_at)
@@ -4116,6 +4161,20 @@ def _handle(event: dict, context) -> dict:
         if not _is_chat_member(cur, int(target_chat_id), int(user_id)):
             conn.close()
             return err("Нет доступа к чату", 403)
+        cur.execute(
+            f"SELECT CASE WHEN user1_id = %s THEN user2_id ELSE user1_id END FROM {SCHEMA}.chats WHERE id = %s",
+            (int(user_id), int(target_chat_id)),
+        )
+        _fp = cur.fetchone()
+        if _fp and _fp[0] and int(_fp[0]) != int(user_id):
+            cur.execute(f"SELECT 1 FROM {SCHEMA}.user_blocks WHERE blocker_id=%s AND blocked_id=%s", (int(_fp[0]), int(user_id)))
+            if cur.fetchone():
+                conn.close()
+                return err("Вы не можете писать этому пользователю", 403)
+            _deny = _inbound_denied(cur, int(user_id), int(_fp[0]), "message")
+            if _deny:
+                conn.close()
+                return err(_deny, 403)
         cur.execute(
             f"""SELECT m.text, m.media_type, m.media_url, m.image_url, m.file_name, m.file_size,
                        m.duration, m.sender_id, u.name, m.enc

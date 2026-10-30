@@ -40,6 +40,8 @@ export default function PrivacyPanel({
   const [lastSeen, setLastSeen] = useState<Vis>((currentUser.last_seen_visibility as Vis) || "everyone");
   const [photoVis, setPhotoVis] = useState<Vis>((currentUser.profile_photo_visibility as Vis) || "everyone");
   const [phoneVis, setPhoneVis] = useState<Vis>((currentUser.phone_visibility as Vis) || "contacts");
+  const [whoMsg, setWhoMsg] = useState<Vis>((currentUser.who_can_message as Vis) || "everyone");
+  const [whoCall, setWhoCall] = useState<Vis>((currentUser.who_can_call as Vis) || "everyone");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showSessions, setShowSessions] = useState(false);
   const [blocked, setBlocked] = useState<Blocked[] | null>(null);
@@ -49,6 +51,20 @@ export default function PrivacyPanel({
   const update = async (field: string, value: unknown) => {
     onUserUpdate({ ...currentUser, [field]: value } as User);
     await api("update_user_settings", { [field]: value }, currentUser.id).catch(() => null);
+  };
+
+  useEffect(() => {
+    setReadReceipts(currentUser.read_receipts_enabled ?? true);
+    setLastSeen((currentUser.last_seen_visibility as Vis) || "everyone");
+    setPhotoVis((currentUser.profile_photo_visibility as Vis) || "everyone");
+    setPhoneVis((currentUser.phone_visibility as Vis) || "contacts");
+    setWhoMsg((currentUser.who_can_message as Vis) || "everyone");
+    setWhoCall((currentUser.who_can_call as Vis) || "everyone");
+  }, [currentUser.read_receipts_enabled, currentUser.last_seen_visibility, currentUser.profile_photo_visibility, currentUser.phone_visibility, currentUser.who_can_message, currentUser.who_can_call]);
+
+  const updateProfile = async (field: "who_can_message" | "who_can_call", value: Vis) => {
+    onUserUpdate({ ...currentUser, [field]: value } as User);
+    await api("update_profile", { [field]: value }, currentUser.id).catch(() => null);
   };
 
   useEffect(() => {
@@ -97,6 +113,13 @@ export default function PrivacyPanel({
             onChange={(v) => { setPhotoVis(v); update("profile_photo_visibility", v); }} />
           <SettingsChoiceRow icon="Clock" color="#3b82f6" label="Был(а) в сети" value={lastSeen} options={VIS_OPTIONS}
             onChange={(v) => { setLastSeen(v); update("last_seen_visibility", v); }} />
+        </SettingsGroup>
+
+        <SettingsGroup title="Кто может связаться" footer="Заблокированные не могут писать и звонить в любом случае.">
+          <SettingsChoiceRow icon="MessageCircle" color="#8b5cf6" label="Писать мне" value={whoMsg} options={VIS_OPTIONS}
+            onChange={(v) => { setWhoMsg(v); updateProfile("who_can_message", v); }} />
+          <SettingsChoiceRow icon="PhoneCall" color="#10b981" label="Звонить мне" value={whoCall} options={VIS_OPTIONS}
+            onChange={(v) => { setWhoCall(v); updateProfile("who_can_call", v); }} />
         </SettingsGroup>
 
         <SettingsGroup title="Сообщения" footer="Если выключить, вы тоже перестанете видеть, прочитали ли ваши сообщения — как в WhatsApp.">

@@ -92,6 +92,7 @@ export async function flush() {
           return;
         } else {
           save(load().map(i => i.localId === item.localId ? { ...i, failed: true } : i));
+          if (data?.error) window.dispatchEvent(new CustomEvent("nova:send-denied", { detail: { chatId: item.chatId, error: data.error } }));
         }
       }
     } while (again);
