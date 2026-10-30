@@ -5679,6 +5679,12 @@ def _handle(event: dict, context) -> dict:
         return err("Неизвестное действие")
 
     # ── Магазин: значки и эффекты имени ──────────────────────────────────────
+    if action == "app_version":
+        cur.execute(f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key IN ('app_latest_version', 'app_whats_new')")
+        kv = {k: v for k, v in cur.fetchall()}
+        conn.close()
+        return ok({"latest": kv.get("app_latest_version") or "", "whats_new": kv.get("app_whats_new") or ""})
+
     if action == "test_themes_access":
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")

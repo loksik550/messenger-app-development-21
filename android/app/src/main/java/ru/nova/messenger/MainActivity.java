@@ -21,11 +21,11 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(NovaCallPlugin.class);
         registerPlugin(NovaAppIconPlugin.class);
+        registerPlugin(NovaUpdatePlugin.class);
         super.onCreate(savedInstanceState);
         NovaMessagingService.ensureChannels(this);
         handleCallIntent(getIntent());
         savePushTap(getIntent());
-        NovaAutoUpdate.check(this);
     }
 
     // Принятый звонок показываем поверх экрана блокировки:
