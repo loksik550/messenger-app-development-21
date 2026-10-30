@@ -28,15 +28,11 @@ const FALLBACK_PLANS: PlanItem[] = [
 ];
 
 const FEATURES = [
-  { icon: "Crown", text: "Эмодзи-статус и цветной ник", color: "#a78bfa" },
-  { icon: "Eye", text: "Инкогнито (скрыть «в сети»)", color: "#818cf8" },
-  { icon: "Image", text: "Файлы до 4 ГБ", color: "#60a5fa" },
-  { icon: "Zap", text: "Без рекламы", color: "#22d3ee" },
-  { icon: "Headphones", text: "Приоритетная поддержка", color: "#34d399" },
-  { icon: "Palette", text: "Эксклюзивные темы", color: "#facc15" },
-  { icon: "Users", text: "Звонки до 50 человек", color: "#fb923c" },
-  { icon: "Sparkles", text: "Авторские стикеры", color: "#f472b6" },
-  { icon: "Volume2", text: "Свои рингтоны", color: "#e879f9" },
+  { icon: "BadgeCheck", text: "Значок Pro рядом с именем", color: "#a78bfa" },
+  { icon: "Smile", text: "Эмодзи-статус, видный всем", color: "#f472b6" },
+  { icon: "Brush", text: "Цветной ник в чатах и группах", color: "#818cf8" },
+  { icon: "EyeOff", text: "Инкогнито — скрыть «в сети» ото всех", color: "#60a5fa" },
+  { icon: "Palette", text: "4 эксклюзивные темы оформления", color: "#facc15" },
 ];
 
 const SPARKS = Array.from({ length: 46 }, (_, i) => {
@@ -251,7 +247,10 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
             <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white/10">
               <Icon name="Plus" size={17} />
             </div>
-            <span className="text-[15px]">Скоро — ещё больше функций</span>
+            <div className="min-w-0">
+              <div className="text-[15px]">Скоро — ещё больше функций</div>
+              <div className="text-xs text-white/40">Большие файлы, расшифровка голосовых и другое</div>
+            </div>
           </div>
         </div>
 

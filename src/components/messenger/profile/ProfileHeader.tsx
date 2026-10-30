@@ -1,3 +1,4 @@
+import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
 import { type User, type IconName } from "@/lib/api";
 import { formatBirthdate, calcAge, parseBd, formatPhone } from "@/components/messenger/profileUtils";
@@ -121,7 +122,7 @@ export function ProfileHeader({
           </div>
         ) : (
           <div className="flex items-center justify-center gap-2 mt-1">
-            <h2 className="text-2xl font-bold" style={{ color: currentUser.name_color || undefined }}>{currentUser.name}</h2>
+            <h2 className="text-2xl font-bold min-w-0"><ProName name={currentUser.name} isPro={!!currentUser.is_pro} emoji={currentUser.emoji_status} color={currentUser.name_color} badgeSize={18} /></h2>
             {currentUser.verified && (
               <Icon name="BadgeCheck" size={20} className="text-sky-400 flex-shrink-0" />
             )}

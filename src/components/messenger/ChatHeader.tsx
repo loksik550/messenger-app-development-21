@@ -1,3 +1,4 @@
+import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
 import { useOnline } from "@/lib/connection";
 import { type Chat, getCallAvatar, formatLastSeen } from "@/lib/api";
@@ -90,7 +91,7 @@ export function ChatHeader({
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-foreground truncate">{chat.name}</span>
+            <ProName name={chat.name} isPro={chat.isPro} emoji={chat.emojiStatus} color={chat.nameColor} className="font-semibold text-foreground" />
             {chat.verified && <Icon name="BadgeCheck" size={14} className="text-sky-400 flex-shrink-0" />}
             {chat.muted && <Icon name="BellOff" size={12} className="text-muted-foreground flex-shrink-0" />}
             {chat.pinned && <Icon name="Pin" size={12} className="text-violet-400 flex-shrink-0" />}

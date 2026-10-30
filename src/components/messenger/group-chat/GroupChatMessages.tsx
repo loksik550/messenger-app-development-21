@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
 import { useHoldDelegate } from "@/hooks/useHoldDelegate";
 import { Avatar } from "@/components/messenger/ChatAtoms";
@@ -107,7 +108,7 @@ export default function GroupChatMessages({
 
                   <div className={`max-w-[78%] flex flex-col ${msg.out ? "items-end" : "items-start"}`}>
                     {showName && (
-                      <span className="text-[11px] font-semibold text-violet-400 px-1 mb-0.5">{msg.sender_name}</span>
+                      <span className="text-[11px] font-semibold text-violet-400 px-1 mb-0.5 max-w-full"><ProName name={msg.sender_name || ""} isPro={msg.sender_pro} emoji={msg.sender_emoji} color={msg.sender_color} badgeSize={11} /></span>
                     )}
 
                     {msg.media_type ? (

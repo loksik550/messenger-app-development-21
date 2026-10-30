@@ -7,7 +7,7 @@ interface ChatRaw {
   id: number;
   last_message: string;
   last_message_at: number;
-  partner: { id: number; name: string; last_seen: number; avatar_url?: string | null; verified?: boolean; is_service?: boolean };
+  partner: { id: number; name: string; last_seen: number; avatar_url?: string | null; verified?: boolean; is_service?: boolean; is_pro?: boolean; emoji_status?: string | null; name_color?: string | null };
   unread: number;
   last_mine?: boolean;
   last_read?: boolean;
@@ -37,6 +37,9 @@ export function mapChat(c: ChatRaw): Chat {
     verified: c.partner.verified || false,
     readOnly: c.partner.is_service || false,
     archived: c.archived || false,
+    isPro: !!c.partner.is_pro,
+    emojiStatus: c.partner.emoji_status || null,
+    nameColor: c.partner.name_color || null,
   };
 }
 

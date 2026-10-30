@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
+import ProName from "@/components/messenger/ProName";
 import { api, type User } from "@/lib/api";
 import { Avatar } from "@/components/messenger/ChatComponents";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
@@ -63,7 +64,7 @@ export function SearchPanel({ users, currentUser, onStartChat, onBack }: { users
           <button key={u.id} onClick={() => onStartChat(u.id, { name: u.name, avatar_url: u.avatar_url })} className={`w-full flex items-center gap-3 p-3 glass rounded-2xl hover:bg-white/8 transition-all animate-fade-in stagger-${Math.min(i + 1, 5)}`}>
             <Avatar label={u.name[0]?.toUpperCase() || "?"} id={u.id} online={currentUser.id !== u.id && Date.now() / 1000 - (u.last_seen || 0) < 60} />
             <div className="text-left">
-              <div className="font-semibold text-sm">{u.name}</div>
+              <div className="font-semibold text-sm"><ProName name={u.name} isPro={!!u.is_pro} emoji={u.emoji_status} color={u.name_color} badgeSize={12} /></div>
               {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}
               {u.nova_id && isIdSearch && <div className="text-xs text-violet-300 font-mono">ID {u.nova_id}</div>}
             </div>

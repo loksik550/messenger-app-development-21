@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { getDraft } from "@/lib/drafts";
+import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
 import { avatarGrad, getCallAvatar, type Chat } from "@/lib/api";
 import { MediaViewer } from "@/components/messenger/MediaViewer";
@@ -110,7 +111,7 @@ function ChatRow({ chat, selectedId, open, onOpenChange, onSelect, onToggleMute,
               <div className="flex items-center gap-1.5 min-w-0">
                 {chat.pinned && <Icon name="Pin" size={11} className="text-violet-400 flex-shrink-0" />}
                 {chat.group && <Icon name="Users" size={12} className="text-sky-400 flex-shrink-0" />}
-                <span className="font-semibold text-sm text-foreground truncate">{chat.name}</span>
+                <ProName name={chat.name} isPro={chat.isPro} emoji={chat.emojiStatus} color={chat.nameColor} className="font-semibold text-sm text-foreground" badgeSize={13} />
                 {chat.muted && <Icon name="BellOff" size={11} className="text-muted-foreground flex-shrink-0" />}
               </div>
               <span className="flex items-center gap-1 flex-shrink-0 ml-2">

@@ -7,6 +7,9 @@ export interface Contact {
   phone: string;
   avatar_url?: string;
   last_seen?: number;
+  is_pro?: boolean;
+  emoji_status?: string | null;
+  name_color?: string | null;
 }
 export type Tab = "chats" | "stories" | "contacts";
 export type IconName = string;
@@ -110,6 +113,9 @@ export interface Chat {
   partner_id?: number;
   readOnly?: boolean;
   lastSeen?: number;
+  isPro?: boolean;
+  emojiStatus?: string | null;
+  nameColor?: string | null;
 }
 
 // "был в сети N назад" / "в сети" по unix-времени last_seen
@@ -285,6 +291,9 @@ export interface GroupMessage {
   sender_id: number;
   sender_name: string;
   sender_avatar?: string | null;
+  sender_pro?: boolean;
+  sender_emoji?: string | null;
+  sender_color?: string | null;
   text: string;
   media_type?: "image" | "video" | "audio" | "file" | null;
   media_url?: string | null;

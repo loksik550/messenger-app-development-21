@@ -180,18 +180,34 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
                    COALESCE(u.read_receipts_enabled, TRUE),
                    EXISTS(SELECT 1 FROM {SCHEMA}.contacts c
                           WHERE c.user_id = u.id AND c.contact_id = %s
-                            AND (c.name_override IS NULL OR c.name_override <> 'DELETED'))
+                            AND (c.name_override IS NULL OR c.name_override <> 'DELETED')),
+                   COALESCE(u.pro_until, 0), u.emoji_status, u.name_color, COALESCE(u.incognito, FALSE)
             FROM {SCHEMA}.users u WHERE u.id IN ({in_ids})""",
         (int(viewer_id),),
     )
     out = {}
-    for uid, ph, photo, seen, receipts, is_contact in cur.fetchall():
+    now_ts = int(time.time())
+    for uid, ph, photo, seen, receipts, is_contact, pro_until, emoji, color, incognito in cur.fetchall():
         def allowed(v):
             if uid == int(viewer_id):
                 return True
             return v == "everyone" or (v == "contacts" and bool(is_contact))
-        out[uid] = {"phone": allowed(ph), "photo": allowed(photo), "seen": allowed(seen), "receipts": bool(receipts)}
+        is_pro = int(pro_until or 0) > now_ts
+        hide_seen = is_pro and bool(incognito) and uid != int(viewer_id)
+        out[uid] = {
+            "phone": allowed(ph), "photo": allowed(photo),
+            "seen": allowed(seen) and not hide_seen, "receipts": bool(receipts),
+            "pro": is_pro,
+            "emoji_status": emoji if is_pro else None,
+            "name_color": color if is_pro else None,
+        }
     return out
+
+
+def _pro_fields(pv: dict, uid) -> dict:
+    """Публичные Pro-поля пользователя для показа другим."""
+    d = pv.get(uid) or {}
+    return {"is_pro": bool(d.get("pro")), "emoji_status": d.get("emoji_status"), "name_color": d.get("name_color")}
 
 
 def _receipts_on(cur, user_id: int) -> bool:
@@ -1148,7 +1164,7 @@ def _handle(event: dict, context) -> dict:
                 "id": r[0], "name": r[1], "phone": None,
                 "avatar_url": r[3] if pv.get(r[0], {}).get("photo", True) else None,
                 "last_seen": 0 if (r[5] or not pv.get(r[0], {}).get("seen", True)) else r[4],
-                "emoji_status": r[6], "name_color": r[7], "nova_id": r[8], "by_id": True,
+                **_pro_fields(pv, r[0]), "nova_id": r[8], "by_id": True,
             } for r in rows]})
         if qdigits and len(qdigits) >= 10 and len(qdigits) == len(query.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")):
             if len(qdigits) == 10:
@@ -1178,7 +1194,7 @@ def _handle(event: dict, context) -> dict:
             "phone": (r[2] if qdigits and len(qdigits) >= 11 else None),
             "avatar_url": r[3] if pv.get(r[0], {}).get("photo", True) else None,
             "last_seen": 0 if (r[5] or not pv.get(r[0], {}).get("seen", True)) else r[4],
-            "emoji_status": r[6], "name_color": r[7],
+            **_pro_fields(pv, r[0]),
         } for r in rows]
         return ok({"users": users})
 
@@ -1267,7 +1283,8 @@ def _handle(event: dict, context) -> dict:
                         "avatar_url": r[6] if _pv(r[3], "photo") else None,
                         "last_seen": r[7] if _pv(r[3], "seen") else 0,
                         "verified": bool(r[14]) if len(r) > 14 else False,
-                        "is_service": bool(r[17]) if len(r) > 17 else False},
+                        "is_service": bool(r[17]) if len(r) > 17 else False,
+                        **_pro_fields(pv, r[3])},
             "unread": int(r[13] or 0),
             "last_mine": (r[15] == uid) if len(r) > 16 else False,
             "last_read": bool(r[16]) and my_receipts and _pv(r[3], "receipts") if len(r) > 16 and r[15] == uid else False,
@@ -3121,6 +3138,16 @@ def _handle(event: dict, context) -> dict:
                     conn.close()
                     return err("Неверная дата (YYYY-MM-DD)")
                 sets.append("birthdate = %s"); vals.append(bd_str)
+        _wants_pro = any(
+            k in body and body.get(k) not in (None, "", False)
+            for k in ("emoji_status", "name_color", "incognito")
+        )
+        if _wants_pro:
+            cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+            _pu = cur.fetchone()
+            if not _pu or int(_pu[0] or 0) <= int(time.time()):
+                conn.close()
+                return err("Эта возможность доступна с Nova Pro", 402)
         if "emoji_status" in body:
             es = body.get("emoji_status")
             if es is None or es == "":
@@ -3311,6 +3338,7 @@ def _handle(event: dict, context) -> dict:
             "id": r[0], "name": r[5] or r[1], "real_name": r[1], "phone": r[2],
             "avatar_url": r[3] if pv.get(r[0], {}).get("photo", True) else None,
             "last_seen": r[4] if pv.get(r[0], {}).get("seen", True) else 0,
+            **_pro_fields(pv, r[0]),
         } for r in rows]
         return ok({"contacts": contacts})
 
@@ -4384,6 +4412,9 @@ def _handle(event: dict, context) -> dict:
             messages.append({
                 "id": r[0], "sender_id": r[1], "sender_name": r[2],
                 "sender_avatar": r[3] if _gpv.get(r[1], {}).get("photo", True) else None, "text": r[4] or "",
+                "sender_pro": bool(_gpv.get(r[1], {}).get("pro")),
+                "sender_emoji": _gpv.get(r[1], {}).get("emoji_status"),
+                "sender_color": _gpv.get(r[1], {}).get("name_color"),
                 "media_type": r[5], "media_url": r[6],
                 "file_name": r[7], "file_size": r[8], "duration": r[9],
                 "reply_to_id": r[10], "created_at": r[11],
@@ -4657,7 +4688,7 @@ def _handle(event: dict, context) -> dict:
         members = [{"id": r[0], "name": r[1],
                     "avatar_url": r[2] if pv.get(r[0], {}).get("photo", True) else None,
                     "last_seen": r[3] if pv.get(r[0], {}).get("seen", True) else 0,
-                    "role": r[4], "joined_at": r[5]} for r in rows]
+                    "role": r[4], "joined_at": r[5], **_pro_fields(pv, r[0])} for r in rows]
         conn.close()
         return ok({"members": members})
 
