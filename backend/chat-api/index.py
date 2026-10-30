@@ -5684,8 +5684,12 @@ def _handle(event: dict, context) -> dict:
             conn.close(); return err("Нужен X-User-Id")
         cur.execute(f"SELECT 1 FROM {SCHEMA}.test_themes_access WHERE user_id = %s", (int(user_id),))
         allowed = cur.fetchone() is not None
+        skins = []
+        if allowed:
+            cur.execute(f"SELECT id, name, base_style, image_url, ticker FROM {SCHEMA}.test_skins WHERE active = TRUE ORDER BY sort_order, created_at")
+            skins = [{"id": r[0], "name": r[1], "base": r[2], "image": r[3], "ticker": r[4] or ""} for r in cur.fetchall()]
         conn.close()
-        return ok({"allowed": allowed})
+        return ok({"allowed": allowed, "skins": skins})
 
     if action in ("shop_catalog", "badge_buy", "badge_show", "effect_buy", "effect_set", "shop_user_badges"):
         if not user_id:

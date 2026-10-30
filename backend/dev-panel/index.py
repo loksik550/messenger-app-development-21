@@ -78,6 +78,7 @@ ACTION_PERMS = {
     "pro_features": "dashboard", "pro_features_save": "settings",
     "badges_admin": "dashboard", "badge_grant": "settings", "badge_revoke": "settings", "badge_update": "settings",
     "user_shop_badges": "users",
+    "test_skins_list": "dashboard", "test_skin_save": "settings", "test_skin_delete": "settings",
     "test_themes_list": "dashboard", "test_themes_grant": "settings", "test_themes_revoke": "settings",
     "nova_ids_list": "dashboard", "nova_id_check_admin": "dashboard",
     "nova_id_grant": "settings", "nova_ids_settings_save": "settings",
@@ -1905,6 +1906,60 @@ def _handler(event: dict, context) -> dict:
                 (now,),
             )
             return ok({"plans": plans, "active_subscriptions": cur.fetchone()[0]})
+
+        if action == "test_skins_list":
+            cur.execute(f"SELECT id, name, base_style, image_url, ticker, active, sort_order FROM {SCHEMA}.test_skins ORDER BY sort_order, created_at")
+            return ok({"skins": [{"id": r[0], "name": r[1], "base": r[2], "image": r[3], "ticker": r[4] or "", "active": bool(r[5]), "sort_order": r[6]} for r in cur.fetchall()]})
+
+        if action == "test_skin_save":
+            sid = re.sub(r"[^a-z0-9_-]", "", str(body.get("id") or "").lower())[:32]
+            name = str(body.get("name") or "").strip()[:40]
+            base = str(body.get("base") or "rain")
+            if base not in ("rain", "cyber", "sakura"):
+                return err("Неизвестный стиль")
+            ticker = str(body.get("ticker") or "").strip()[:600]
+            active = bool(body.get("active", True))
+            if not name:
+                return err("Укажите название темы")
+            image_url = str(body.get("image_url") or "").strip()
+            img_b64 = body.get("image_base64")
+            if img_b64:
+                import boto3
+                raw = base64.b64decode(str(img_b64).split(",")[-1])
+                if len(raw) > 6 * 1024 * 1024:
+                    return err("Картинка больше 6 МБ")
+                ctype = str(body.get("image_type") or "image/jpeg")
+                ext = {"image/png": "png", "image/webp": "webp"}.get(ctype, "jpg")
+                key = f"skins/{secrets.token_hex(8)}.{ext}"
+                s3 = boto3.client("s3", endpoint_url="https://bucket.poehali.dev",
+                                  aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"], aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
+                s3.put_object(Bucket="files", Key=key, Body=raw, ContentType=ctype)
+                image_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+            if not sid:
+                sid = "s" + secrets.token_hex(4)
+                if not image_url:
+                    return err("Загрузите картинку фона")
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.test_skins (id, name, base_style, image_url, ticker, active, sort_order, created_at) "
+                    f"VALUES (%s, %s, %s, %s, %s, %s, 100, %s)",
+                    (sid, name, base, image_url, ticker, active, int(time.time())),
+                )
+                audit(cur, admin, "test_skin_save", f"Новая тестовая тема «{name}»", ip)
+            else:
+                if image_url:
+                    cur.execute(f"UPDATE {SCHEMA}.test_skins SET name=%s, base_style=%s, ticker=%s, active=%s, image_url=%s WHERE id=%s", (name, base, ticker, active, image_url, sid))
+                else:
+                    cur.execute(f"UPDATE {SCHEMA}.test_skins SET name=%s, base_style=%s, ticker=%s, active=%s WHERE id=%s", (name, base, ticker, active, sid))
+                audit(cur, admin, "test_skin_save", f"Тестовая тема «{name}» изменена", ip)
+            return ok({"success": True, "id": sid})
+
+        if action == "test_skin_delete":
+            sid = str(body.get("id") or "")[:32]
+            cur.execute(f"DELETE FROM {SCHEMA}.test_skins WHERE id = %s RETURNING name", (sid,))
+            r = cur.fetchone()
+            if r:
+                audit(cur, admin, "test_skin_delete", f"Удалена тестовая тема «{r[0]}»", ip)
+            return ok({"success": True})
 
         if action == "test_themes_list":
             cur.execute(

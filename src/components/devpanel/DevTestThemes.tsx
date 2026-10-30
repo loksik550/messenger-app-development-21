@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { devApi } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
-import { SKINS } from "@/lib/skins";
+import DevSkinsEditor from "./DevSkinsEditor";
 
 interface Row { id: number; name: string | null; phone: string | null; created_at: number; admin_name: string | null }
 interface FoundUser { id: number; name: string; phone: string }
@@ -51,17 +51,10 @@ export default function DevTestThemes({ can }: { can: (p: string) => boolean }) 
     <div className="space-y-6 max-w-3xl">
       <div>
         <h2 className="text-2xl font-bold">Тестовые темы</h2>
-        <p className="text-sm text-slate-500">Новые оформления мессенджера. Видят только люди из списка — у них в профиле появится пункт «Тестовые темы».</p>
+        <p className="text-sm text-slate-500">Загружайте свои фоны, выбирайте стиль и бегущую строку. Видят только люди из списка — у них в профиле появится пункт «Тестовые темы».</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        {SKINS.map((s) => (
-          <div key={s.id} className="rounded-2xl overflow-hidden border border-white/10 bg-white/[0.03]">
-            <img src={s.preview} alt="" className="w-full aspect-[9/12] object-cover" />
-            <div className="p-2.5"><div className="text-sm font-semibold">{s.name}</div><div className="text-[11px] text-slate-500">{s.desc}</div></div>
-          </div>
-        ))}
-      </div>
+      <DevSkinsEditor editable={editable} />
 
       <div className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.04] p-5">
         <h3 className="font-bold mb-3">Кому показывать</h3>

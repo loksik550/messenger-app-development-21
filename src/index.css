@@ -767,9 +767,6 @@
 }
 
 /* ── Тестовые темы (скины) — доступ выдаётся в Dev-панели ─────────────── */
-:root.skin-rain { --skin-img: url("/themes/rain.webp"); }
-:root.skin-cyber { --skin-img: url("/themes/cyber.webp"); }
-:root.skin-sakura { --skin-img: url("/themes/sakura.webp"); }
 
 :root[class*="skin-"] .mesh-bg {
   background: var(--skin-img) center top / cover no-repeat, hsl(var(--background));
@@ -988,3 +985,11 @@
 @media (prefers-reduced-motion: reduce) {
   .name-fire, .name-rainbow, .name-snow { animation: none; }
 }
+
+/* Бегущая строка тестовых тем */
+.skin-ticker { color: hsl(var(--muted-foreground)); }
+.skin-ticker-track { display: inline-flex; animation: skin-ticker 28s linear infinite; }
+@keyframes skin-ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+:root.skin-cyber .skin-ticker { color: #e5e7eb; background: rgba(6,9,16,.9); border-color: rgba(255,255,255,.12); margin-top: -0.75rem; }
+:root.skin-cyber .skin-ticker-track span::first-letter { color: #fde047; }
+@media (prefers-reduced-motion: reduce) { .skin-ticker-track { animation-duration: 80s; } }

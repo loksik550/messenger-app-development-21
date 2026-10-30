@@ -53,6 +53,7 @@ import { reportAppVersion } from "@/lib/reportAppVersion";
 import { NAV_ITEMS } from "@/pages/navItems";
 import ShopPanel from "@/components/messenger/ShopPanel";
 import { useSkinAccess } from "@/hooks/useSkinAccess";
+import SkinTicker from "@/components/messenger/SkinTicker";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
 const LAZY_FALLBACK = (
@@ -582,6 +583,8 @@ export default function Index() {
             </button>
           ))}
         </div>
+
+        <SkinTicker />
 
         {/* Search bar */}
         <div className="flex items-center gap-2 mx-4 mb-2">

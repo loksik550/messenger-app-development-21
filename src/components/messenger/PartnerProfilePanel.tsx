@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import BadgeCollection from "@/components/messenger/BadgeCollection";
+import { profileBgStyle } from "@/lib/profileBg";
 import ProfileBackdrop from "@/components/messenger/profile/ProfileBackdrop";
 import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
@@ -161,11 +162,11 @@ export default function PartnerProfilePanel({
       </div>
 
       <div className="flex-1 overflow-y-auto max-w-md mx-auto w-full">
-        <div className="relative flex flex-col items-center py-8 px-4">
+        <div className={`relative flex flex-col items-center pb-8 px-4 ${profileBgStyle(chat.profileBg) ? "pt-24" : "pt-8"}`}>
           <ProfileBackdrop bg={chat.profileBg} />
           <div className="relative z-[1] flex flex-col items-center w-full">
           <Avatar label={chat.avatar} id={chat.id} size="xl" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} video={chat.avatarVideo} zoomable />
-          <h1 className="mt-4 text-xl font-bold text-foreground max-w-full px-4">
+          <h1 className={`${profileBgStyle(chat.profileBg) ? "mt-14" : "mt-4"} text-xl font-bold text-foreground max-w-full px-4`}>
             <ProName name={chat.name} isPro={chat.isPro} emoji={chat.emojiStatus} color={chat.nameColor} effect={chat.nameEffect} badges={chat.badges} userId={chat.partner_id} maxBadges={6} badgeSize={18} />
           </h1>
           {chat.isPro && <p className="text-[11px] font-semibold mt-1 bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">Подписчик Nova Pro</p>}

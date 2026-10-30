@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { type User, type IconName } from "@/lib/api";
 import ProfileBackdrop from "@/components/messenger/profile/ProfileBackdrop";
 import AvatarVideo from "@/components/messenger/AvatarVideo";
+import { profileBgStyle } from "@/lib/profileBg";
 import { useState } from "react";
 import { formatBirthdate, calcAge, parseBd, formatPhone } from "@/components/messenger/profileUtils";
 
@@ -74,6 +75,7 @@ export function ProfileHeader({
   onPickBg?: () => void;
 }) {
   const [avatarMenu, setAvatarMenu] = useState(false);
+  const hasBg = !!profileBgStyle(currentUser.profile_bg);
   return (
     <>
       {onBack && (
@@ -84,7 +86,7 @@ export function ProfileHeader({
           <span className="text-sm text-muted-foreground ml-1">Назад</span>
         </div>
       )}
-      <div className="relative px-6 pt-4 pb-6 text-center">
+      <div className={`relative px-6 pb-6 text-center ${hasBg ? "pt-24" : "pt-4"}`}>
         <ProfileBackdrop bg={currentUser.profile_bg} />
         {onPickBg && (
           <button
@@ -95,7 +97,7 @@ export function ProfileHeader({
             Фон
           </button>
         )}
-        <div className="relative z-[1] inline-block mb-5">
+        <div className={`relative z-[1] inline-block ${hasBg ? "mb-12" : "mb-5"}`}>
           <button
             type="button"
             onClick={() => setAvatarMenu(true)}

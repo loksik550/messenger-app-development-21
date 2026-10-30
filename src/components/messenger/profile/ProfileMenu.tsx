@@ -55,7 +55,7 @@ export function ProfileMenu({
   const [showMyStickers, setShowMyStickers] = useState(false);
   const [showSkins, setShowSkins] = useState(false);
   const [showBadges, setShowBadges] = useState(false);
-  const skinAccess = useSkinAccess(currentUser?.id);
+  const skinAccess = useSkinAccess(currentUser?.id).allowed;
   const supportUnread = useSupportUnread(currentUser?.id);
 
   const invite = async () => {
@@ -130,7 +130,7 @@ export function ProfileMenu({
     )}
     {showSkins && (
       <Suspense fallback={null}>
-        <TestThemesPanel onClose={() => setShowSkins(false)} />
+        <TestThemesPanel userId={currentUser.id} onClose={() => setShowSkins(false)} />
       </Suspense>
     )}
     <div className="grid grid-cols-2 gap-2 px-4 mb-5">
