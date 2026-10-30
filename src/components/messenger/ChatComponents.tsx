@@ -65,6 +65,32 @@ export function ChatWindow({
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [showDisappearing, setShowDisappearing] = useState(false);
   const [showE2E, setShowE2E] = useState(false);
+  const [iBlocked, setIBlocked] = useState(false);
+  const [unblocking, setUnblocking] = useState(false);
+  useEffect(() => {
+    setIBlocked(false);
+    if (!chat.partner_id || chat.saved || chat.group) return;
+    let alive = true;
+    api("is_blocked", { target_user_id: chat.partner_id }, currentUser.id)
+      .then(r => { if (alive && typeof r?.blocked === "boolean") setIBlocked(r.blocked); })
+      .catch(() => null);
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ userId?: number; blocked?: boolean }>).detail;
+      if (d && d.userId === chat.partner_id && typeof d.blocked === "boolean") setIBlocked(d.blocked);
+    };
+    window.addEventListener("nova:blocks-changed", on);
+    return () => { alive = false; window.removeEventListener("nova:blocks-changed", on); };
+  }, [chat.id, chat.partner_id, chat.saved, chat.group, currentUser.id]);
+  const unblockPartner = async () => {
+    if (!chat.partner_id) return;
+    setUnblocking(true);
+    const r = await api("unblock_user", { target_user_id: chat.partner_id }, currentUser.id).catch(() => null);
+    setUnblocking(false);
+    if (r && !r.error) {
+      setIBlocked(false);
+      window.dispatchEvent(new CustomEvent("nova:blocks-changed", { detail: { userId: chat.partner_id, blocked: false } }));
+    }
+  };
   const e2eSec = useChatSecurity(chat.id, currentUser.id, !chat.saved && !chat.group && chat.id > 0);
   const {
     pinnedMsg, setPinnedMsg,
@@ -352,6 +378,20 @@ export function ChatWindow({
         <div className="px-4 py-3 border-t border-white/5 text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           <Icon name="BellRing" size={13} className="text-violet-400" />
           Официальные уведомления Nova — ответить на них нельзя
+        </div>
+      ) : iBlocked ? (
+        <div className="px-4 pt-3 border-t border-white/5 flex flex-col items-center gap-2.5 animate-fade-in" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Icon name="Ban" size={13} className="text-red-400" />
+            Вы заблокировали этого пользователя
+          </div>
+          <button
+            onClick={unblockPartner}
+            disabled={unblocking}
+            className="w-full max-w-sm py-2.5 rounded-xl grad-primary text-white text-sm font-semibold disabled:opacity-60"
+          >
+            {unblocking ? "Разблокируем..." : "Разблокировать"}
+          </button>
         </div>
       ) : (
       <ChatInput

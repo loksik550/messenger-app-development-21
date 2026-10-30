@@ -831,6 +831,7 @@ export default function Index() {
             onChatDeleted={() => {
               setRealChats(prev => prev.filter(c => c.id !== selectedChat.id));
               setSelectedChat(null);
+              setShowSidebar(true);
             }}
             onUserUpdate={(u) => setCurrentUser(u)}
             onOpenFundraiser={(id) => setFundraiserView(id === -1 ? { mode: "create" } : { mode: "view", id })}

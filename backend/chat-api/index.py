@@ -1235,8 +1235,7 @@ def _handle(event: dict, context) -> dict:
                 LEFT JOIN {SCHEMA}.chat_settings cs
                     ON cs.chat_id = mc.id AND cs.user_id = %s
                 LEFT JOIN unread un ON un.chat_id = mc.id
-                WHERE u.id NOT IN (SELECT blocked_id FROM blocked)
-                  AND COALESCE(u.is_test, FALSE) = FALSE
+                WHERE COALESCE(u.is_test, FALSE) = FALSE
                   AND COALESCE(cs.archived, FALSE) = %s
                   AND NOT (COALESCE(cs.hidden, FALSE) AND COALESCE(mc.last_message_at, 0) <= COALESCE(cs.cleared_at, 0))
                 ORDER BY COALESCE(cs.pinned, FALSE) DESC,

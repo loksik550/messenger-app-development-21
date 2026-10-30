@@ -51,7 +51,6 @@ export function useChatActions({ chat, currentUser, onBack, onChatUpdated, onCha
         const r = await api("block_user", { target_user_id: chat.partner_id }, currentUser.id).catch(() => null);
         if (r && !r.error) {
           window.dispatchEvent(new CustomEvent("nova:blocks-changed", { detail: { userId: chat.partner_id, blocked: true } }));
-          onChatDeleted?.();
         }
       },
     });
