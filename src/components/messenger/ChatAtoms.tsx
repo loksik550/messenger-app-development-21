@@ -9,17 +9,19 @@ import SwipeRow, { swipeActions } from "@/components/messenger/SwipeRow";
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
-export function Avatar({ label, id, size = "md", online, src, zoomable }: { label: string; id: number; size?: "sm" | "md" | "lg" | "xl"; online?: boolean; src?: string | null; zoomable?: boolean }) {
+export function Avatar({ label, id, size = "md", online, src, zoomable, video }: { label: string; id: number; size?: "sm" | "md" | "lg" | "xl"; online?: boolean; src?: string | null; zoomable?: boolean; video?: string | null }) {
   const [open, setOpen] = useState(false);
   const sz = { sm: "w-9 h-9 text-sm", md: "w-11 h-11 text-base", lg: "w-14 h-14 text-xl", xl: "w-20 h-20 text-3xl" }[size];
-  const canZoom = zoomable && !!src;
+  const canZoom = zoomable && (!!src || !!video);
   return (
     <div className="relative flex-shrink-0">
       <div
-        className={`${sz} rounded-full bg-gradient-to-br ${avatarGrad(id)} flex items-center justify-center font-bold text-white overflow-hidden ${canZoom ? "cursor-pointer active:scale-95 transition-transform" : ""}`}
+        className={`${sz} rounded-full bg-gradient-to-br ${avatarGrad(id)} flex items-center justify-center font-bold text-white overflow-hidden ${canZoom ? "cursor-pointer active:scale-95 transition-transform" : ""} ${video ? "ring-2 ring-fuchsia-500/60" : ""}`}
         onClick={canZoom ? (e) => { e.stopPropagation(); setOpen(true); } : undefined}
       >
-        {src ? (
+        {video ? (
+          <video src={video} poster={src || undefined} autoPlay muted loop playsInline preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+        ) : src ? (
           <img src={src} alt={label} className="w-full h-full object-cover" />
         ) : (
           label
@@ -28,8 +30,8 @@ export function Avatar({ label, id, size = "md", online, src, zoomable }: { labe
       {online && (
         <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-[hsl(var(--background))] rounded-full" />
       )}
-      {open && src && (
-        <MediaViewer items={[{ url: src, type: "image" }]} onClose={() => setOpen(false)} />
+      {open && (video || src) && (
+        <MediaViewer items={[video ? { url: video, type: "video" } : { url: src as string, type: "image" }]} onClose={() => setOpen(false)} />
       )}
     </div>
   );
@@ -105,7 +107,7 @@ function ChatRow({ chat, selectedId, open, onOpenChange, onSelect, onToggleMute,
         onLongPress={() => setMenu(true)}
         className={`px-4 py-3 ${selectedId === chat.id ? "bg-white/8 glass" : "bg-[hsl(var(--background))] hover:bg-white/4"}`}
       >
-          <Avatar label={chat.avatar} id={chat.id} online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} />
+          <Avatar label={chat.avatar} id={chat.id} online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} video={chat.avatarVideo} />
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 min-w-0">

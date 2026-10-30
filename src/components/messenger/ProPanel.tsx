@@ -34,6 +34,8 @@ const FEATURES = [
   { icon: "EyeOff", text: "Инкогнито — скрыть «в сети» ото всех", color: "#60a5fa" },
   { icon: "Palette", text: "4 эксклюзивные темы оформления", color: "#facc15" },
   { icon: "FileUp", text: "Большие файлы", color: "#34d399" },
+  { icon: "Video", text: "Видео вместо фото профиля", color: "#e879f9" },
+  { icon: "Hash", text: "Красивый короткий ID (666, 7777)", color: "#fb923c" },
 ];
 
 const SPARKS = Array.from({ length: 46 }, (_, i) => {

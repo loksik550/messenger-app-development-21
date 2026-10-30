@@ -32,6 +32,10 @@ export function ProfileHeader({
   setBdMonth,
   setBdYear,
   setBdayPickerOpen,
+  videoInputRef,
+  onVideoFile,
+  removeVideo,
+  onOpenPro,
 }: {
   currentUser: User;
   onBack?: () => void;
@@ -59,6 +63,10 @@ export function ProfileHeader({
   setBdMonth: (v: number) => void;
   setBdYear: (v: number) => void;
   setBdayPickerOpen: (v: boolean) => void;
+  videoInputRef?: React.RefObject<HTMLInputElement | null>;
+  onVideoFile?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  removeVideo?: () => void;
+  onOpenPro?: () => void;
 }) {
   return (
     <>
@@ -73,7 +81,9 @@ export function ProfileHeader({
       <div className="relative px-6 pt-4 pb-6 text-center">
         <div className="relative inline-block mb-4">
           <div className="w-24 h-24 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-4xl font-bold text-white overflow-hidden animate-pulse-glow">
-            {currentUser.avatar_url ? (
+            {currentUser.avatar_video_url ? (
+              <video src={currentUser.avatar_video_url} poster={currentUser.avatar_url || undefined} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+            ) : currentUser.avatar_url ? (
               <img src={currentUser.avatar_url} alt={currentUser.name} className="w-full h-full object-cover" />
             ) : (
               currentUser.name[0]?.toUpperCase() || "Я"
@@ -102,7 +112,27 @@ export function ProfileHeader({
             </button>
           )}
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onAvatarFile} />
+          {videoInputRef && <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={onVideoFile} />}
         </div>
+        {videoInputRef && (
+          <div className="flex items-center justify-center gap-2 -mt-1 mb-3">
+            <button
+              onClick={() => (currentUser.is_pro ? videoInputRef.current?.click() : onOpenPro?.())}
+              disabled={uploadingAvatar}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)" }}
+            >
+              <Icon name={currentUser.is_pro ? "Video" : "Lock"} size={13} />
+              {currentUser.avatar_video_url ? "Сменить видео" : "Видео вместо фото"}
+              {!currentUser.is_pro && <span className="opacity-80">· Pro</span>}
+            </button>
+            {currentUser.avatar_video_url && (
+              <button onClick={removeVideo} disabled={uploadingAvatar} className="px-3 py-1.5 rounded-full text-xs glass text-muted-foreground hover:text-red-400">
+                Убрать видео
+              </button>
+            )}
+          </div>
+        )}
         {avatarError && <p className="text-red-400 text-xs mb-2">{avatarError}</p>}
         {editing ? (
           <div className="flex items-center justify-center gap-2 mt-1">
@@ -142,6 +172,14 @@ export function ProfileHeader({
             ID {currentUser.nova_id}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event("nova:open-nova-id"))}
+          className="mt-1 ml-1 inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+          style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)" }}
+        >
+          <Icon name="Sparkles" size={11} /> Красивый ID
+        </button>
         <div className="flex items-center justify-center gap-2 mt-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-emerald-400 text-xs font-medium">В сети</span>

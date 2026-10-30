@@ -87,7 +87,7 @@ export function ChatHeader({
             <Icon name="Bookmark" size={18} className="text-white" />
           </div>
         ) : (
-          <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} />
+          <Avatar label={chat.avatar} id={chat.id} size="md" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} video={chat.avatarVideo} />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">

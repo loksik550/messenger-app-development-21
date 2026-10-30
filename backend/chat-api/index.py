@@ -9,6 +9,7 @@ import urllib.error
 import threading
 import psycopg2
 import nova_auth
+import nova_ids
 import secrets as _secrets
 
 
@@ -98,7 +99,7 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE)"
+USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE), avatar_video_url"
 
 
 
@@ -181,13 +182,14 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
                    EXISTS(SELECT 1 FROM {SCHEMA}.contacts c
                           WHERE c.user_id = u.id AND c.contact_id = %s
                             AND (c.name_override IS NULL OR c.name_override <> 'DELETED')),
-                   COALESCE(u.pro_until, 0), u.emoji_status, u.name_color, COALESCE(u.incognito, FALSE)
+                   COALESCE(u.pro_until, 0), u.emoji_status, u.name_color, COALESCE(u.incognito, FALSE),
+                   u.avatar_video_url
             FROM {SCHEMA}.users u WHERE u.id IN ({in_ids})""",
         (int(viewer_id),),
     )
     out = {}
     now_ts = int(time.time())
-    for uid, ph, photo, seen, receipts, is_contact, pro_until, emoji, color, incognito in cur.fetchall():
+    for uid, ph, photo, seen, receipts, is_contact, pro_until, emoji, color, incognito, avatar_video in cur.fetchall():
         def allowed(v):
             if uid == int(viewer_id):
                 return True
@@ -200,6 +202,7 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
             "pro": is_pro,
             "emoji_status": emoji if is_pro else None,
             "name_color": color if is_pro else None,
+            "avatar_video_url": avatar_video if (is_pro and allowed(photo)) else None,
         }
     return out
 
@@ -207,7 +210,8 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
 def _pro_fields(pv: dict, uid) -> dict:
     """Публичные Pro-поля пользователя для показа другим."""
     d = pv.get(uid) or {}
-    return {"is_pro": bool(d.get("pro")), "emoji_status": d.get("emoji_status"), "name_color": d.get("name_color")}
+    return {"is_pro": bool(d.get("pro")), "emoji_status": d.get("emoji_status"), "name_color": d.get("name_color"),
+            "avatar_video_url": d.get("avatar_video_url")}
 
 
 def _receipts_on(cur, user_id: int) -> bool:
@@ -276,6 +280,7 @@ def serialize_user(row):
         "profile_photo_visibility": row[33] if len(row) > 33 and row[33] else "everyone",
         "last_seen_visibility": row[34] if len(row) > 34 and row[34] else "everyone",
         "read_receipts_enabled": bool(row[35]) if len(row) > 35 else True,
+        "avatar_video_url": (row[36] if len(row) > 36 and row[36] and bool(row[9]) and int(row[9]) > int(time.time()) else None),
     }
 
 
@@ -1151,7 +1156,8 @@ def _handle(event: dict, context) -> dict:
         exclude_id = int(user_id)
         qdigits = "".join(c for c in query if c.isdigit())
         id_query = query.lower().replace("id", "").replace("#", "").replace(" ", "").replace("-", "")
-        if len(id_query) == 8 and id_query.isdigit():
+        _is_id_q = id_query.isdigit() and 3 <= len(id_query) <= 8
+        if _is_id_q:
             cur.execute(
                 f"SELECT id, name, phone, avatar_url, last_seen, COALESCE(incognito, FALSE), emoji_status, name_color, nova_id FROM {SCHEMA}.users "
                 f"WHERE nova_id = %s AND id != %s AND COALESCE(is_test, FALSE) = FALSE AND COALESCE(is_service, FALSE) = FALSE AND COALESCE(is_bot, FALSE) = FALSE AND phone NOT LIKE 'deleted_%%' LIMIT 1",
@@ -3098,6 +3104,19 @@ def _handle(event: dict, context) -> dict:
                 return err("Имя слишком короткое")
             sets.append("name = %s")
             vals.append(new_name)
+        if "avatar_video_url" in body:
+            av = body.get("avatar_video_url") or None
+            if av is not None:
+                if not isinstance(av, str) or not av.startswith("https://cdn.poehali.dev/") or len(av) > 500:
+                    conn.close()
+                    return err("Неверная ссылка на видео")
+                cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+                _pu2 = cur.fetchone()
+                if not _pu2 or int(_pu2[0] or 0) <= int(time.time()):
+                    conn.close()
+                    return err("Видео-аватар доступен с Nova Pro", 402)
+            sets.append("avatar_video_url = %s")
+            vals.append(av)
         if "avatar_url" in body:
             avatar_url = body.get("avatar_url") or None
             if avatar_url is not None and not isinstance(avatar_url, str):
@@ -4415,6 +4434,7 @@ def _handle(event: dict, context) -> dict:
                 "sender_pro": bool(_gpv.get(r[1], {}).get("pro")),
                 "sender_emoji": _gpv.get(r[1], {}).get("emoji_status"),
                 "sender_color": _gpv.get(r[1], {}).get("name_color"),
+                "sender_avatar_video": _gpv.get(r[1], {}).get("avatar_video_url"),
                 "media_type": r[5], "media_url": r[6],
                 "file_name": r[7], "file_size": r[8], "duration": r[9],
                 "reply_to_id": r[10], "created_at": r[11],
@@ -5314,6 +5334,69 @@ def _handle(event: dict, context) -> dict:
         conn.commit()
         conn.close()
         return ok({"success": True, "granted_days": invited_days})
+
+    # ── Красивый короткий ID (Nova Pro) ──────────────────────────────────────
+    if action in ("nova_id_info", "nova_id_check", "nova_id_buy"):
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        uid = int(user_id)
+        cfg = nova_ids.load_config(cur, SCHEMA)
+        cur.execute(f"SELECT nova_id, COALESCE(pro_until, 0), COALESCE(lightning_balance, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
+        me = cur.fetchone()
+        if not me:
+            conn.close(); return err("Пользователь не найден", 404)
+        is_pro = int(me[1] or 0) > int(time.time())
+        if action == "nova_id_info":
+            cur.execute(
+                f"SELECT nova_id, method, created_at FROM {SCHEMA}.nova_id_purchases WHERE user_id = %s ORDER BY id DESC LIMIT 5",
+                (uid,),
+            )
+            hist = [{"nova_id": r[0], "method": r[1], "created_at": r[2]} for r in cur.fetchall()]
+            conn.close()
+            return ok({
+                "current": me[0], "is_pro": is_pro, "lightning": int(me[2] or 0), "enabled": cfg["enabled"],
+                "prices": {str(k): v for k, v in cfg["prices"].items()},
+                "beauty_mult": cfg["beauty_mult"], "min_len": nova_ids.MIN_LEN, "max_len": nova_ids.MAX_LEN,
+                "history": hist,
+            })
+        nid = nova_ids.normalize(body.get("nova_id"))
+        if action == "nova_id_check":
+            res = nova_ids.check(cur, SCHEMA, nid, uid, cfg)
+            if not res.get("available") and not res.get("mine") and nid.isdigit():
+                res["suggestions"] = nova_ids.suggest(cur, SCHEMA, nid[:nova_ids.MAX_LEN - 1] or nid, uid, cfg)
+            res["nova_id"] = nid
+            conn.close()
+            return ok(res)
+        # nova_id_buy (за Молнии)
+        if not cfg["enabled"]:
+            conn.close(); return err("Покупка ID временно отключена")
+        if not is_pro:
+            conn.close(); return err("Красивый ID доступен подписчикам Nova Pro", 402)
+        res = nova_ids.check(cur, SCHEMA, nid, uid, cfg)
+        if not res.get("available"):
+            conn.close(); return err(res.get("reason") or "ID недоступен", 409)
+        price = int(res["price"]["lightning"])
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET lightning_balance = COALESCE(lightning_balance,0) - %s "
+            f"WHERE id = %s AND COALESCE(lightning_balance,0) >= %s RETURNING lightning_balance",
+            (price, uid, price),
+        )
+        r = cur.fetchone()
+        if not r:
+            conn.close(); return err(f"Не хватает Молний: нужно {price} ⚡", 402)
+        new_lb = int(r[0])
+        try:
+            nova_ids.assign(cur, SCHEMA, uid, nid, "lightning", price_lightning=price)
+        except Exception:
+            cur.execute(f"UPDATE {SCHEMA}.users SET lightning_balance = COALESCE(lightning_balance,0) + %s WHERE id = %s", (price, uid))
+            conn.close(); return err("Этот ID только что заняли, Молнии возвращены", 409)
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.lightning_transactions (user_id, amount, kind, description, balance_after, created_at) "
+            f"VALUES (%s,%s,'spent',%s,%s,%s)",
+            (uid, -price, f"Красивый ID {nid}", new_lb, int(time.time())),
+        )
+        conn.close()
+        return ok({"success": True, "nova_id": nid, "lightning": new_lb})
 
     if action == "premium_plans":
         cur.execute(

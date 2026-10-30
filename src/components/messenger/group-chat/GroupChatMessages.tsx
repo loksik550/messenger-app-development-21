@@ -101,7 +101,7 @@ export default function GroupChatMessages({
                   {!msg.out && (
                     <div className="w-7 flex-shrink-0 self-end mb-1">
                       {showAvatar
-                        ? <Avatar label={msg.sender_name?.[0]?.toUpperCase() || "?"} id={msg.sender_id} src={msg.sender_avatar} size="sm" />
+                        ? <Avatar label={msg.sender_name?.[0]?.toUpperCase() || "?"} id={msg.sender_id} src={msg.sender_avatar} video={msg.sender_avatar_video} size="sm" />
                         : <div className="w-7" />}
                     </div>
                   )}

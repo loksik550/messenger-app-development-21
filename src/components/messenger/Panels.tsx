@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { api, uploadMedia, type User } from "@/lib/api";
+import { api, uploadMedia, uploadAny, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { applyTheme, getStoredTheme, getStoredFontSize } from "@/lib/theme";
 import { BirthdayPickerModal } from "@/components/messenger/BirthdayPickerModal";
@@ -121,6 +121,54 @@ export function ProfilePanel({ currentUser, onUserUpdate, onBack, chatsCount = 0
     }
   };
 
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const readVideoDuration = (file: File) => new Promise<number>((resolve) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(v.duration || 0); };
+    v.onerror = () => { URL.revokeObjectURL(url); resolve(0); };
+    v.src = url;
+  });
+
+  const onVideoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("video/")) { setAvatarError("Выберите видео"); return; }
+    if (file.size > 15 * 1024 * 1024) { setAvatarError("Видео слишком большое (макс 15 МБ). Обрежьте до 10 секунд."); return; }
+    const dur = await readVideoDuration(file);
+    if (dur > 10.5) { setAvatarError(`Видео длиннее 10 секунд (${Math.round(dur)} с). Обрежьте его в галерее.`); return; }
+    setAvatarError("");
+    setUploadingAvatar(true);
+    try {
+      const up = await uploadAny(file, currentUser.id);
+      const data = await api("update_profile", { avatar_video_url: up.url }, currentUser.id);
+      if (data.user) {
+        onUserUpdate?.(data.user);
+        localStorage.setItem("nova_user", JSON.stringify(data.user));
+      } else {
+        setAvatarError(data.error || "Не удалось поставить видео");
+      }
+    } catch (err) {
+      setAvatarError((err as Error).message || "Ошибка загрузки");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const removeVideo = async () => {
+    setUploadingAvatar(true);
+    try {
+      const data = await api("update_profile", { avatar_video_url: null }, currentUser.id);
+      if (data.user) {
+        onUserUpdate?.(data.user);
+        localStorage.setItem("nova_user", JSON.stringify(data.user));
+      }
+    } finally { setUploadingAvatar(false); }
+  };
+
   const removeAvatar = async () => {
     setUploadingAvatar(true);
     try {
@@ -161,6 +209,10 @@ export function ProfilePanel({ currentUser, onUserUpdate, onBack, chatsCount = 0
         setBdMonth={setBdMonth}
         setBdYear={setBdYear}
         setBdayPickerOpen={setBdayPickerOpen}
+        videoInputRef={videoInputRef}
+        onVideoFile={onVideoFile}
+        removeVideo={removeVideo}
+        onOpenPro={actions.onOpenPro}
       />
 
       <ProfileMenu

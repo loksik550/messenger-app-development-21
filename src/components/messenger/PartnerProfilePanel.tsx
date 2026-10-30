@@ -159,7 +159,7 @@ export default function PartnerProfilePanel({
 
       <div className="flex-1 overflow-y-auto max-w-md mx-auto w-full">
         <div className="flex flex-col items-center py-8 px-4">
-          <Avatar label={chat.avatar} id={chat.id} size="xl" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} zoomable />
+          <Avatar label={chat.avatar} id={chat.id} size="xl" online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} video={chat.avatarVideo} zoomable />
           <h1 className="mt-4 text-xl font-bold text-foreground max-w-full px-4">
             <ProName name={chat.name} isPro={chat.isPro} emoji={chat.emojiStatus} color={chat.nameColor} badgeSize={18} />
           </h1>

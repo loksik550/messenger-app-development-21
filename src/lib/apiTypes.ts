@@ -116,6 +116,7 @@ export interface Chat {
   isPro?: boolean;
   emojiStatus?: string | null;
   nameColor?: string | null;
+  avatarVideo?: string | null;
 }
 
 // "был в сети N назад" / "в сети" по unix-времени last_seen
@@ -125,6 +126,7 @@ export interface User {
   phone: string;
   name: string;
   avatar_url?: string;
+  avatar_video_url?: string | null;
   last_seen?: number;
   about?: string | null;
   gender?: "male" | "female" | null;
@@ -294,6 +296,7 @@ export interface GroupMessage {
   sender_pro?: boolean;
   sender_emoji?: string | null;
   sender_color?: string | null;
+  sender_avatar_video?: string | null;
   text: string;
   media_type?: "image" | "video" | "audio" | "file" | null;
   media_url?: string | null;

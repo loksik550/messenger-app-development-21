@@ -1,5 +1,6 @@
 """ЮKassa webhook: подтверждает оплату и пополняет кошелёк Nova."""
 import json
+import nova_ids
 import os
 import time
 import base64
@@ -248,6 +249,36 @@ def handler(event, context):
                                         VALUES (%s,%s,'sticker_royalty',%s,%s,%s)""",
                                     (author_id, share, f"Роялти за пак: {title}", ab, now_ts),
                                 )
+
+                elif uid and purpose == 'nova_id':
+                    nid = nova_ids.normalize(meta.get('nova_id'))
+                    _sch = S.rstrip('.')
+                    cur.execute(f"SELECT id FROM {S}users WHERE nova_id = %s", (nid,))
+                    _taken = cur.fetchone()
+                    if nid and not nova_ids.validate(nid) and (not _taken or int(_taken[0]) == uid):
+                        if not _taken:
+                            nova_ids.assign(cur, _sch, uid, nid, 'rub', price_rub=amt, note=f'ЮKassa заказ №{order_id}')
+                        cur.execute(
+                            f"""INSERT INTO {S}user_notifications (user_id, kind, title, body)
+                                VALUES (%s, 'premium', %s, %s)""",
+                            (uid, 'Новый ID', f'Ваш новый ID в Nova: {nid}'),
+                        )
+                    else:
+                        cur.execute(
+                            f"UPDATE {S}users SET wallet_balance = COALESCE(wallet_balance,0) + %s WHERE id = %s RETURNING wallet_balance",
+                            (amt, uid),
+                        )
+                        _nb = float(cur.fetchone()[0])
+                        cur.execute(
+                            f"""INSERT INTO {S}wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
+                                VALUES (%s,%s,'refund',%s,%s,%s)""",
+                            (uid, amt, f"ID {nid} уже занят — деньги на кошельке", _nb, now_ts),
+                        )
+                        cur.execute(
+                            f"""INSERT INTO {S}user_notifications (user_id, kind, title, body)
+                                VALUES (%s, 'premium', %s, %s)""",
+                            (uid, 'ID уже занят', f'ID {nid} успели занять. {amt:.0f} ₽ зачислены на ваш кошелёк Nova.'),
+                        )
 
                 elif uid and purpose == 'stickers_subscription':
                     cur.execute(f"SELECT COALESCE(stickers_subscription_until,0) FROM {S}users WHERE id=%s", (uid,))

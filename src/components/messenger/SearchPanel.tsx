@@ -13,7 +13,7 @@ export function SearchPanel({ users, currentUser, onStartChat, onBack }: { users
   const [found, setFound] = useState<User[] | null>(null);
   const [searching, setSearching] = useState(false);
   const idQuery = query.toLowerCase().replace(/id|#|\s|-/g, "");
-  const isIdSearch = /^\d{8}$/.test(idQuery);
+  const isIdSearch = /^\d{3,8}$/.test(idQuery);
   const local = isIdSearch ? [] : users.filter(u => !query || u.name.toLowerCase().includes(query.toLowerCase()));
   const results = query.trim() && found ? [...found, ...local.filter(l => !found.some(f => f.id === l.id))] : local;
   useEffect(() => {
@@ -62,7 +62,7 @@ export function SearchPanel({ users, currentUser, onStartChat, onBack }: { users
         {!query && <div className="text-xs text-muted-foreground px-2 pb-2 uppercase tracking-widest font-semibold">{tr("search.allUsers")}</div>}
         {results.map((u, i) => (
           <button key={u.id} onClick={() => onStartChat(u.id, { name: u.name, avatar_url: u.avatar_url })} className={`w-full flex items-center gap-3 p-3 glass rounded-2xl hover:bg-white/8 transition-all animate-fade-in stagger-${Math.min(i + 1, 5)}`}>
-            <Avatar label={u.name[0]?.toUpperCase() || "?"} id={u.id} online={currentUser.id !== u.id && Date.now() / 1000 - (u.last_seen || 0) < 60} />
+            <Avatar label={u.name[0]?.toUpperCase() || "?"} id={u.id} src={u.avatar_url} video={u.avatar_video_url} online={currentUser.id !== u.id && Date.now() / 1000 - (u.last_seen || 0) < 60} />
             <div className="text-left">
               <div className="font-semibold text-sm"><ProName name={u.name} isPro={!!u.is_pro} emoji={u.emoji_status} color={u.name_color} badgeSize={12} /></div>
               {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}

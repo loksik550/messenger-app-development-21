@@ -1,4 +1,5 @@
 import os
+import nova_ids
 import errlog
 import json
 import re
@@ -75,6 +76,8 @@ ACTION_PERMS = {
     "moderation_summary": "dashboard",
     "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
     "pro_features": "dashboard", "pro_features_save": "settings",
+    "nova_ids_list": "dashboard", "nova_id_check_admin": "dashboard",
+    "nova_id_grant": "settings", "nova_ids_settings_save": "settings",
     "broadcast_send": "settings", "broadcast_history": "dashboard",
     "broadcast_preview": "settings",
     "mod_rules": "dashboard", "mod_rule_add": "settings", "mod_rule_delete": "settings",
@@ -1915,15 +1918,16 @@ def _handler(event: dict, context) -> dict:
             cur.execute(
                 f"SELECT COUNT(*) FILTER (WHERE COALESCE(incognito, FALSE)), "
                 f"COUNT(*) FILTER (WHERE emoji_status IS NOT NULL AND emoji_status <> ''), "
-                f"COUNT(*) FILTER (WHERE name_color IS NOT NULL AND name_color <> '') "
+                f"COUNT(*) FILTER (WHERE name_color IS NOT NULL AND name_color <> ''), "
+                f"COUNT(*) FILTER (WHERE avatar_video_url IS NOT NULL AND avatar_video_url <> '') "
                 f"FROM {SCHEMA}.users WHERE COALESCE(pro_until, 0) > %s",
                 (now,),
             )
-            inc, emo, col = cur.fetchone()
+            inc, emo, col, avv = cur.fetchone()
             return ok({
                 "file_limit_free_mb": _int(cfg.get("file_limit_free_mb"), 50),
                 "file_limit_pro_mb": _int(cfg.get("file_limit_pro_mb"), 1024),
-                "usage": {"incognito": inc or 0, "emoji_status": emo or 0, "name_color": col or 0},
+                "usage": {"incognito": inc or 0, "emoji_status": emo or 0, "name_color": col or 0, "avatar_video": avv or 0},
             })
 
         if action == "pro_features_save":
@@ -1944,6 +1948,119 @@ def _handler(event: dict, context) -> dict:
                     (k, str(v), now, admin["id"]),
                 )
             audit(cur, admin, "pro_features_save", f"Лимит файлов: без Pro {free_mb} МБ, с Pro {pro_mb} МБ", ip)
+            return ok({"success": True})
+
+        if action == "nova_ids_list":
+            q = (body.get("q") or "").strip()[:40]
+            where, args = "", []
+            if q:
+                where = "WHERE p.nova_id ILIKE %s OR u.name ILIKE %s OR u.phone ILIKE %s"
+                args = [f"%{q}%", f"%{q}%", f"%{q}%"]
+            cur.execute(
+                f"SELECT p.id, p.user_id, u.name, u.phone, p.nova_id, p.old_nova_id, p.method, "
+                f"p.price_lightning, p.price_rub, p.note, p.created_at, a.name, u.nova_id "
+                f"FROM {SCHEMA}.nova_id_purchases p "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = p.user_id "
+                f"LEFT JOIN {SCHEMA}.dev_admins a ON a.id = p.admin_id "
+                f"{where} ORDER BY p.id DESC LIMIT 200",
+                args,
+            )
+            items = [{
+                "id": r[0], "user_id": r[1], "user_name": r[2], "phone": r[3], "nova_id": r[4],
+                "old_nova_id": r[5], "method": r[6], "price_lightning": r[7], "price_rub": float(r[8] or 0),
+                "note": r[9], "created_at": r[10], "admin_name": r[11],
+                "still_owned": (r[12] == r[4]),
+            } for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT COUNT(*), COALESCE(SUM(price_lightning),0), COALESCE(SUM(price_rub),0), "
+                f"COUNT(*) FILTER (WHERE method='admin') FROM {SCHEMA}.nova_id_purchases"
+            )
+            t = cur.fetchone()
+            cfg = nova_ids.load_config(cur, SCHEMA)
+            return ok({
+                "items": items,
+                "totals": {"count": t[0], "lightning": int(t[1]), "rub": float(t[2]), "granted": t[3]},
+                "settings": {
+                    "enabled": cfg["enabled"],
+                    "prices": {str(k): v for k, v in cfg["prices"].items()},
+                    "beauty_mult": cfg["beauty_mult"],
+                    "reserved": ", ".join(sorted(cfg["reserved"])),
+                },
+            })
+
+        if action == "nova_id_check_admin":
+            nid = nova_ids.normalize(body.get("nova_id"))
+            cfg = nova_ids.load_config(cur, SCHEMA)
+            bad = nova_ids.validate(nid) if not (nid.isdigit() and len(nid) == 8) else None
+            if bad:
+                return ok({"available": False, "reason": bad, "nova_id": nid})
+            cur.execute(f"SELECT id, name FROM {SCHEMA}.users WHERE nova_id = %s", (nid,))
+            r = cur.fetchone()
+            if r:
+                return ok({"available": False, "reason": f"Занят: {r[1]} (#{r[0]})", "nova_id": nid, "owner_id": r[0]})
+            return ok({"available": True, "nova_id": nid, "price": nova_ids.price_for(nid, cfg) if len(nid) <= 7 else None,
+                       "reserved": nid in cfg["reserved"]})
+
+        if action == "nova_id_grant":
+            try:
+                target = int(body.get("user_id") or 0)
+            except (TypeError, ValueError):
+                target = 0
+            nid = nova_ids.normalize(body.get("nova_id"))
+            note = (body.get("note") or "").strip()[:300]
+            if not target:
+                return err("Укажите пользователя")
+            if not nid.isdigit() or not (3 <= len(nid) <= 8) or nid[0] == "0":
+                return err("ID — от 3 до 8 цифр, не с нуля")
+            cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (target,))
+            u = cur.fetchone()
+            if not u:
+                return err("Пользователь не найден", 404)
+            cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE nova_id = %s", (nid,))
+            r = cur.fetchone()
+            if r and int(r[0]) != target:
+                return err("Этот ID занят другим пользователем")
+            if r:
+                return err("У пользователя уже этот ID")
+            nova_ids.assign(cur, SCHEMA, target, nid, "admin", admin_id=admin["id"], note=note)
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) VALUES (%s, 'premium', %s, %s)",
+                (target, "Новый ID", f"Вам выдан ID в Nova: {nid}"),
+            )
+            audit(cur, admin, "nova_id_grant", f"Выдан ID {nid} пользователю «{u[0]}» (#{target})", ip)
+            return ok({"success": True, "nova_id": nid})
+
+        if action == "nova_ids_settings_save":
+            prices = body.get("prices") or {}
+            now = int(time.time())
+            rows = []
+            for ln in range(nova_ids.MIN_LEN, nova_ids.MAX_LEN + 1):
+                p = prices.get(str(ln)) or {}
+                try:
+                    lv = max(0, int(p.get("lightning") or 0))
+                    rv = max(0.0, round(float(p.get("rub") or 0), 2))
+                except (TypeError, ValueError):
+                    return err("Цены — числами")
+                if rv and rv < 1:
+                    return err("Цена в рублях — от 1 ₽")
+                rows.append((f"nova_id_price_{ln}", json.dumps({"lightning": lv, "rub": rv})))
+            try:
+                mult = max(1.0, min(20.0, float(body.get("beauty_mult") or 1)))
+            except (TypeError, ValueError):
+                return err("Множитель — числом")
+            reserved = ",".join(
+                x for x in (nova_ids.normalize(v) for v in str(body.get("reserved") or "").replace("\n", ",").split(","))
+                if x.isdigit()
+            )[:2000]
+            rows += [("nova_id_beauty_mult", str(mult)), ("nova_id_reserved", reserved),
+                     ("nova_id_enabled", "1" if body.get("enabled", True) else "0")]
+            for k, v in rows:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) VALUES (%s, %s, %s, %s) "
+                    f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
+                    (k, v, now, admin["id"]),
+                )
+            audit(cur, admin, "nova_ids_settings_save", "Изменены цены и правила красивых ID", ip)
             return ok({"success": True})
 
         if action == "plan_save":

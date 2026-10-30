@@ -5,7 +5,7 @@ import { devApi, formatNum } from "@/lib/devApi";
 interface ProFeaturesData {
   file_limit_free_mb: number;
   file_limit_pro_mb: number;
-  usage: { incognito: number; emoji_status: number; name_color: number };
+  usage: { incognito: number; emoji_status: number; name_color: number; avatar_video: number };
 }
 
 const FEATURES: { icon: string; color: string; title: string; text: string; usageKey?: keyof ProFeaturesData["usage"] }[] = [
@@ -15,6 +15,8 @@ const FEATURES: { icon: string; color: string; title: string; text: string; usag
   { icon: "EyeOff", color: "#3b82f6", title: "Инкогнито", text: "Скрывает время в сети ото всех", usageKey: "incognito" },
   { icon: "Palette", color: "#f59e0b", title: "Эксклюзивные темы", text: "Океан, Закат, Лес, Роза" },
   { icon: "FileUp", color: "#10b981", title: "Большие файлы", text: "Увеличенный лимит на размер файла" },
+  { icon: "Video", color: "#d946ef", title: "Видео-аватар", text: "Видео до 10 секунд вместо фото — видят все", usageKey: "avatar_video" },
+  { icon: "Hash", color: "#f97316", title: "Красивый ID", text: "Покупка за Молнии или рубли — раздел «Красивые ID»" },
 ];
 
 const fmt = (mb: number) => (mb >= 1024 ? `${+(mb / 1024).toFixed(1)} ГБ` : `${mb} МБ`);

@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 
 import psycopg2
 import nova_auth
+import nova_ids
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 MIN_AMOUNT = 1.00
@@ -168,10 +169,11 @@ def handler(event, context):
         'fundraiser': 'Донат на сбор Nova',
         'sticker_pack': f'Стикерпак: {extra.get("title", "")}',
         'stickers_subscription': 'Подписка на авторские стикеры Nova',
+        'nova_id': f'Красивый ID Nova {extra.get("nova_id", "") if isinstance(extra, dict) else ""}',
     }
     description = descriptions.get(purpose, 'Оплата Nova')
 
-    if purpose not in ('wallet_topup', 'fundraiser') and not purpose.startswith('pro_'):
+    if purpose not in ('wallet_topup', 'fundraiser', 'nova_id') and not purpose.startswith('pro_'):
         return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Этот товар оплачивается из кошелька'})}
 
     S = get_schema()
@@ -187,7 +189,41 @@ def handler(event, context):
             return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Тариф не найден'})}
         if abs(float(_r[0]) - amount) > 0.009:
             return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Цена тарифа изменилась, обновите страницу'})}
-    if purpose == 'fundraiser':
+    if purpose == 'nova_id':
+        nid = nova_ids.normalize((extra or {}).get('nova_id') if isinstance(extra, dict) else '')
+        _nc = get_conn()
+        try:
+            _cur = _nc.cursor()
+            _sch = S.rstrip('.')
+            cfg = nova_ids.load_config(_cur, _sch)
+            if not cfg['enabled']:
+                return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Покупка ID временно отключена'}, ensure_ascii=False)}
+            _cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {S}users WHERE id = %s", (user_id,))
+            _pu = _cur.fetchone()
+            if not _pu or int(_pu[0] or 0) <= int(datetime.utcnow().timestamp()):
+                return {'statusCode': 402, 'headers': HEADERS, 'body': json.dumps({'error': 'Красивый ID доступен подписчикам Nova Pro'}, ensure_ascii=False)}
+            res = nova_ids.check(_cur, _sch, nid, user_id, cfg)
+            if not res.get('available'):
+                return {'statusCode': 409, 'headers': HEADERS, 'body': json.dumps({'error': res.get('reason') or 'ID недоступен'}, ensure_ascii=False)}
+            if abs(float(res['price']['rub']) - amount) > 0.009:
+                return {'statusCode': 400, 'headers': HEADERS, 'body': json.dumps({'error': 'Цена изменилась, обновите страницу'}, ensure_ascii=False)}
+            import time as _t
+            _cur.execute(
+                f"INSERT INTO {S}nova_id_reservations (nova_id, user_id, expires_at) VALUES (%s, %s, %s) "
+                f"ON CONFLICT (nova_id) DO UPDATE SET user_id = EXCLUDED.user_id, expires_at = EXCLUDED.expires_at "
+                f"WHERE {S}nova_id_reservations.expires_at < %s OR {S}nova_id_reservations.user_id = EXCLUDED.user_id "
+                f"RETURNING nova_id",
+                (nid, user_id, int(_t.time()) + nova_ids.RESERVE_SEC, int(_t.time())),
+            )
+            if not _cur.fetchone():
+                _nc.rollback()
+                return {'statusCode': 409, 'headers': HEADERS, 'body': json.dumps({'error': 'Этот ID сейчас покупает другой человек'}, ensure_ascii=False)}
+            _nc.commit()
+        finally:
+            _nc.close()
+        related_id = None
+        extra = {'nova_id': nid}
+    elif purpose == 'fundraiser':
         try:
             related_id = int(related_id)
         except (TypeError, ValueError):
