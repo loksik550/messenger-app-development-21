@@ -28,17 +28,22 @@ const FALLBACK_PLANS: PlanItem[] = [
 ];
 
 const FEATURES = [
-  { icon: "Crown", text: "Эмодзи-статус и цветной ник" },
-  { icon: "Eye", text: "Инкогнито (скрыть «в сети»)" },
-  { icon: "Image", text: "Файлы до 4 ГБ" },
-  { icon: "Lock", text: "Контроль входящих" },
-  { icon: "Zap", text: "Без рекламы" },
-  { icon: "Headphones", text: "Приоритетная поддержка" },
-  { icon: "Palette", text: "Эксклюзивные темы" },
-  { icon: "Users", text: "Звонки до 50 человек" },
-  { icon: "Sparkles", text: "Авторские стикеры" },
-  { icon: "Volume2", text: "Свои рингтоны" },
+  { icon: "Crown", text: "Эмодзи-статус и цветной ник", color: "#a78bfa" },
+  { icon: "Eye", text: "Инкогнито (скрыть «в сети»)", color: "#818cf8" },
+  { icon: "Image", text: "Файлы до 4 ГБ", color: "#60a5fa" },
+  { icon: "Lock", text: "Контроль входящих", color: "#38bdf8" },
+  { icon: "Zap", text: "Без рекламы", color: "#22d3ee" },
+  { icon: "Headphones", text: "Приоритетная поддержка", color: "#34d399" },
+  { icon: "Palette", text: "Эксклюзивные темы", color: "#facc15" },
+  { icon: "Users", text: "Звонки до 50 человек", color: "#fb923c" },
+  { icon: "Sparkles", text: "Авторские стикеры", color: "#f472b6" },
+  { icon: "Volume2", text: "Свои рингтоны", color: "#e879f9" },
 ];
+
+const SPARKS = Array.from({ length: 46 }, (_, i) => {
+  const r = (n: number) => ((Math.sin(i * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1;
+  return { x: r(1) * 100, y: r(2) * 100, s: 6 + r(3) * 14, o: 0.35 + r(4) * 0.6, d: r(5) * 3, c: r(6) > 0.5 ? "#c4b5fd" : "#a5b4fc" };
+});
 
 export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWallet }: Props) {
   const [selected, setSelected] = useState<string>("month");
@@ -188,18 +193,38 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
   }
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-md glass-strong rounded-t-3xl sm:rounded-3xl p-5 pb-7 max-h-[92vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
-        <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-4 sm:hidden" />
+    <div className="fixed inset-0 z-[250] bg-black text-white overflow-y-auto animate-fade-in">
+      <style>{`@keyframes pro-twinkle{0%,100%{opacity:.15;transform:scale(.6)}50%{opacity:1;transform:scale(1)}}@keyframes pro-float{0%,100%{transform:translateY(0) rotate(-6deg)}50%{transform:translateY(-8px) rotate(-2deg)}}`}</style>
+      <button
+        onClick={onClose}
+        aria-label="Назад"
+        className="fixed left-4 z-10 w-11 h-11 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/15 transition"
+        style={{ top: "calc(0.75rem + env(safe-area-inset-top))" }}
+      >
+        <Icon name="ChevronLeft" size={24} />
+      </button>
 
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
-            style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)" }}>
-            👑
-          </div>
+      <div className="max-w-md mx-auto px-5" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
+        <div className="relative h-64 -mx-5 overflow-hidden" style={{ marginTop: "env(safe-area-inset-top)" }}>
+          {SPARKS.map((p, i) => (
+            <svg key={i} viewBox="0 0 24 24" className="absolute"
+              style={{ left: `${p.x}%`, top: `${p.y}%`, width: p.s, height: p.s, opacity: p.o, animation: `pro-twinkle ${2.4 + p.d}s ease-in-out ${p.d}s infinite` }}>
+              <path d="M12 0C12.6 7 17 11.4 24 12C17 12.6 12.6 17 12 24C11.4 17 7 12.6 0 12C7 11.4 11.4 7 12 0Z" fill={p.c} />
+            </svg>
+          ))}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-56 h-56 rounded-full bg-violet-600/25 blur-3xl" />
+          <img src="/pro-bolt.webp" alt="" width={400} height={400}
+            className="absolute left-1/2 top-1/2 w-44 h-44 object-contain"
+            style={{ marginLeft: -88, marginTop: -88, animation: "pro-float 4s ease-in-out infinite" }} />
         </div>
-        <h2 className="text-2xl font-black text-center mb-1">Nova Pro</h2>
-        <p className="text-muted-foreground text-sm text-center mb-4">Полный доступ к расширенным возможностям</p>
+
+        <h2 className="text-3xl font-bold text-center mb-3">Nova Pro</h2>
+        <p className="text-center text-[15px] text-white/80 leading-snug mb-2">
+          <b className="text-white">Больше свободы</b> и <b className="text-white">десятки эксклюзивных функций</b> с подпиской <b className="text-white">Nova Pro</b>.
+        </p>
+        <p className="text-center text-xs text-violet-300/90 mb-6 flex items-center justify-center gap-1.5">
+          <Icon name="Sparkles" size={13} /> Список возможностей постоянно пополняется
+        </p>
 
         {isPro && (
           <div className="rounded-2xl p-3 mb-4 flex items-center gap-3"
@@ -214,18 +239,24 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2 mb-5">
-          {FEATURES.map(f => (
-            <div key={f.icon} className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: "rgba(245,158,11,0.15)" }}>
-                <Icon name={f.icon} size={14} style={{ color: "#f59e0b" }} />
+        <div className="rounded-2xl bg-[#1c1c1e] overflow-hidden mb-6">
+          {FEATURES.map((f, i) => (
+            <div key={f.icon} className={`flex items-center gap-3 px-4 py-3 ${i ? "border-t border-white/[0.06]" : ""}`}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: f.color }}>
+                <Icon name={f.icon} size={17} className="text-white" />
               </div>
-              <span className="text-[11px] font-medium leading-tight">{f.text}</span>
+              <span className="text-[15px]">{f.text}</span>
             </div>
           ))}
+          <div className="flex items-center gap-3 px-4 py-3 border-t border-white/[0.06] text-white/50">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white/10">
+              <Icon name="Plus" size={17} />
+            </div>
+            <span className="text-[15px]">Скоро — ещё больше функций</span>
+          </div>
         </div>
 
+        <div className="text-[13px] uppercase tracking-wide text-white/45 px-4 mb-2">Выберите тариф</div>
         <div className="space-y-2 mb-3">
           {plans.map(p => {
             const disabled = (p.price === 0 || p.id === "trial") && trialUsed;
@@ -234,12 +265,12 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
                 onClick={() => !disabled && setSelected(p.id)}
                 disabled={disabled}
                 className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${
-                  selected === p.id ? "border-amber-400 bg-amber-500/10" : "border-white/10 hover:border-white/20"
+                  selected === p.id ? "border-violet-400 bg-violet-500/10" : "border-white/10 bg-[#1c1c1e] hover:border-white/20"
                 } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}>
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                  selected === p.id ? "border-amber-400 bg-amber-400" : "border-white/30"
+                  selected === p.id ? "border-violet-400 bg-violet-400" : "border-white/30"
                 }`}>
-                  {selected === p.id && <Icon name="Check" size={12} className="text-black" />}
+                  {selected === p.id && <Icon name="Check" size={12} className="text-white" />}
                 </div>
                 <div className="flex-1 text-left">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -322,8 +353,8 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
         <button
           onClick={buy}
           disabled={buying || (isTrialPlan && trialUsed) || (!isTrialPlan && method === "wallet" && balance < plan.price)}
-          className="w-full py-4 rounded-2xl font-black text-white text-base disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)" }}
+          className="w-full py-4 rounded-2xl font-bold text-white text-base disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-violet-600/30"
+          style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)" }}
         >
           {buying ? "Оформляем..."
             : isTrialPlan ? "Активировать пробный"
@@ -331,9 +362,24 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
             : method === "yookassa" ? `Оплатить ${plan.price} ₽`
             : `${isPro ? "Продлить" : "Оформить"} за ${plan.price} ₽`}
         </button>
-        <button onClick={onClose} className="w-full py-3 text-sm text-muted-foreground mt-1">
-          Не сейчас
-        </button>
+
+        <div className="text-[13px] uppercase tracking-wide text-white/45 px-4 mt-8 mb-2">О Nova Pro</div>
+        <div className="rounded-3xl bg-[#1c1c1e] px-5 py-4 text-[15px] leading-relaxed text-white/90 space-y-4">
+          <p>
+            Бесплатная версия Nova даёт всё необходимое для общения: чаты, звонки, голосовые, фото и видео. А с <b>Nova Pro</b> ваши возможности станут ещё шире.
+          </p>
+          <p>
+            Мы сделали подписку <b>Nova Pro</b> платной, потому что большинство премиум-функций требуют дополнительных расходов — на серверы в России, хранение файлов и связь для звонков. Вклад подписчиков покрывает эти расходы и помогает Nova оставаться бесплатным для всех пользователей.
+          </p>
+          <p>
+            Мы регулярно добавляем в <b>Nova Pro</b> новые функции — подписчики получают их первыми и без доплаты.
+          </p>
+        </div>
+        <p className="text-[13px] text-white/45 px-4 mt-3 leading-relaxed">
+          Оформляя подписку Nova Pro, вы принимаете условия{" "}
+          <a href="/terms" target="_blank" rel="noopener" className="text-sky-400">Пользовательского соглашения</a> и{" "}
+          <a href="/privacy" target="_blank" rel="noopener" className="text-sky-400">Политики конфиденциальности</a> Nova.
+        </p>
       </div>
     </div>
   );

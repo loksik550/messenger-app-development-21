@@ -526,7 +526,7 @@ export default function Index() {
           <div className="flex items-center gap-1">
             {/* Premium badge */}
             <button
-              onClick={() => openOverlay(setShowPremium)}
+              onClick={() => openOverlay(setShowPro)}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-90"
               style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", color: "#fff" }}
             >
