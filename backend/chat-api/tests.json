@@ -452,6 +452,16 @@
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "blocked_list requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "blocked_list"
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

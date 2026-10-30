@@ -166,6 +166,40 @@ def _is_chat_member(cur, chat_id: int, user_id: int) -> bool:
     return cur.fetchone() is not None
 
 
+def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
+    """Что из данных пользователей разрешено видеть viewer_id: {uid: {"phone", "photo", "seen", "receipts"}}."""
+    ids = sorted({int(u) for u in user_ids if u})
+    if not ids or not viewer_id:
+        return {}
+    in_ids = ",".join(str(i) for i in ids)
+    cur.execute(
+        f"""SELECT u.id,
+                   COALESCE(u.phone_visibility, 'contacts'),
+                   COALESCE(u.profile_photo_visibility, 'everyone'),
+                   COALESCE(u.last_seen_visibility, 'everyone'),
+                   COALESCE(u.read_receipts_enabled, TRUE),
+                   EXISTS(SELECT 1 FROM {SCHEMA}.contacts c
+                          WHERE c.user_id = u.id AND c.contact_id = %s
+                            AND (c.name_override IS NULL OR c.name_override <> 'DELETED'))
+            FROM {SCHEMA}.users u WHERE u.id IN ({in_ids})""",
+        (int(viewer_id),),
+    )
+    out = {}
+    for uid, ph, photo, seen, receipts, is_contact in cur.fetchall():
+        def allowed(v):
+            if uid == int(viewer_id):
+                return True
+            return v == "everyone" or (v == "contacts" and bool(is_contact))
+        out[uid] = {"phone": allowed(ph), "photo": allowed(photo), "seen": allowed(seen), "receipts": bool(receipts)}
+    return out
+
+
+def _receipts_on(cur, user_id: int) -> bool:
+    cur.execute(f"SELECT COALESCE(read_receipts_enabled, TRUE) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+    r = cur.fetchone()
+    return bool(r[0]) if r else True
+
+
 def serialize_user(row):
     if not row:
         return None
@@ -1079,10 +1113,12 @@ def _handle(event: dict, context) -> dict:
                 (id_query, exclude_id)
             )
             rows = cur.fetchall()
+            pv = _privacy_map(cur, exclude_id, [r[0] for r in rows])
             conn.close()
             return ok({"users": [{
-                "id": r[0], "name": r[1], "phone": None, "avatar_url": r[3],
-                "last_seen": 0 if r[5] else r[4],
+                "id": r[0], "name": r[1], "phone": None,
+                "avatar_url": r[3] if pv.get(r[0], {}).get("photo", True) else None,
+                "last_seen": 0 if (r[5] or not pv.get(r[0], {}).get("seen", True)) else r[4],
                 "emoji_status": r[6], "name_color": r[7], "nova_id": r[8], "by_id": True,
             } for r in rows]})
         if qdigits and len(qdigits) >= 10 and len(qdigits) == len(query.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")):
@@ -1106,10 +1142,13 @@ def _handle(event: dict, context) -> dict:
                 (exclude_id or 0,)
             )
         rows = cur.fetchall()
+        pv = _privacy_map(cur, exclude_id, [r[0] for r in rows])
         conn.close()
         users = [{
-            "id": r[0], "name": r[1], "phone": (r[2] if qdigits and len(qdigits) >= 11 else None), "avatar_url": r[3],
-            "last_seen": 0 if r[5] else r[4],
+            "id": r[0], "name": r[1],
+            "phone": (r[2] if qdigits and len(qdigits) >= 11 else None),
+            "avatar_url": r[3] if pv.get(r[0], {}).get("photo", True) else None,
+            "last_seen": 0 if (r[5] or not pv.get(r[0], {}).get("seen", True)) else r[4],
             "emoji_status": r[6], "name_color": r[7],
         } for r in rows]
         return ok({"users": users})
@@ -1186,16 +1225,24 @@ def _handle(event: dict, context) -> dict:
             (uid, uid, uid)
         )
         archived_count = cur.fetchone()[0] or 0
+        pv = _privacy_map(cur, uid, [r[3] for r in rows])
+        my_receipts = _receipts_on(cur, uid)
         conn.close()
+
+        def _pv(pid, key):
+            return pv.get(pid, {}).get(key, True)
 
         chats = [{
             "id": r[0], "last_message": r[1], "last_message_at": r[2],
-            "partner": {"id": r[3], "name": r[4], "phone": r[5], "avatar_url": r[6],
-                        "last_seen": r[7], "verified": bool(r[14]) if len(r) > 14 else False,
+            "partner": {"id": r[3], "name": r[4],
+                        "phone": r[5] if _pv(r[3], "phone") else None,
+                        "avatar_url": r[6] if _pv(r[3], "photo") else None,
+                        "last_seen": r[7] if _pv(r[3], "seen") else 0,
+                        "verified": bool(r[14]) if len(r) > 14 else False,
                         "is_service": bool(r[17]) if len(r) > 17 else False},
             "unread": int(r[13] or 0),
             "last_mine": (r[15] == uid) if len(r) > 16 else False,
-            "last_read": bool(r[16]) if len(r) > 16 and r[15] == uid else False,
+            "last_read": bool(r[16]) and my_receipts and _pv(r[3], "receipts") if len(r) > 16 and r[15] == uid else False,
             "muted": r[8], "pinned": r[9], "favorite": r[10], "cleared_at": r[11], "archived": r[12],
         } for r in rows]
         return ok({"chats": chats, "archived_count": archived_count})
@@ -1439,6 +1486,12 @@ def _handle(event: dict, context) -> dict:
             (cid, uid_int)
         )
         read_up_to = int(cur.fetchone()[0] or 0)
+        cur.execute(f"SELECT CASE WHEN user1_id = %s THEN user2_id ELSE user1_id END FROM {SCHEMA}.chats WHERE id = %s", (uid_int, cid))
+        _pr = cur.fetchone()
+        partner_id = int(_pr[0]) if _pr else 0
+        show_receipts = partner_id == uid_int or (_receipts_on(cur, uid_int) and _receipts_on(cur, partner_id))
+        if not show_receipts:
+            read_up_to = 0
         conn.close()
         def _parse_payload(raw):
             if not raw:
@@ -1455,7 +1508,7 @@ def _handle(event: dict, context) -> dict:
 
         messages = [{
             "id": r[0], "sender_id": r[1], "text": r[2], "created_at": r[3],
-            "read_at": r[4], "sender_name": r[5],
+            "read_at": (r[4] if (show_receipts or r[1] != uid_int) else None), "sender_name": r[5],
             "image_url": r[6],
             "media_type": r[7], "media_url": r[8],
             "file_name": r[9], "file_size": r[10], "duration": r[11],
@@ -3220,8 +3273,13 @@ def _handle(event: dict, context) -> dict:
             (int(user_id),)
         )
         rows = cur.fetchall()
+        pv = _privacy_map(cur, int(user_id), [r[0] for r in rows])
         conn.close()
-        contacts = [{"id": r[0], "name": r[5] or r[1], "real_name": r[1], "phone": r[2], "avatar_url": r[3], "last_seen": r[4]} for r in rows]
+        contacts = [{
+            "id": r[0], "name": r[5] or r[1], "real_name": r[1], "phone": r[2],
+            "avatar_url": r[3] if pv.get(r[0], {}).get("photo", True) else None,
+            "last_seen": r[4] if pv.get(r[0], {}).get("seen", True) else 0,
+        } for r in rows]
         return ok({"contacts": contacts})
 
     # ── add_contact ───────────────────────────────────────────────────────────
@@ -3775,6 +3833,22 @@ def _handle(event: dict, context) -> dict:
         conn.close()
         return ok({"ok": True, "blocked": False})
 
+    if action == "blocked_list":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(
+            f"""SELECT u.id, u.name, u.avatar_url, b.created_at
+                FROM {SCHEMA}.user_blocks b
+                JOIN {SCHEMA}.users u ON u.id = b.blocked_id
+                WHERE b.blocker_id = %s
+                ORDER BY b.created_at DESC""",
+            (int(user_id),),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return ok({"users": [{"id": r[0], "name": r[1], "avatar_url": r[2], "blocked_at": int(r[3] or 0)} for r in rows]})
+
     if action == "is_blocked":
         if not user_id:
             conn.close()
@@ -4245,12 +4319,13 @@ def _handle(event: dict, context) -> dict:
                     "emoji": rr[1], "user_id": rr[2], "user_name": rr[3]
                 })
 
+        _gpv = _privacy_map(cur, int(user_id), [r[1] for r in rows])
         messages = []
         for r in rows:
             is_out = r[1] == int(user_id)
             messages.append({
                 "id": r[0], "sender_id": r[1], "sender_name": r[2],
-                "sender_avatar": r[3], "text": r[4] or "",
+                "sender_avatar": r[3] if _gpv.get(r[1], {}).get("photo", True) else None, "text": r[4] or "",
                 "media_type": r[5], "media_url": r[6],
                 "file_name": r[7], "file_size": r[8], "duration": r[9],
                 "reply_to_id": r[10], "created_at": r[11],
@@ -4520,8 +4595,11 @@ def _handle(event: dict, context) -> dict:
             (int(group_id),)
         )
         rows = cur.fetchall()
-        members = [{"id": r[0], "name": r[1], "avatar_url": r[2],
-                    "last_seen": r[3], "role": r[4], "joined_at": r[5]} for r in rows]
+        pv = _privacy_map(cur, int(user_id), [r[0] for r in rows])
+        members = [{"id": r[0], "name": r[1],
+                    "avatar_url": r[2] if pv.get(r[0], {}).get("photo", True) else None,
+                    "last_seen": r[3] if pv.get(r[0], {}).get("seen", True) else 0,
+                    "role": r[4], "joined_at": r[5]} for r in rows]
         conn.close()
         return ok({"members": members})
 
