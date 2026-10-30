@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import AvatarVideo from "@/components/messenger/AvatarVideo";
 import { getDraft } from "@/lib/drafts";
 import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
@@ -20,7 +21,7 @@ export function Avatar({ label, id, size = "md", online, src, zoomable, video }:
         onClick={canZoom ? (e) => { e.stopPropagation(); setOpen(true); } : undefined}
       >
         {video ? (
-          <video src={video} poster={src || undefined} autoPlay muted loop playsInline preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+          <AvatarVideo src={video} />
         ) : src ? (
           <img src={src} alt={label} className="w-full h-full object-cover" />
         ) : (

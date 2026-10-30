@@ -2,6 +2,8 @@ import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
 import { type User, type IconName } from "@/lib/api";
 import ProfileBackdrop from "@/components/messenger/profile/ProfileBackdrop";
+import AvatarVideo from "@/components/messenger/AvatarVideo";
+import { useState } from "react";
 import { formatBirthdate, calcAge, parseBd, formatPhone } from "@/components/messenger/profileUtils";
 
 const MAX_ABOUT_LEN = 200;
@@ -71,6 +73,7 @@ export function ProfileHeader({
   onOpenPro?: () => void;
   onPickBg?: () => void;
 }) {
+  const [avatarMenu, setAvatarMenu] = useState(false);
   return (
     <>
       {onBack && (
@@ -92,10 +95,16 @@ export function ProfileHeader({
             Фон
           </button>
         )}
-        <div className="relative inline-block mb-4">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-4xl font-bold text-white overflow-hidden animate-pulse-glow">
+        <div className="relative z-[1] inline-block mb-5">
+          <button
+            type="button"
+            onClick={() => setAvatarMenu(true)}
+            disabled={uploadingAvatar}
+            className="relative w-24 h-24 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-4xl font-bold text-white overflow-hidden animate-pulse-glow"
+            aria-label="Фото профиля"
+          >
             {currentUser.avatar_video_url ? (
-              <video src={currentUser.avatar_video_url} poster={currentUser.avatar_url || undefined} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+              <AvatarVideo src={currentUser.avatar_video_url} />
             ) : currentUser.avatar_url ? (
               <img src={currentUser.avatar_url} alt={currentUser.name} className="w-full h-full object-cover" />
             ) : (
@@ -106,46 +115,46 @@ export function ProfileHeader({
                 <div className="w-7 h-7 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               </div>
             )}
-          </div>
+          </button>
           <button
-            onClick={onPickAvatar}
+            onClick={() => setAvatarMenu(true)}
             disabled={uploadingAvatar}
-            title="Загрузить фото"
-            className="absolute bottom-0 right-0 w-8 h-8 grad-primary rounded-full flex items-center justify-center text-white shadow-lg disabled:opacity-60"
+            title="Изменить фото"
+            className="absolute bottom-0 right-0 w-8 h-8 grad-primary rounded-full flex items-center justify-center text-white shadow-lg ring-2 ring-[hsl(var(--background))] disabled:opacity-60"
           >
             <Icon name="Camera" size={14} />
           </button>
-          {currentUser.avatar_url && !uploadingAvatar && (
-            <button
-              onClick={removeAvatar}
-              title="Убрать фото"
-              className="absolute -top-1 -right-1 w-6 h-6 bg-black/70 hover:bg-red-500 rounded-full flex items-center justify-center text-white"
-            >
-              <Icon name="X" size={12} />
-            </button>
-          )}
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onAvatarFile} />
           {videoInputRef && <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={onVideoFile} />}
         </div>
-        {videoInputRef && (
-          <div className="flex items-center justify-center gap-2 -mt-1 mb-3">
-            <button
-              onClick={() => (currentUser.is_pro ? videoInputRef.current?.click() : onOpenPro?.())}
-              disabled={uploadingAvatar}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white disabled:opacity-60"
-              style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)" }}
-            >
-              <Icon name={currentUser.is_pro ? "Video" : "Lock"} size={13} />
-              {currentUser.avatar_video_url ? "Сменить видео" : "Видео вместо фото"}
-              {!currentUser.is_pro && <span className="opacity-80">· Pro</span>}
-            </button>
-            {currentUser.avatar_video_url && (
-              <button onClick={removeVideo} disabled={uploadingAvatar} className="px-3 py-1.5 rounded-full text-xs glass text-muted-foreground hover:text-red-400">
-                Убрать видео
-              </button>
-            )}
+        {avatarMenu && (
+          <div className="fixed inset-0 z-[270] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 animate-fade-in" onClick={() => setAvatarMenu(false)}>
+            <div className="w-full max-w-sm glass-strong rounded-3xl p-2 animate-scale-in text-left" onClick={(e) => e.stopPropagation()} style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
+              <div className="px-3 pt-2 pb-1 text-xs text-muted-foreground">Фото профиля</div>
+              {([
+                { show: true, icon: "Image", label: currentUser.avatar_url ? "Сменить фото" : "Загрузить фото", act: onPickAvatar },
+                { show: !!videoInputRef, icon: currentUser.is_pro ? "Video" : "Lock", label: currentUser.avatar_video_url ? "Сменить видео" : "Видео вместо фото", pro: true,
+                  act: () => (currentUser.is_pro ? videoInputRef?.current?.click() : onOpenPro?.()) },
+                { show: !!currentUser.avatar_video_url && !!removeVideo, icon: "VideoOff", label: "Убрать видео", red: true, act: () => removeVideo?.() },
+                { show: !!currentUser.avatar_url, icon: "Trash2", label: "Убрать фото", red: true, act: removeAvatar },
+              ] as { show: boolean; icon: string; label: string; act: () => void; red?: boolean; pro?: boolean }[]).filter((x) => x.show).map((x) => (
+                <button
+                  key={x.label}
+                  onClick={() => { setAvatarMenu(false); x.act(); }}
+                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl hover:bg-white/8 text-sm font-medium ${x.red ? "text-red-400" : ""}`}
+                >
+                  <Icon name={x.icon} fallback="Circle" size={18} className={x.red ? "text-red-400" : "text-violet-400"} />
+                  <span className="flex-1">{x.label}</span>
+                  {x.pro && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded text-white" style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)" }}>PRO</span>
+                  )}
+                </button>
+              ))}
+              <button onClick={() => setAvatarMenu(false)} className="w-full mt-1 py-3 rounded-2xl glass text-sm font-semibold">Отмена</button>
+            </div>
           </div>
         )}
+        <div className="relative z-[1]">
         {avatarError && <p className="text-red-400 text-xs mb-2">{avatarError}</p>}
         {editing ? (
           <div className="flex items-center justify-center gap-2 mt-1">
@@ -285,6 +294,7 @@ export function ProfileHeader({
               </div>
             )}
           </button>
+        </div>
         </div>
       </div>
     </>
