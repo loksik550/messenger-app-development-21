@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
-import Icon from "@/components/ui/icon";
 import { api, subscribeToPush, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
-import { useT } from "@/hooks/useT";
 import { useSettingsSounds } from "@/components/messenger/settings/useSettingsSounds";
 import { SoundsSection } from "@/components/messenger/settings/SoundsSection";
+import { SettingsGroup, SettingsHeader, SettingsRow, SettingsToggleRow } from "@/components/messenger/settings/SettingsUI";
 
 export default function NotificationsPanel({
   currentUser, onClose, onUserUpdate,
@@ -12,22 +11,15 @@ export default function NotificationsPanel({
   currentUser: User; onClose: () => void; onUserUpdate: (u: User) => void;
 }) {
   useEdgeSwipeBack(onClose);
-  const { t } = useT();
   const [msg, setMsg] = useState<boolean>(currentUser.notify_messages ?? true);
   const [grp, setGrp] = useState<boolean>(currentUser.notify_groups ?? true);
-  const [calls, setCalls] = useState<boolean>(currentUser.notify_calls ?? true);
-  const [vibr, setVibr] = useState<boolean>(currentUser.notify_vibration ?? true);
+  const [preview, setPreview] = useState<boolean>(currentUser.notify_preview ?? true);
   const sounds = useSettingsSounds();
-  const [qFrom, setQFrom] = useState<number | null>(currentUser.quiet_hours_from ?? null);
-  const [qTo, setQTo] = useState<number | null>(currentUser.quiet_hours_to ?? null);
 
-  // Статус разрешения на push в браузере
-  const [pushPerm, setPushPerm] = useState<NotificationPermission | "unsupported">(
-    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
-  );
+  const [pushPerm, setPushPerm] = useState<NotificationPermission | "unsupported">("default");
   const [pushBusy, setPushBusy] = useState(false);
   useEffect(() => {
-    if (typeof Notification === "undefined") setPushPerm("unsupported");
+    setPushPerm(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
   }, []);
 
   const enablePush = async () => {
@@ -40,94 +32,50 @@ export default function NotificationsPanel({
   };
 
   const update = async (field: string, value: unknown) => {
-    await api("update_user_settings", { [field]: value }, currentUser.id);
     onUserUpdate({ ...currentUser, [field]: value } as User);
+    await api("update_user_settings", { [field]: value }, currentUser.id).catch(() => null);
   };
-
-  const Toggle = ({ label, sub, value, onChange, icon, color }: { label: string; sub?: string; value: boolean; onChange: (v: boolean) => void; icon: string; color: string }) => (
-    <div className="glass rounded-2xl p-4 flex items-center gap-3">
-      <Icon name={icon} size={20} className={color} />
-      <div className="flex-1">
-        <div className="font-semibold text-sm">{label}</div>
-        {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
-      </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={`w-11 h-6 rounded-full transition ${value ? "bg-violet-500" : "bg-white/10"}`}
-      >
-        <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${value ? "translate-x-5" : "translate-x-0.5"}`} />
-      </button>
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 z-[260] bg-background flex flex-col animate-fade-in">
-      <div className="flex items-center gap-2 px-3 py-2 glass-strong border-b border-white/5" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
-        <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/8">
-          <Icon name="ChevronLeft" size={20} />
-        </button>
-        <h2 className="font-bold flex-1">{t("nav.notifications")}</h2>
-      </div>
+      <SettingsHeader title="Уведомления" sub="Что и как сообщать" onBack={onClose} />
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 space-y-5" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
         {pushPerm !== "unsupported" && (
-          <div className={`glass rounded-2xl p-4 flex items-center gap-3 ${pushPerm === "granted" ? "" : "border border-violet-400/30"}`}>
-            <Icon name={pushPerm === "granted" ? "BellRing" : "BellOff"} size={20} className={pushPerm === "granted" ? "text-emerald-400" : "text-violet-400"} />
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm">Push-уведомления</div>
-              <p className="text-[11px] text-muted-foreground">
-                {pushPerm === "granted"
-                  ? "Уведомления включены на этом устройстве"
-                  : pushPerm === "denied"
-                    ? "Разрешение отклонено. Включите его в настройках браузера"
-                    : "Получайте сообщения, даже когда приложение закрыто"}
-              </p>
-            </div>
-            {pushPerm === "granted" ? (
-              <button onClick={enablePush} disabled={pushBusy} className="px-3 py-1.5 rounded-xl glass text-xs font-semibold text-muted-foreground disabled:opacity-50">
-                {pushBusy ? "..." : "Обновить"}
-              </button>
-            ) : pushPerm === "default" ? (
-              <button onClick={enablePush} disabled={pushBusy} className="px-3 py-1.5 rounded-xl grad-primary text-white text-xs font-bold disabled:opacity-50">
-                {pushBusy ? "..." : "Включить"}
-              </button>
-            ) : null}
-          </div>
+          <SettingsGroup
+            footer={pushPerm === "denied" ? "Разрешение отклонено. Включите уведомления для Nova в настройках телефона или браузера." : undefined}
+          >
+            <SettingsRow
+              icon={pushPerm === "granted" ? "BellRing" : "BellOff"}
+              color={pushPerm === "granted" ? "#22c55e" : "#8b5cf6"}
+              label="Push-уведомления"
+              sub={pushPerm === "granted" ? "Включены на этом устройстве" : "Сообщения, даже когда Nova закрыт"}
+              right={
+                pushPerm === "default" ? (
+                  <button onClick={enablePush} disabled={pushBusy} className="px-3 py-1.5 rounded-xl grad-primary text-white text-xs font-bold disabled:opacity-50 flex-shrink-0">
+                    {pushBusy ? "..." : "Включить"}
+                  </button>
+                ) : pushPerm === "granted" ? (
+                  <span className="text-xs font-semibold text-emerald-400 flex-shrink-0">Вкл</span>
+                ) : (
+                  <span className="text-xs font-semibold text-red-400 flex-shrink-0">Выкл</span>
+                )
+              }
+            />
+          </SettingsGroup>
         )}
-        <Toggle label="Личные сообщения" icon="MessageCircle" color="text-violet-400" value={msg} onChange={v => { setMsg(v); update("notify_messages", v); }} />
-        <Toggle label="Группы и каналы" icon="Users" color="text-cyan-400" value={grp} onChange={v => { setGrp(v); update("notify_groups", v); }} />
-        <Toggle label="Звонки" icon="Phone" color="text-emerald-400" value={calls} onChange={v => { setCalls(v); update("notify_calls", v); }} />
-        <Toggle label="Вибрация" icon="Vibrate" color="text-amber-400" value={vibr} onChange={v => { setVibr(v); update("notify_vibration", v); }} />
+
+        <SettingsGroup title="Сообщения">
+          <SettingsToggleRow icon="MessageCircle" color="#8b5cf6" label="Личные чаты" sub="Новые сообщения от людей" on={msg} onToggle={() => { const v = !msg; setMsg(v); update("notify_messages", v); }} />
+          <SettingsToggleRow icon="Users" color="#06b6d4" label="Группы и каналы" sub="Новые сообщения и публикации" on={grp} onToggle={() => { const v = !grp; setGrp(v); update("notify_groups", v); }} />
+          <SettingsToggleRow icon="Eye" color="#3b82f6" label="Показывать текст" sub={preview ? "Текст сообщения виден в уведомлении" : "Только «Новое сообщение»"} on={preview} onToggle={() => { const v = !preview; setPreview(v); update("notify_preview", v); }} />
+        </SettingsGroup>
 
         <SoundsSection sounds={sounds} />
 
-        <div className="glass rounded-2xl p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <Icon name="Moon" size={20} className="text-indigo-400" />
-            <div className="flex-1">
-              <div className="font-semibold text-sm">Тихие часы</div>
-              <p className="text-[11px] text-muted-foreground">Не беспокоить ночью или на работе</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number" min={0} max={23} placeholder="С"
-              value={qFrom ?? ""}
-              onChange={e => setQFrom(e.target.value === "" ? null : parseInt(e.target.value, 10))}
-              onBlur={() => update("quiet_hours_from", qFrom)}
-              className="w-20 glass rounded-xl px-3 py-2 text-sm text-center"
-            />
-            <span className="text-muted-foreground text-sm">—</span>
-            <input
-              type="number" min={0} max={23} placeholder="До"
-              value={qTo ?? ""}
-              onChange={e => setQTo(e.target.value === "" ? null : parseInt(e.target.value, 10))}
-              onBlur={() => update("quiet_hours_to", qTo)}
-              className="w-20 glass rounded-xl px-3 py-2 text-sm text-center"
-            />
-            <span className="text-xs text-muted-foreground">час</span>
-          </div>
-        </div>
+        <p className="text-[11px] text-muted-foreground px-3 leading-relaxed">
+          Отключить уведомления от отдельного чата можно в самом чате: смахните его влево в списке и нажмите «Убрать звук».
+        </p>
       </div>
     </div>
   );

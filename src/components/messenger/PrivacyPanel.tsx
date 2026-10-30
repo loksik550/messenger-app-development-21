@@ -2,14 +2,26 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
-import { useT } from "@/hooks/useT";
+import {
+  SettingsChoiceRow, SettingsGroup, SettingsHeader, SettingsIcon, SettingsRow, SettingsToggleRow,
+} from "@/components/messenger/settings/SettingsUI";
 
 type Vis = "everyone" | "contacts" | "nobody";
+type Session = { id: number; device_name: string; device_info: string; ip_addr: string; last_active_at: number; revoked: boolean };
 
-const VIS_LABELS: Record<Vis, string> = {
-  everyone: "Все",
-  contacts: "Только контакты",
-  nobody: "Никто",
+const VIS_OPTIONS: { id: Vis; label: string }[] = [
+  { id: "everyone", label: "Все" },
+  { id: "contacts", label: "Контакты" },
+  { id: "nobody", label: "Никто" },
+];
+
+const timeAgo = (ts: number) => {
+  if (!ts) return "";
+  const d = Math.floor(Date.now() / 1000 - ts);
+  if (d < 300) return "сейчас в сети";
+  if (d < 3600) return `${Math.floor(d / 60)} мин назад`;
+  if (d < 86400) return `${Math.floor(d / 3600)} ч назад`;
+  return new Date(ts * 1000).toLocaleDateString("ru", { day: "numeric", month: "short" });
 };
 
 export default function PrivacyPanel({
@@ -22,19 +34,17 @@ export default function PrivacyPanel({
   onUserUpdate: (u: User) => void;
 }) {
   useEdgeSwipeBack(onClose);
-  const { t } = useT();
 
   const [readReceipts, setReadReceipts] = useState<boolean>(currentUser.read_receipts_enabled ?? true);
   const [lastSeen, setLastSeen] = useState<Vis>((currentUser.last_seen_visibility as Vis) || "everyone");
   const [photoVis, setPhotoVis] = useState<Vis>((currentUser.profile_photo_visibility as Vis) || "everyone");
   const [phoneVis, setPhoneVis] = useState<Vis>((currentUser.phone_visibility as Vis) || "contacts");
-
-  // Sessions
-  const [sessions, setSessions] = useState<{ id: number; device_name: string; device_info: string; ip_addr: string; last_active_at: number; revoked: boolean }[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [showSessions, setShowSessions] = useState(false);
 
   const update = async (field: string, value: unknown) => {
-    await api("update_user_settings", { [field]: value }, currentUser.id);
     onUserUpdate({ ...currentUser, [field]: value } as User);
+    await api("update_user_settings", { [field]: value }, currentUser.id).catch(() => null);
   };
 
   useEffect(() => {
@@ -43,97 +53,77 @@ export default function PrivacyPanel({
     });
   }, [currentUser.id]);
 
+  const active = sessions.filter(s => !s.revoked);
+
+  const revokeOne = async (id: number) => {
+    await api("sessions_revoke", { session_id: id }, currentUser.id);
+    setSessions(prev => prev.filter(x => x.id !== id));
+  };
+
   const revokeAll = async () => {
-    if (!confirm("Выйти со всех устройств кроме этого?")) return;
+    if (!confirm("Выйти со всех устройств, кроме этого?")) return;
     await api("sessions_revoke_all", {}, currentUser.id);
     const r = await api("sessions_list", {}, currentUser.id);
     if (Array.isArray(r?.sessions)) setSessions(r.sessions);
   };
 
-  const VisRow = ({ label, sub, value, onChange }: { label: string; sub?: string; value: Vis; onChange: (v: Vis) => void }) => (
-    <div className="glass rounded-2xl p-3">
-      <div className="font-semibold text-sm">{label}</div>
-      {sub && <p className="text-[11px] text-muted-foreground mb-2">{sub}</p>}
-      <div className="grid grid-cols-3 gap-1">
-        {(["everyone", "contacts", "nobody"] as Vis[]).map(v => (
-          <button
-            key={v}
-            onClick={() => onChange(v)}
-            className={`py-1.5 rounded-xl text-xs font-semibold ${value === v ? "grad-primary text-white" : "glass text-muted-foreground"}`}
-          >
-            {VIS_LABELS[v]}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
   return (
     <div className="fixed inset-0 z-[260] bg-background flex flex-col animate-fade-in">
-      <div className="flex items-center gap-2 px-3 py-2 glass-strong border-b border-white/5" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
-        <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/8">
-          <Icon name="ChevronLeft" size={20} />
-        </button>
-        <h2 className="font-bold flex-1">{t("nav.privacy")}</h2>
-      </div>
+      <SettingsHeader title="Приватность" sub="Кто видит ваши данные" onBack={onClose} />
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        <div className="glass rounded-2xl p-4 flex items-center gap-3">
-          <Icon name="Eye" size={20} className="text-violet-400" />
-          <div className="flex-1">
-            <div className="font-semibold text-sm">Отчёты о прочтении</div>
-            <p className="text-[11px] text-muted-foreground">Показывать собеседнику что вы прочитали</p>
-          </div>
-          <button
-            onClick={() => { const v = !readReceipts; setReadReceipts(v); update("read_receipts_enabled", v); }}
-            className={`w-11 h-6 rounded-full transition ${readReceipts ? "bg-violet-500" : "bg-white/10"}`}
-          >
-            <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${readReceipts ? "translate-x-5" : "translate-x-0.5"}`} />
-          </button>
-        </div>
+      <div className="flex-1 overflow-y-auto px-4 space-y-5" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
+        <SettingsGroup title="Кто видит" footer="Для номера телефона рекомендуем «Контакты».">
+          <SettingsChoiceRow icon="Phone" color="#22c55e" label="Номер телефона" value={phoneVis} options={VIS_OPTIONS}
+            onChange={(v) => { setPhoneVis(v); update("phone_visibility", v); }} />
+          <SettingsChoiceRow icon="Image" color="#ec4899" label="Фото профиля" value={photoVis} options={VIS_OPTIONS}
+            onChange={(v) => { setPhotoVis(v); update("profile_photo_visibility", v); }} />
+          <SettingsChoiceRow icon="Clock" color="#3b82f6" label="Был(а) в сети" value={lastSeen} options={VIS_OPTIONS}
+            onChange={(v) => { setLastSeen(v); update("last_seen_visibility", v); }} />
+        </SettingsGroup>
 
-        <VisRow label="Кому видно «был в сети»" value={lastSeen} onChange={(v) => { setLastSeen(v); update("last_seen_visibility", v); }} />
-        <VisRow label="Кому видно фото профиля" value={photoVis} onChange={(v) => { setPhotoVis(v); update("profile_photo_visibility", v); }} />
-        <VisRow label="Кому виден номер телефона" sub="«Только контакты» — самый рекомендуемый вариант" value={phoneVis} onChange={(v) => { setPhoneVis(v); update("phone_visibility", v); }} />
+        <SettingsGroup title="Сообщения">
+          <SettingsToggleRow icon="CheckCheck" color="#8b5cf6" label="Отчёты о прочтении" sub="Собеседник видит, что вы прочитали"
+            on={readReceipts} onToggle={() => { const v = !readReceipts; setReadReceipts(v); update("read_receipts_enabled", v); }} />
+        </SettingsGroup>
 
-        {/* Sessions */}
-        <div className="glass rounded-2xl p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <Icon name="Smartphone" size={20} className="text-cyan-400" />
-            <div className="flex-1">
-              <div className="font-semibold text-sm">Активные сессии</div>
-              <p className="text-[11px] text-muted-foreground">Устройства, на которых вы вошли</p>
-            </div>
-          </div>
-          {sessions.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground">Нет данных о других устройствах</p>
-          ) : (
-            <div className="space-y-1">
-              {sessions.filter(s => !s.revoked).map(s => (
-                <div key={s.id} className="flex items-center justify-between py-1.5 text-xs">
-                  <span className="truncate">{s.device_name || s.device_info || `Сессия #${s.id}`}</span>
-                  <button
-                    onClick={async () => { await api("sessions_revoke", { session_id: s.id }, currentUser.id); setSessions(prev => prev.filter(x => x.id !== s.id)); }}
-                    className="text-red-400 text-[10px] font-semibold"
-                  >Отключить</button>
+        <SettingsGroup title="Устройства">
+          <div>
+            <button type="button" onClick={() => setShowSessions(v => !v)} className="w-full flex items-center gap-3 px-3.5 py-3 hover:bg-white/5 transition text-left">
+              <SettingsIcon icon="Smartphone" color="#06b6d4" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">Активные сеансы</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {active.length ? `Устройств: ${active.length}` : "Где выполнен вход в аккаунт"}
                 </div>
-              ))}
-            </div>
-          )}
-          <button onClick={revokeAll} className="w-full mt-2 py-2 rounded-xl bg-red-500/10 text-red-300 text-xs font-semibold">
-            Выйти со всех устройств
-          </button>
-        </div>
-
-        <div className="glass rounded-2xl p-4">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon name="Ban" size={20} className="text-red-400" />
-            <div className="font-semibold text-sm">Заблокированные</div>
+              </div>
+              <Icon name={showSessions ? "ChevronUp" : "ChevronDown"} size={16} className="text-muted-foreground flex-shrink-0" />
+            </button>
+            {showSessions && (
+              <div className="px-3 pb-2">
+                {active.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-1 py-2">Нет данных о других устройствах</p>
+                ) : active.map(s => (
+                  <div key={s.id} className="flex items-center gap-3 px-1 py-2">
+                    <Icon name="MonitorSmartphone" fallback="Smartphone" size={16} className="text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm truncate">{s.device_name || s.device_info || `Сеанс #${s.id}`}</div>
+                      {s.last_active_at ? <div className="text-[11px] text-muted-foreground">{timeAgo(s.last_active_at)}</div> : null}
+                    </div>
+                    <button onClick={() => revokeOne(s.id)} className="text-red-400 text-xs font-semibold px-2 py-1 rounded-lg hover:bg-red-500/10 flex-shrink-0">
+                      Завершить
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <p className="text-[11px] text-muted-foreground">Чтобы заблокировать пользователя, откройте чат с ним → меню → Заблокировать.</p>
-        </div>
-      </div>
+          <SettingsRow icon="LogOut" color="#ef4444" label="Выйти со всех устройств" sub="Кроме этого" onClick={revokeAll} danger right={null} />
+        </SettingsGroup>
 
+        <SettingsGroup title="Блокировка">
+          <SettingsRow icon="Ban" color="#64748b" label="Заблокированные" sub="Откройте чат → меню → «Заблокировать»" />
+        </SettingsGroup>
+      </div>
     </div>
   );
 }

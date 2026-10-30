@@ -7,22 +7,7 @@ import { PinDialog, type PinFlow } from "@/components/messenger/settings/PinDial
 import { LoginEventsList, type LoginEvent } from "@/components/messenger/settings/LoginEventsList";
 import { VkLinkRow } from "@/components/messenger/settings/VkLinkRow";
 import { saveFile } from "@/lib/saveFile";
-
-/** Переключатель. Вынесен наружу, чтобы не пересоздавался при обновлениях. */
-function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={`w-12 h-6 rounded-full transition-all duration-300 relative flex-shrink-0 ${on ? "grad-primary" : "bg-white/10"}`}
-    >
-      <div
-        className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-300"
-        style={{ left: on ? "calc(100% - 22px)" : "2px" }}
-      />
-    </button>
-  );
-}
+import { SettingsGroup, SettingsRow, SettingsToggleRow } from "@/components/messenger/settings/SettingsUI";
 
 export function SettingsPanel({
   onBack,
@@ -220,37 +205,11 @@ export function SettingsPanel({
 
   const [showE2e, setShowE2e] = useState(false);
 
-  const Group = ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-1.5">{title}</div>
-      <div className="glass rounded-2xl overflow-hidden [&>*+*]:border-t [&>*+*]:border-white/[0.06]">{children}</div>
-    </div>
+  const Group = SettingsGroup;
+  const ToggleRow = ({ on, onToggle, ...r }: { icon: string; color: string; label: string; sub: string; on: boolean; onToggle: () => void }) => (
+    <SettingsToggleRow {...r} on={on} onToggle={onToggle} />
   );
-  const RowIcon = ({ icon, color }: { icon: string; color: string }) => (
-    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color }}>
-      <Icon name={icon} fallback="Circle" size={17} className="text-white" />
-    </div>
-  );
-  const ToggleRow = ({ icon, color, label, sub, on, onToggle }: { icon: string; color: string; label: string; sub: string; on: boolean; onToggle: () => void }) => (
-    <div className="flex items-center gap-3 px-3.5 py-3">
-      <RowIcon icon={icon} color={color} />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{label}</div>
-        <div className="text-xs text-muted-foreground truncate">{sub}</div>
-      </div>
-      <Toggle on={on} onToggle={onToggle} />
-    </div>
-  );
-  const LinkRow = ({ icon, color, label, sub, onClick, right }: { icon: string; color: string; label: string; sub?: string; onClick?: () => void; right?: React.ReactNode }) => (
-    <button type="button" onClick={onClick} className="w-full flex items-center gap-3 px-3.5 py-3 hover:bg-white/5 active:bg-white/8 transition text-left disabled:opacity-80">
-      <RowIcon icon={icon} color={color} />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{label}</div>
-        {sub && <div className="text-xs text-muted-foreground truncate">{sub}</div>}
-      </div>
-      {right ?? <Icon name="ChevronRight" size={16} className="text-muted-foreground flex-shrink-0" />}
-    </button>
-  );
+  const LinkRow = SettingsRow;
 
   return (
     <div className="flex flex-col h-full animate-fade-in overflow-y-auto">

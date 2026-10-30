@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import {
   RINGTONES, NOTIFY_SOUNDS,
@@ -6,6 +7,81 @@ import {
   clearCustomRingtone, clearCustomNotify,
 } from "@/lib/sounds";
 import type { SettingsSounds } from "./useSettingsSounds";
+import { SettingsGroup, SettingsIcon } from "./SettingsUI";
+
+type Item = { id: string; name: string };
+
+function SoundPicker({
+  icon, color, label, items, value, open, onOpen, onPick, onPreview, onStop, customName, onUpload, onClearCustom,
+}: {
+  icon: string; color: string; label: string; items: Item[]; value: string; open: boolean; onOpen: () => void;
+  onPick: (id: string) => void; onPreview: (id: string) => void; onStop?: () => void;
+  customName?: string | null; onUpload: () => void; onClearCustom: () => void;
+}) {
+  const current = items.find(i => i.id === value);
+  return (
+    <div>
+      <button type="button" onClick={onOpen} className="w-full flex items-center gap-3 px-3.5 py-3 hover:bg-white/5 transition text-left">
+        <SettingsIcon icon={icon} color={color} />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate">{label}</div>
+          <div className="text-xs text-muted-foreground truncate">{value === "custom" && customName ? customName : current?.name || "—"}</div>
+        </div>
+        <Icon name={open ? "ChevronUp" : "ChevronDown"} size={16} className="text-muted-foreground flex-shrink-0" />
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-1">
+          {items.map(it => {
+            const isCustom = it.id === "custom";
+            const active = value === it.id;
+            return (
+              <div key={it.id} className={`flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-xl ${active ? "bg-violet-500/15" : "hover:bg-white/5"}`}>
+                <button
+                  type="button"
+                  onClick={() => (isCustom && !customName ? onUpload() : onPick(it.id))}
+                  className="flex-1 min-w-0 flex items-center gap-2.5 text-left"
+                >
+                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${active ? "border-violet-400" : "border-white/25"}`}>
+                    {active && <span className="w-2 h-2 rounded-full bg-violet-400" />}
+                  </span>
+                  <span className="text-sm truncate">{isCustom ? (customName ? `Свой: ${customName}` : "Загрузить свой звук") : it.name}</span>
+                </button>
+                {isCustom ? (
+                  <>
+                    <button type="button" onClick={onUpload} className="p-1.5 rounded-lg hover:bg-white/8" aria-label="Загрузить">
+                      <Icon name="Upload" size={14} className="text-violet-400" />
+                    </button>
+                    {customName && (
+                      <>
+                        <button type="button" onClick={() => onPreview("custom")} className="p-1.5 rounded-lg hover:bg-white/8" aria-label="Прослушать">
+                          <Icon name="Play" size={14} />
+                        </button>
+                        <button type="button" onClick={onClearCustom} className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" aria-label="Удалить">
+                          <Icon name="Trash2" size={14} />
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => onPreview(it.id)} className="p-1.5 rounded-lg hover:bg-white/8" aria-label="Прослушать">
+                      <Icon name="Play" size={14} />
+                    </button>
+                    {onStop && (
+                      <button type="button" onClick={onStop} className="p-1.5 rounded-lg hover:bg-white/8" aria-label="Остановить">
+                        <Icon name="Square" size={14} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function SoundsSection({ sounds }: { sounds: SettingsSounds }) {
   const {
@@ -18,122 +94,41 @@ export function SoundsSection({ sounds }: { sounds: SettingsSounds }) {
     onPickRingFile, onRingFile,
     onPickNotifyFile, onNotifyFile,
   } = sounds;
+  const [open, setOpen] = useState<"ring" | "notify" | null>(null);
 
   return (
     <>
-        <div className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mt-4 mb-1 px-1">Звуки</div>
-        {soundError && (
-          <div className="px-4 py-2 glass rounded-xl border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-            <Icon name="AlertCircle" size={14} />
-            <span>{soundError}</span>
-          </div>
-        )}
-
-        <div className="px-4 py-3 glass rounded-2xl">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon name="Phone" size={16} className="text-violet-400" />
-            <span className="text-sm font-medium">Мелодия звонка</span>
-          </div>
-          <div className="space-y-1.5">
-            {RINGTONES.map((r) => (
-              <div key={r.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${ringtone === r.id ? "border-violet-500 bg-violet-500/10" : "border-white/5 hover:bg-white/5"}`}>
-                <button
-                  onClick={() => { setRingtone(r.id); setRingtoneId(r.id); }}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 ${ringtone === r.id ? "border-violet-500" : "border-white/20"} flex items-center justify-center flex-shrink-0`}>
-                    {ringtone === r.id && <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate">{r.name}</div>
-                    {r.id === "custom" && customMeta && <div className="text-[11px] text-muted-foreground truncate">{customMeta.name}</div>}
-                    {r.id === "custom" && !customMeta && <div className="text-[11px] text-muted-foreground">Файл не загружен</div>}
-                  </div>
-                </button>
-                {r.id === "custom" ? (
-                  <>
-                    <button onClick={onPickRingFile} className="p-1.5 rounded-lg hover:bg-white/8" title="Загрузить">
-                      <Icon name="Upload" size={14} className="text-violet-400" />
-                    </button>
-                    {customMeta && (
-                      <>
-                        <button onClick={() => previewRingtone("custom")} className="p-1.5 rounded-lg hover:bg-white/8" title="Прослушать">
-                          <Icon name="Play" size={14} />
-                        </button>
-                        <button onClick={async () => { await clearCustomRingtone(); setCustomMeta(null); if (ringtone === "custom") { setRingtone("nova"); setRingtoneId("nova"); } }} className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" title="Удалить">
-                          <Icon name="Trash2" size={14} />
-                        </button>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => previewRingtone(r.id)} className="p-1.5 rounded-lg hover:bg-white/8" title="Прослушать">
-                      <Icon name="Play" size={14} />
-                    </button>
-                    <button onClick={() => stopRingtone()} className="p-1.5 rounded-lg hover:bg-white/8" title="Остановить">
-                      <Icon name="Square" size={14} />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-          <input ref={ringFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onRingFile} />
-          <p className="text-[11px] text-muted-foreground mt-2">Загрузи MP3, WAV или другой аудиофайл — он будет играть как в Telegram при входящем звонке.</p>
+      {soundError && (
+        <div className="px-4 py-2 glass rounded-xl border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+          <Icon name="AlertCircle" size={14} />
+          <span>{soundError}</span>
         </div>
-
-        <div className="px-4 py-3 glass rounded-2xl">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon name="Bell" size={16} className="text-violet-400" />
-            <span className="text-sm font-medium">Звук уведомлений</span>
-          </div>
-          <div className="space-y-1.5">
-            {NOTIFY_SOUNDS.map((s) => (
-              <div key={s.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${notifySnd === s.id ? "border-violet-500 bg-violet-500/10" : "border-white/5 hover:bg-white/5"}`}>
-                <button
-                  onClick={() => {
-                    if (s.id === "custom" && !customNotifyMeta) { onPickNotifyFile(); return; }
-                    setNotifySnd(s.id); setNotifyId(s.id); previewNotifySound(s.id);
-                  }}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 ${notifySnd === s.id ? "border-violet-500" : "border-white/20"} flex items-center justify-center flex-shrink-0`}>
-                    {notifySnd === s.id && <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate">{s.name}</div>
-                    {s.id === "custom" && customNotifyMeta && <div className="text-[11px] text-muted-foreground truncate">{customNotifyMeta.name}</div>}
-                    {s.id === "custom" && !customNotifyMeta && <div className="text-[11px] text-muted-foreground">Файл не загружен</div>}
-                  </div>
-                </button>
-                {s.id === "custom" ? (
-                  <>
-                    <button onClick={onPickNotifyFile} className="p-1.5 rounded-lg hover:bg-white/8" title="Загрузить">
-                      <Icon name="Upload" size={14} className="text-violet-400" />
-                    </button>
-                    {customNotifyMeta && (
-                      <>
-                        <button onClick={() => previewNotifySound("custom")} className="p-1.5 rounded-lg hover:bg-white/8" title="Прослушать">
-                          <Icon name="Play" size={14} />
-                        </button>
-                        <button onClick={async () => { await clearCustomNotify(); setCustomNotifyMeta(null); if (notifySnd === "custom") { setNotifySnd("ping"); setNotifyId("ping"); } }} className="p-1.5 rounded-lg hover:bg-red-500/15 text-red-400" title="Удалить">
-                          <Icon name="Trash2" size={14} />
-                        </button>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <button onClick={() => previewNotifySound(s.id)} className="p-1.5 rounded-lg hover:bg-white/8">
-                    <Icon name="Play" size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <input ref={notifyFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onNotifyFile} />
-          <p className="text-[11px] text-muted-foreground mt-2">Можно загрузить свой короткий звук для входящих сообщений.</p>
-        </div>
+      )}
+      <SettingsGroup title="Звуки" footer="Свой звук — любой аудиофайл до 10 МБ (MP3, WAV, M4A).">
+        <SoundPicker
+          icon="Bell" color="#f97316" label="Звук сообщений"
+          items={NOTIFY_SOUNDS} value={notifySnd}
+          open={open === "notify"} onOpen={() => setOpen(o => (o === "notify" ? null : "notify"))}
+          onPick={(id) => { setNotifySnd(id as typeof notifySnd); setNotifyId(id as typeof notifySnd); previewNotifySound(id as typeof notifySnd); }}
+          onPreview={(id) => previewNotifySound(id as typeof notifySnd)}
+          customName={customNotifyMeta?.name}
+          onUpload={onPickNotifyFile}
+          onClearCustom={async () => { await clearCustomNotify(); setCustomNotifyMeta(null); if (notifySnd === "custom") { setNotifySnd("ping"); setNotifyId("ping"); } }}
+        />
+        <SoundPicker
+          icon="Phone" color="#10b981" label="Мелодия звонка"
+          items={RINGTONES} value={ringtone}
+          open={open === "ring"} onOpen={() => setOpen(o => (o === "ring" ? null : "ring"))}
+          onPick={(id) => { setRingtone(id as typeof ringtone); setRingtoneId(id as typeof ringtone); }}
+          onPreview={(id) => previewRingtone(id as typeof ringtone)}
+          onStop={() => stopRingtone()}
+          customName={customMeta?.name}
+          onUpload={onPickRingFile}
+          onClearCustom={async () => { await clearCustomRingtone(); setCustomMeta(null); if (ringtone === "custom") { setRingtone("nova"); setRingtoneId("nova"); } }}
+        />
+      </SettingsGroup>
+      <input ref={ringFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onRingFile} />
+      <input ref={notifyFileRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" className="hidden" onChange={onNotifyFile} />
     </>
   );
 }
