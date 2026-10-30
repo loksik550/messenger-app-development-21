@@ -525,15 +525,25 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-1">
             {/* Nova Pro */}
-            <button
-              onClick={() => openOverlay(setShowPro)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
-              style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)", color: "#fff" }}
-              title={currentUser?.is_pro && currentUser.pro_until ? `Nova Pro активен до ${new Date(currentUser.pro_until * 1000).toLocaleDateString("ru")}` : "Оформить Nova Pro"}
-            >
-              <Icon name={currentUser?.is_pro ? "BadgeCheck" : "Zap"} size={12} />
-              Nova Pro
-            </button>
+            <div className="relative flex flex-col items-center">
+              <button
+                onClick={() => openOverlay(setShowPro)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
+                style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)", color: "#fff" }}
+                title={currentUser?.is_pro && currentUser.pro_until ? `Nova Pro активен до ${new Date(currentUser.pro_until * 1000).toLocaleDateString("ru")}` : "Оформить Nova Pro"}
+              >
+                <Icon name={currentUser?.is_pro ? "BadgeCheck" : "Zap"} size={12} />
+                Nova Pro
+              </button>
+              {currentUser?.is_pro && currentUser.pro_until ? (
+                <button
+                  onClick={() => openOverlay(setShowPro)}
+                  className="absolute top-full mt-0.5 text-[9px] leading-none font-medium text-violet-300/90 whitespace-nowrap"
+                >
+                  до {new Date(currentUser.pro_until * 1000).toLocaleDateString("ru", { day: "numeric", month: "short", year: "numeric" }).replace(" г.", "")}
+                </button>
+              ) : null}
+            </div>
             {/* Уведомления */}
             {currentUser && (
               <NotificationsBell
