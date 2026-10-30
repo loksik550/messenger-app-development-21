@@ -1,0 +1,2 @@
+ALTER TABLE t_p67547116_messenger_app_develo.users ADD COLUMN IF NOT EXISTS app_icon TEXT;
+INSERT INTO t_p67547116_messenger_app_develo.dev_settings (key, value, updated_at) VALUES ('app_icons_enabled', 'classic,ocean,sunset,emerald,gold,light,mono', 0) ON CONFLICT (key) DO NOTHING;
