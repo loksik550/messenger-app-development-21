@@ -377,6 +377,26 @@ const phoneContacts = {
       return { items: [], denied: false };
     }
   },
+  async list(): Promise<{ items: { name: string; phones: string[] }[]; denied: boolean }> {
+    if (!isNative) return { items: [], denied: false };
+    try {
+      let perm = await Contacts.checkPermissions();
+      if (perm.contacts !== "granted") perm = await Contacts.requestPermissions();
+      if (perm.contacts !== "granted") return { items: [], denied: true };
+      const res = await Contacts.getContacts({ projection: { name: true, phones: true } });
+      const items: { name: string; phones: string[] }[] = [];
+      for (const c of res.contacts || []) {
+        const phones = Array.from(new Set((c.phones || []).map(p => (p.number || "").replace(/[^\d+]/g, "")).filter(n => n.replace(/\D/g, "").length >= 10)));
+        if (!phones.length) continue;
+        const nm = c.name?.display || [c.name?.given, c.name?.family].filter(Boolean).join(" ") || phones[0];
+        items.push({ name: nm, phones });
+      }
+      items.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+      return { items, denied: false };
+    } catch {
+      return { items: [], denied: false };
+    }
+  },
 };
 
 // ── App lifecycle ───────────────────────────────────────────────────────────

@@ -439,6 +439,19 @@
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "match_phones requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "match_phones",
+        "phones": [
+          "79990000001"
+        ]
+      },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
     }
   ]
 }

@@ -3361,6 +3361,42 @@ def _handle(event: dict, context) -> dict:
         conn.close()
         return ok({"ok": True, "added": added, "matched": matched, "not_registered": not_registered})
 
+    # ── match_phones (кто из телефонной книги уже в Nova, без добавления) ─────
+    if action == "match_phones":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        raw = body.get("phones") or []
+        if not isinstance(raw, list):
+            conn.close()
+            return err("Поле phones должно быть массивом")
+        uniq: list[str] = []
+        seen_p: set[str] = set()
+        for p in raw[:3000]:
+            d = "".join(ch for ch in str(p or "") if ch.isdigit())
+            if len(d) == 11 and d.startswith("8"):
+                d = "7" + d[1:]
+            if len(d) == 10 and d.startswith("9"):
+                d = "7" + d
+            if len(d) >= 10 and d not in seen_p:
+                seen_p.add(d)
+                uniq.append(d)
+        if not uniq:
+            conn.close()
+            return ok({"ok": True, "users": []})
+        in_clause = ",".join(f"'{p}'" for p in uniq)
+        cur.execute(
+            f"""SELECT u.id, u.name, u.phone, u.avatar_url,
+                       EXISTS(SELECT 1 FROM {SCHEMA}.contacts c WHERE c.user_id = %s AND c.contact_id = u.id)
+                FROM {SCHEMA}.users u
+                WHERE u.phone IN ({in_clause}) AND u.id <> %s
+                  AND COALESCE(u.is_test, FALSE) = FALSE AND COALESCE(u.is_service, FALSE) = FALSE""",
+            (int(user_id), int(user_id)),
+        )
+        users = [{"id": r[0], "name": r[1], "phone": r[2], "avatar_url": r[3], "is_contact": bool(r[4])} for r in cur.fetchall()]
+        conn.close()
+        return ok({"ok": True, "users": users})
+
     # ── remove_contact ────────────────────────────────────────────────────────
     if action == "remove_contact":
         if not user_id:

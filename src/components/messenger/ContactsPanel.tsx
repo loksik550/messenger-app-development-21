@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { native } from "@/lib/native";
 import Icon from "@/components/ui/icon";
 import { api, type Contact, type User, type Chat } from "@/lib/api";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
@@ -8,6 +7,9 @@ import { ImportHelpModal } from "@/components/messenger/contacts/ImportHelpModal
 import { SyncBanners } from "@/components/messenger/contacts/SyncBanners";
 import { AddContactForm } from "@/components/messenger/contacts/AddContactForm";
 import { ContactListItem } from "@/components/messenger/contacts/ContactListItem";
+import FabMenu from "@/components/messenger/FabMenu";
+import PhoneBookPanel from "@/components/messenger/contacts/PhoneBookPanel";
+import InvitePanel from "@/components/messenger/InvitePanel";
 
 export function ContactsPanel({
   currentUser,
@@ -29,6 +31,8 @@ export function ContactsPanel({
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const [search, setSearch] = useState("");
+  const [showBook, setShowBook] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
 
   const loadContacts = async () => {
     setLoading(true);
@@ -49,7 +53,6 @@ export function ContactsPanel({
     setShowImportHelp,
     vcfInputRef,
     handleVcfFile,
-    startImport,
   } = useContactsImport(currentUser.id, loadContacts);
 
   useEffect(() => { loadContacts(); }, []);
@@ -110,7 +113,7 @@ export function ContactsPanel({
   }, {});
 
   return (
-    <div className="flex flex-col h-full animate-fade-in">
+    <div className="flex flex-col h-full animate-fade-in relative">
       {/* Header */}
       <div className="px-4 py-4 glass-strong border-b border-white/5" style={{ paddingTop: "calc(1rem + env(safe-area-inset-top))" }}>
         <div className="flex items-center justify-between mb-3 gap-2">
@@ -124,15 +127,15 @@ export function ContactsPanel({
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
-              onClick={startImport}
+              onClick={() => setShowBook(true)}
               disabled={syncing}
-              title="Импортировать контакты"
+              title="Контакты телефона"
               className="p-2 rounded-xl transition-all glass hover:bg-white/8 text-muted-foreground disabled:opacity-50"
             >
               {syncing ? (
                 <div className="w-[18px] h-[18px] border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
               ) : (
-                <Icon name="RefreshCw" size={18} />
+                <Icon name="BookUser" fallback="Users" size={18} />
               )}
             </button>
             <button
@@ -194,12 +197,12 @@ export function ContactsPanel({
             <p className="font-semibold mb-1">Контактов пока нет</p>
             <p className="text-sm text-muted-foreground mb-4">Импортируй телефонную книгу или добавь номер вручную</p>
             <button
-              onClick={startImport}
+              onClick={() => setShowBook(true)}
               disabled={syncing}
               className="grad-primary text-white rounded-xl px-4 py-2.5 text-sm font-semibold glow-primary transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
             >
-              <Icon name="RefreshCw" size={16} />
-              {syncing ? "Ищем друзей..." : (native.phoneContacts.supported ? "Найти друзей из контактов" : "Импортировать контакты")}
+              <Icon name="BookUser" fallback="Users" size={16} />
+              {syncing ? "Ищем друзей..." : "Показать контакты телефона"}
             </button>
           </div>
         )}
@@ -220,7 +223,27 @@ export function ContactsPanel({
             ))}
           </div>
         ))}
+        <div className="h-20" />
       </div>
+
+      <FabMenu
+        label="Добавить или пригласить"
+        items={[
+          { key: "add", label: "Добавить контакт", icon: "UserPlus", color: "text-violet-500", onClick: () => { setShowAdd(true); setAddError(""); } },
+          { key: "invite", label: "Пригласить друга", icon: "Send", color: "text-cyan-600", onClick: () => setShowInvite(true) },
+        ]}
+      />
+
+      {showBook && (
+        <PhoneBookPanel
+          currentUser={currentUser}
+          onClose={() => setShowBook(false)}
+          onStartChat={onStartChat}
+          onContactsChanged={loadContacts}
+          onPickFile={() => vcfInputRef.current?.click()}
+        />
+      )}
+      {showInvite && <InvitePanel currentUser={currentUser} onClose={() => setShowInvite(false)} />}
 
       <input
         ref={vcfInputRef}
