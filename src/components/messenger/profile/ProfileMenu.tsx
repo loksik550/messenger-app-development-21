@@ -125,37 +125,9 @@ export function ProfileMenu({
       </div>
     )}
 
-    {onOpenPro && (
-      <div className="px-4 mb-4">
-        <button onClick={onOpenPro}
-          className="w-full rounded-2xl p-3 flex items-center gap-3 transition"
-          style={{
-            background: currentUser.is_pro
-              ? "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(249,115,22,0.15))"
-              : "rgba(255,255,255,0.05)",
-            border: currentUser.is_pro ? "1px solid rgba(245,158,11,0.3)" : "1px solid rgba(255,255,255,0.08)",
-          }}>
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)" }}>
-            👑
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="text-sm font-bold truncate">
-              {currentUser.is_pro ? "Nova Pro активен" : "Оформить Nova Pro"}
-            </div>
-            <div className="text-[11px] text-muted-foreground truncate">
-              {currentUser.is_pro && currentUser.pro_until
-                ? `до ${new Date(currentUser.pro_until * 1000).toLocaleDateString("ru")}`
-                : "Эмодзи-статус, цвет ника, инкогнито и больше"}
-            </div>
-          </div>
-          <Icon name="ChevronRight" size={16} className="text-muted-foreground flex-shrink-0" />
-        </button>
-      </div>
-    )}
-
     <div className="glass rounded-2xl p-4 border border-violet-500/20 mx-4 mb-4">
       <p className="text-sm font-semibold mb-1">{tr("profile.invite")}</p>
-      <p className="text-xs text-muted-foreground mb-3">Отправьте другу личную ссылку — и вы оба получите Premium в подарок</p>
+      <p className="text-xs text-muted-foreground mb-3">Отправьте другу личную ссылку — и вы оба получите Nova Pro в подарок</p>
       <button
         onClick={async () => {
           if (onOpenInvite) { onOpenInvite(); return; }

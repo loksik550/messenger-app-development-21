@@ -524,14 +524,15 @@ export default function Index() {
             <span className="text-lg font-bold grad-text">Nova</span>
           </div>
           <div className="flex items-center gap-1">
-            {/* Premium badge */}
+            {/* Nova Pro */}
             <button
               onClick={() => openOverlay(setShowPro)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-90"
-              style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", color: "#fff" }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)", color: "#fff" }}
+              title={currentUser?.is_pro && currentUser.pro_until ? `Nova Pro активен до ${new Date(currentUser.pro_until * 1000).toLocaleDateString("ru")}` : "Оформить Nova Pro"}
             >
-              <Icon name="Crown" size={12} />
-              Premium
+              <Icon name={currentUser?.is_pro ? "BadgeCheck" : "Zap"} size={12} />
+              Nova Pro
             </button>
             {/* Уведомления */}
             {currentUser && (
