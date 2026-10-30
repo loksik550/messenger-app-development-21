@@ -517,21 +517,21 @@ export default function Index() {
         aria-hidden={!showSidebar ? true : undefined}
       >
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between px-4 pb-3" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
+        <div className="app-header flex items-center justify-between px-4 pb-3" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
           {/* Служебная панель открывается пятикратным нажатием на логотип —
               она не предназначена для обычных пользователей */}
           <div className="flex items-center gap-2 select-none">
-            <div className="w-8 h-8 grad-primary rounded-xl flex items-center justify-center glow-primary">
+            <div className="app-logo-icon w-8 h-8 grad-primary rounded-xl flex items-center justify-center glow-primary">
               <Icon name="Zap" size={16} className="text-white" />
             </div>
-            <span className="text-lg font-bold grad-text">Nova</span>
+            <span className="app-logo-text text-lg font-bold grad-text">Nova</span>
           </div>
           <div className="flex items-center gap-1">
             {/* Nova Pro */}
             <div className="relative flex flex-col items-center">
               <button
                 onClick={() => openOverlay(setShowPro)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
+                className="app-pro-btn flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
                 style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)", color: "#fff" }}
               >
                 <Icon name={currentUser?.is_pro ? "BadgeCheck" : "Zap"} size={12} />
@@ -569,13 +569,13 @@ export default function Index() {
         </div>
 
         {/* Tab nav */}
-        <div className="flex mx-4 mb-3 glass rounded-2xl p-1">
+        <div className="app-tabs flex mx-4 mb-3 glass rounded-2xl p-1">
           {(["chats", "stories", "contacts"] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setActiveTab(t)}
               className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
-                activeTab === t ? "grad-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+                activeTab === t ? "app-tab-active grad-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {tr({ chats: "nav.chats", stories: "nav.stories", contacts: "nav.contacts" }[t])}
@@ -752,7 +752,7 @@ export default function Index() {
         </div>
 
         {/* Bottom nav */}
-        <div className="flex items-center justify-around px-4 pt-3 border-t border-white/5" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+        <div className="app-bottomnav flex items-center justify-around px-4 pt-3 border-t border-white/5" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           {NAV_ITEMS.map(item => {
             // Считаем непрочитанные только по НЕзаглушённым чатам — иначе
             // шумные группы постоянно бы дёргали значок на навигации.
@@ -770,7 +770,7 @@ export default function Index() {
                   setShowSidebar(item.tab === "chats");
                 }}
                 className={`relative flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${
-                  view === item.tab && !selectedChat ? "text-violet-400" : "text-muted-foreground hover:text-foreground"
+                  view === item.tab && !selectedChat ? "app-nav-active text-violet-400" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Icon name={item.icon as string} size={20} />

@@ -7,6 +7,7 @@ import { useSupportUnread } from "@/hooks/useSupportUnread";
 import { APP_VERSION } from "@/lib/version";
 
 const MyStickersPanel = lazy(() => import("@/components/messenger/MyStickersPanel"));
+const BadgeCollection = lazy(() => import("@/components/messenger/BadgeCollection"));
 const TestThemesPanel = lazy(() => import("@/components/messenger/profile/TestThemesPanel"));
 import { useSkinAccess } from "@/hooks/useSkinAccess";
 
@@ -53,6 +54,7 @@ export function ProfileMenu({
   const { t: tr } = useT();
   const [showMyStickers, setShowMyStickers] = useState(false);
   const [showSkins, setShowSkins] = useState(false);
+  const [showBadges, setShowBadges] = useState(false);
   const skinAccess = useSkinAccess(currentUser?.id);
   const supportUnread = useSupportUnread(currentUser?.id);
 
@@ -70,7 +72,8 @@ export function ProfileMenu({
       rows: [
         { icon: "UserPen", label: tr("profile.editProfile"), sub: "Имя, фото, статус", action: onEditProfile, color: "#8b5cf6" },
         !!onOpenProSettings && { icon: "Sparkles", label: "Персонализация", sub: "Эмодзи-статус, цвет ника, инкогнито", action: onOpenProSettings, color: "#d946ef" },
-        skinAccess && { icon: "Palette", label: "Тестовые темы", sub: "Новые оформления мессенджера — в разработке", action: () => setShowSkins(true), color: "#f59e0b" },
+        { icon: "Award", label: "Коллекция значков", sub: (currentUser.badges?.length ? `${currentUser.badges.length} шт. · ` : "") + "Номера экземпляров и за что выданы", action: () => setShowBadges(true), color: "#f59e0b" },
+        skinAccess && { icon: "Palette", label: "Тестовые темы", sub: "Новые оформления мессенджера — в разработке", action: () => setShowSkins(true), color: "#14b8a6" },
         !!onOpenVerification && { icon: "BadgeCheck", label: "Верификация", sub: currentUser.verified ? "Аккаунт подтверждён" : "Получить синюю галочку", action: onOpenVerification, color: "#3b82f6" },
       ],
     },
@@ -118,6 +121,11 @@ export function ProfileMenu({
     {showMyStickers && (
       <Suspense fallback={null}>
         <MyStickersPanel currentUser={currentUser} onClose={() => setShowMyStickers(false)} />
+      </Suspense>
+    )}
+    {showBadges && (
+      <Suspense fallback={null}>
+        <BadgeCollection ownerId={currentUser.id} viewerId={currentUser.id} ownerName={currentUser.name} isMine onClose={() => setShowBadges(false)} />
       </Suspense>
     )}
     {showSkins && (

@@ -18,6 +18,8 @@ export function ProBadge({ size = 14, className = "" }: { size?: number; classNa
 export function effectClass(effect?: string | null) {
   if (effect === "shimmer") return "name-shimmer";
   if (effect === "neon") return "name-neon";
+  if (effect === "fire") return "name-fire";
+  if (effect === "rainbow") return "name-rainbow";
   return "";
 }
 
@@ -36,13 +38,16 @@ export default function ProName({
   userId?: number;
 }) {
   const fx = effectClass(effect);
-  const style = fx === "name-shimmer" ? undefined : isPro && color ? ({ color, ["--neon" as string]: color } as React.CSSProperties) : undefined;
+  const style = fx === "name-shimmer" || fx === "name-fire" || fx === "name-rainbow" ? undefined : isPro && color ? ({ color, ["--neon" as string]: color } as React.CSSProperties) : undefined;
   return (
     <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
       {effect === "crown" && (
         <span className="flex-shrink-0 leading-none name-crown" style={{ fontSize: Math.round(badgeSize * 1.05) }} aria-label="Корона">👑</span>
       )}
-      <span className={`truncate ${className} ${fx}`} style={style}>{name}</span>
+      {effect === "snow" && (
+        <span className="flex-shrink-0 leading-none name-snow" style={{ fontSize: Math.round(badgeSize * 1.05) }} aria-label="Снежинка">❄️</span>
+      )}
+      <span className={`truncate ${className} ${fx}`} style={style} data-text={fx === "name-rainbow" ? name : undefined}>{name}</span>
       {isPro && emoji ? <span className="flex-shrink-0 leading-none" style={{ fontSize: badgeSize }}>{emoji}</span> : null}
       {isPro ? <ProBadge size={badgeSize} /> : null}
       <BadgeIcons codes={badges} size={Math.round(badgeSize * 1.15)} max={maxBadges} ownerId={userId} />

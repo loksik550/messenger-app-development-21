@@ -99,7 +99,7 @@ export function ChatFolders({ folder, onChange, chats, groups = [], custom = [],
 
   const chip = (active: boolean) =>
     `flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-      active ? "grad-primary text-white shadow-md shadow-violet-500/20" : "bg-white/5 text-muted-foreground hover:bg-white/10"
+      active ? "chip chip-active grad-primary text-white shadow-md shadow-violet-500/20" : "chip bg-white/5 text-muted-foreground hover:bg-white/10"
     }`;
 
   return (

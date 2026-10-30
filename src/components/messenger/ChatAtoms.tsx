@@ -106,7 +106,7 @@ function ChatRow({ chat, selectedId, open, onOpenChange, onSelect, onToggleMute,
         onOpenChange={onOpenChange}
         onTap={() => { if (!menu) onSelect(chat); }}
         onLongPress={() => setMenu(true)}
-        className={`px-4 py-3 ${selectedId === chat.id ? "bg-white/8 glass" : "bg-[hsl(var(--background))] hover:bg-white/4"}`}
+        className={`chat-row px-4 py-3 ${selectedId === chat.id ? "bg-white/8 glass" : "bg-[hsl(var(--background))] hover:bg-white/4"}`}
       >
           <Avatar label={chat.avatar} id={chat.id} online={chat.online} src={(chat.partner_id ? getCallAvatar(chat.partner_id) : null) || chat.avatar_url || undefined} video={chat.avatarVideo} />
           <div className="flex-1 min-w-0 text-left">
@@ -199,7 +199,7 @@ export function ChatList({
               key={t.key}
               onClick={() => setFilter(t.key)}
               className={`px-3 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition ${
-                active ? "grad-primary text-white" : "glass text-muted-foreground hover:text-foreground"
+                active ? "chip chip-active grad-primary text-white" : "chip glass text-muted-foreground hover:text-foreground"
               }`}
             >
               {t.label}

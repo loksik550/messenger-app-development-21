@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import BadgeCollection from "@/components/messenger/BadgeCollection";
 import ProfileBackdrop from "@/components/messenger/profile/ProfileBackdrop";
 import ProName from "@/components/messenger/ProName";
 import Icon from "@/components/ui/icon";
@@ -38,6 +39,7 @@ export default function PartnerProfilePanel({
   useEdgeSwipeBack(onClose);
   const { t } = useT();
   const [showReport, setShowReport] = useState(false);
+  const [showBadges, setShowBadges] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [comment, setComment] = useState("");
   const [toast, setToast] = useState("");
@@ -179,6 +181,15 @@ export default function PartnerProfilePanel({
           </div>
           </div>
         </div>
+
+        {chat.partner_id && (
+          <div className="mx-3 mb-3 rounded-2xl overflow-hidden bg-white/[0.03] border border-white/5">
+            <Row icon="Award" label={`Коллекция значков${chat.badges?.length ? ` · ${chat.badges.length}` : ""}`} onClick={() => setShowBadges(true)} />
+          </div>
+        )}
+        {showBadges && chat.partner_id && (
+          <BadgeCollection ownerId={chat.partner_id} viewerId={currentUserId} ownerName={chat.name} onClose={() => setShowBadges(false)} />
+        )}
 
         <div className="mx-3 mb-3 rounded-2xl overflow-hidden bg-white/[0.03] border border-white/5">
           <Row icon={chat.pinned ? "PinOff" : "Pin"} label={chat.pinned ? t("partner.unpin") : t("partner.pin")} active={chat.pinned} onClick={() => { onClose(); onTogglePin(); }} />
