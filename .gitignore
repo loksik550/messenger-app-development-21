@@ -39,3 +39,16 @@ venv/
 __pycache__/
 *.pyc
 *.egg-info/
+
+# Capacitor / Android
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/captures/
+android/.idea/
+android/*.iml
+android/app/release/
+android/app/*.jks
+android/app/*.keystore
+android/app/src/main/assets/public/
