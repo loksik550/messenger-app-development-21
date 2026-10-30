@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import Icon from "@/components/ui/icon";
 import { Avatar } from "@/components/messenger/ChatAtoms";
 import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
+import OriginalQualityToggle from "@/components/messenger/OriginalQualityToggle";
 import { useAutoGrow } from "@/hooks/useAutoGrow";
 import { isSendKey } from "@/lib/sendKey";
 import type { Group, GroupMessage, GroupMember } from "@/lib/api";
@@ -36,6 +37,7 @@ interface Props {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onCancelRecording: () => void;
+  isPro?: boolean;
 }
 
 export default function GroupChatInput({
@@ -58,6 +60,7 @@ export default function GroupChatInput({
   uploadLabel = "Загружаем...",
   onCancelReply,
   onCancelEdit,
+  isPro,
   onToggleAttach,
   onCloseAttach,
   onOpenVideoCircle,
@@ -119,6 +122,7 @@ export default function GroupChatInput({
         </div>
       )}
 
+      {showAttach && isPro !== undefined && <OriginalQualityToggle isPro={isPro} />}
       {showAttach && (
         <div className="grid grid-cols-5 gap-2 mb-3 animate-fade-in">
           {[

@@ -1,4 +1,4 @@
-import { uploadMedia } from "@/lib/api";
+import { uploadMedia, uploadAny } from "@/lib/api";
 import { compressImage } from "@/lib/compressImage";
 
 export const MAX_ALBUM = 10;
@@ -8,6 +8,7 @@ export async function uploadAlbum(
   files: File[],
   userId: number,
   onProgress?: (done: number, total: number) => void,
+  opts?: { original?: boolean },
 ): Promise<{ urls: string[]; failed: number }> {
   const list = files.slice(0, MAX_ALBUM);
   const urls: (string | null)[] = new Array(list.length).fill(null);
@@ -17,8 +18,8 @@ export async function uploadAlbum(
     while (next < list.length) {
       const i = next++;
       try {
-        const f = await compressImage(list[i]);
-        const r = await uploadMedia(f, userId);
+        const f = opts?.original ? list[i] : await compressImage(list[i]);
+        const r = opts?.original ? await uploadAny(f, userId) : await uploadMedia(f, userId, { original: true });
         urls[i] = r.url;
       } catch (e) {
         console.error(e);

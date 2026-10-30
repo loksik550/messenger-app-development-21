@@ -2,6 +2,7 @@ import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type Message, type IconName } from "@/lib/api";
 import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
+import OriginalQualityToggle from "@/components/messenger/OriginalQualityToggle";
 import { useAutoGrow } from "@/hooks/useAutoGrow";
 import { isSendKey } from "@/lib/sendKey";
 
@@ -34,6 +35,7 @@ export function ChatInput({
   onSchedule,
   onShowScheduledList,
   scheduledCount,
+  isPro,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -63,6 +65,7 @@ export function ChatInput({
   onSchedule?: () => void;
   onShowScheduledList?: () => void;
   scheduledCount?: number;
+  isPro?: boolean;
 }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const taRef = useAutoGrow(input);
@@ -100,6 +103,7 @@ export function ChatInput({
           </button>
         </div>
       )}
+      {showAttach && isPro !== undefined && <OriginalQualityToggle isPro={isPro} />}
       {showAttach && (
         <div className="grid grid-cols-5 gap-2 mb-3 animate-fade-in">
           {[

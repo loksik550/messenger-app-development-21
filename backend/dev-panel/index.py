@@ -1906,7 +1906,7 @@ def _handler(event: dict, context) -> dict:
         if action == "pro_features":
             cur.execute(
                 f"SELECT key, value FROM {SCHEMA}.dev_settings "
-                f"WHERE key IN ('file_limit_free_mb', 'file_limit_pro_mb')"
+                f"WHERE key IN ('file_limit_free_mb', 'file_limit_pro_mb', 'pin_limit_free', 'pin_limit_pro', 'folder_limit_free', 'folder_limit_pro')"
             )
             cfg = {r[0]: r[1] for r in cur.fetchall()}
             def _int(v, d):
@@ -1928,6 +1928,10 @@ def _handler(event: dict, context) -> dict:
             return ok({
                 "file_limit_free_mb": _int(cfg.get("file_limit_free_mb"), 50),
                 "file_limit_pro_mb": _int(cfg.get("file_limit_pro_mb"), 1024),
+                "pin_limit_free": _int(cfg.get("pin_limit_free"), 5),
+                "pin_limit_pro": _int(cfg.get("pin_limit_pro"), 20),
+                "folder_limit_free": _int(cfg.get("folder_limit_free"), 2),
+                "folder_limit_pro": _int(cfg.get("folder_limit_pro"), 10),
                 "usage": {"incognito": inc or 0, "emoji_status": emo or 0, "name_color": col or 0, "avatar_video": avv or 0, "app_icon": aic or 0},
             })
 
@@ -1941,14 +1945,31 @@ def _handler(event: dict, context) -> dict:
                 return err("Лимит без Pro: от 1 до 2048 МБ")
             if pro_mb < free_mb or pro_mb > 2048:
                 return err("Лимит с Pro: не меньше лимита без Pro и не больше 2048 МБ")
+            extra = []
+            for k, lo, hi, label in (("pin_limit_free", 0, 100, "Закреплённых чатов без Pro"), ("pin_limit_pro", 0, 500, "Закреплённых чатов с Pro"),
+                                     ("folder_limit_free", 0, 50, "Папок без Pro"), ("folder_limit_pro", 0, 200, "Папок с Pro")):
+                if body.get(k) is None:
+                    continue
+                try:
+                    v = int(body.get(k))
+                except (TypeError, ValueError):
+                    return err(f"{label}: укажите число")
+                if v < lo or v > hi:
+                    return err(f"{label}: от {lo} до {hi}")
+                extra.append((k, v))
+            ex = dict(extra)
+            if "pin_limit_free" in ex and "pin_limit_pro" in ex and ex["pin_limit_pro"] < ex["pin_limit_free"]:
+                return err("Закреплённых чатов с Pro должно быть не меньше, чем без Pro")
+            if "folder_limit_free" in ex and "folder_limit_pro" in ex and ex["folder_limit_pro"] < ex["folder_limit_free"]:
+                return err("Папок с Pro должно быть не меньше, чем без Pro")
             now = int(time.time())
-            for k, v in (("file_limit_free_mb", free_mb), ("file_limit_pro_mb", pro_mb)):
+            for k, v in [("file_limit_free_mb", free_mb), ("file_limit_pro_mb", pro_mb)] + extra:
                 cur.execute(
                     f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) VALUES (%s, %s, %s, %s) "
                     f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
                     (k, str(v), now, admin["id"]),
                 )
-            audit(cur, admin, "pro_features_save", f"Лимит файлов: без Pro {free_mb} МБ, с Pro {pro_mb} МБ", ip)
+            audit(cur, admin, "pro_features_save", f"Лимиты: файлы {free_mb}/{pro_mb} МБ" + (f", закрепы {ex.get('pin_limit_free')}/{ex.get('pin_limit_pro')}, папки {ex.get('folder_limit_free')}/{ex.get('folder_limit_pro')}" if ex else ""), ip)
             return ok({"success": True})
 
         if action == "nova_ids_list":

@@ -1,5 +1,7 @@
 import SendDeniedToast from "@/components/messenger/SendDeniedToast";
 import FileTooLargeSheet from "@/components/messenger/FileTooLargeSheet";
+import ProLimitSheet from "@/components/messenger/ProLimitSheet";
+import GroupCallHost from "@/components/messenger/gcall/GroupCallHost";
 import NovaIdHost from "@/components/messenger/NovaIdHost";
 import { Suspense } from "react";
 import Icon from "@/components/ui/icon";
@@ -181,6 +183,8 @@ export default function IndexOverlays({
 
     <SendDeniedToast />
     <FileTooLargeSheet onOpenPro={() => setShowPro(true)} />
+    <ProLimitSheet onOpenPro={() => setShowPro(true)} />
+    {currentUser && <GroupCallHost currentUser={currentUser} />}
     {currentUser && (
       <NovaIdHost
         currentUser={currentUser}

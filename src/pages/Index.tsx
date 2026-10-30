@@ -18,7 +18,7 @@ import EnableNotificationsBanner from "@/components/messenger/EnableNotification
 import NotificationsBell from "@/components/messenger/NotificationsBell";
 import NovaToaster from "@/components/messenger/NovaToast";
 import ComingSoon from "@/components/messenger/ComingSoon";
-import { ChatFolders, filterChatsByFolder, useChatFolder } from "@/components/messenger/ChatFolders";
+import { ChatFolders, filterChatsByFolder, filterGroupsByFolder, useChatFolder, useCustomFolders } from "@/components/messenger/ChatFolders";
 import { RealStoriesBar, type StoryGroup } from "@/components/messenger/RealStories";
 import { useOverlays } from "@/hooks/useOverlays";
 import { LanguageSwitcher } from "@/components/messenger/LanguageSwitcher";
@@ -184,6 +184,7 @@ export default function Index() {
   const [showArchived, setShowArchived] = useState(false);
   const [archivedCount, setArchivedCount] = useState(0);
   const [chatFolder, setChatFolder] = useChatFolder();
+  const customFolders = useCustomFolders(currentUser);
   const [groups, setGroups] = useState<Group[]>([]);
   const archivedTotal = archivedCount + groups.filter(g => g.archived).length;
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -637,7 +638,7 @@ export default function Index() {
                 </button>
               )}
               {!showArchived && (
-                <ChatFolders folder={chatFolder} onChange={setChatFolder} chats={realChats} />
+                <ChatFolders folder={chatFolder} onChange={setChatFolder} chats={realChats} groups={groups} custom={customFolders.folders} currentUser={currentUser} onFoldersChanged={customFolders.reload} />
               )}
               {!showArchived && !searchQuery.trim() && (chatFolder === "all" || chatFolder === "favorite") && (
                 <button
@@ -675,6 +676,7 @@ export default function Index() {
                     return name.includes(q) || lastMsg.includes(q);
                   }),
                   chatFolder,
+                  customFolders.folders,
                 )}
                 onSelect={handleSelectChat}
                 selectedId={selectedChat?.id}
@@ -714,7 +716,7 @@ export default function Index() {
                 }}
                 footer={currentUser ? (
                   <GroupList
-                  groups={groups.filter(g => {
+                  groups={filterGroupsByFolder(groups, chatFolder, customFolders.folders).filter(g => {
                       const q = searchQuery.toLocaleLowerCase().trim();
                       return !q || (g.name || "").toLocaleLowerCase().includes(q);
                     })}

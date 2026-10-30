@@ -15,6 +15,8 @@ interface Props {
   onOpenSearch: () => void;
   onCloseSearch: () => void;
   onSearch: (q: string) => void;
+  onCall?: () => void;
+  activeCall?: { call_id: string; count: number } | null;
 }
 
 export default function GroupChatHeader({
@@ -31,6 +33,8 @@ export default function GroupChatHeader({
   onOpenSearch,
   onCloseSearch,
   onSearch,
+  onCall,
+  activeCall,
 }: Props) {
   return (
     <>
@@ -63,6 +67,11 @@ export default function GroupChatHeader({
             </div>
           </div>
         </button>
+        {onCall && (
+          <button onClick={onCall} className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground" aria-label="Групповой звонок">
+            <Icon name="Phone" size={18} />
+          </button>
+        )}
         <button onClick={onOpenSearch} className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground">
           <Icon name="Search" size={18} />
         </button>
@@ -70,6 +79,22 @@ export default function GroupChatHeader({
           <Icon name="Info" size={18} />
         </button>
       </div>
+
+      {activeCall && onCall && (
+        <button
+          onClick={onCall}
+          className="flex items-center gap-3 px-4 py-2.5 bg-emerald-500/15 border-b border-emerald-500/20 text-left animate-fade-in flex-shrink-0"
+        >
+          <span className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+            <Icon name="Phone" size={15} className="text-white" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold text-emerald-300">Идёт групповой звонок</span>
+            <span className="block text-[11px] text-muted-foreground">В звонке: {activeCall.count} из 8</span>
+          </span>
+          <span className="px-3 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-bold">Войти</span>
+        </button>
+      )}
 
       {/* Search overlay */}
       {showSearch && (

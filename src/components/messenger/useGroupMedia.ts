@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getSendOriginal } from "@/lib/originalQuality";
 import { api, uploadAny, FileTooLargeError, type User, type Group, type GroupMessage } from "@/lib/api";
 import { uploadAlbum, MAX_ALBUM } from "@/lib/uploadAlbum";
 
@@ -36,14 +37,16 @@ export function useGroupMedia({ group, currentUser, setMessages, setLastSince, s
 
 
   const sendFile = async (file: File, opts?: { duration?: number; mediaTypeOverride?: string }) => {
-    if (file.type.startsWith("image/") && !opts?.mediaTypeOverride) {
+    const original = !!currentUser.is_pro && getSendOriginal() && !opts?.mediaTypeOverride
+      && (file.type.startsWith("image/") || file.type.startsWith("video/"));
+    if (file.type.startsWith("image/") && !opts?.mediaTypeOverride && !original) {
       const { compressImage } = await import("@/lib/compressImage");
       file = await compressImage(file);
     }
     setUploading(true); setShowAttach(false);
     const kindLabel = file.type.startsWith("video/") ? "видео" : file.type.startsWith("audio/") ? "аудио" : file.type.startsWith("image/") ? "фото" : "файл";
     try {
-      const result = await uploadAny(file, currentUser.id, (done, total) => setUploadLabel(`Загружаем ${kindLabel}: ${Math.floor((done / Math.max(total, 1)) * 100)}%`));
+      const result = await uploadAny(file, currentUser.id, (done, total) => setUploadLabel(`Загружаем ${kindLabel}: ${Math.floor((done / Math.max(total, 1)) * 100)}%`), { original });
       const mediaType = (opts?.mediaTypeOverride || result.media_type) as "audio" | "video" | "image" | "file";
       const d = await api("send_group_message", {
         group_id: group.id, media_type: mediaType, media_url: result.url,
@@ -162,7 +165,8 @@ export function useGroupMedia({ group, currentUser, setMessages, setLastSince, s
     setUploading(true); setShowAttach(false);
     setUploadLabel(`Загружаем фото 0/${Math.min(images.length, MAX_ALBUM)}...`);
     try {
-      const { urls, failed } = await uploadAlbum(images, currentUser.id, (d, t) => setUploadLabel(`Загружаем фото ${d}/${t}...`));
+      const original = !!currentUser.is_pro && getSendOriginal();
+      const { urls, failed } = await uploadAlbum(images, currentUser.id, (d, t) => setUploadLabel(`Загружаем фото ${d}/${t}...`), { original });
       if (urls.length === 0) throw new Error("Ни одно фото не загрузилось");
       const payload = urls.length > 1 ? { album: urls.map(url => ({ url })) } : null;
       const d = await api("send_group_message", {

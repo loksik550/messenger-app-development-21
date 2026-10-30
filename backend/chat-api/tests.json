@@ -462,6 +462,51 @@
       },
       "expectedStatus": 400,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "pro_limits requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "pro_limits"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "folders_list requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "folders_list"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "folder_save requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "folder_save"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "gcall_join requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "gcall_join"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "gcall_signal requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "gcall_signal"
+      },
+      "expectedStatus": 400
     }
   ]
 }

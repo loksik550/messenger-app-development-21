@@ -95,6 +95,26 @@ def ok(data):
     return {"statusCode": 200, "headers": CORS, "body": json.dumps(data, ensure_ascii=False, default=str)}
 
 
+
+def _pro_limits(cur, uid: int) -> dict:
+    """Лимиты закреплённых чатов и папок (настраиваются в Dev-панели)."""
+    cur.execute(
+        f"SELECT key, value FROM {SCHEMA}.dev_settings WHERE key IN "
+        f"('pin_limit_free','pin_limit_pro','folder_limit_free','folder_limit_pro')"
+    )
+    cfg = {r[0]: r[1] for r in cur.fetchall()}
+    def _i(k, d):
+        try:
+            return max(0, int(cfg.get(k)))
+        except (TypeError, ValueError):
+            return d
+    cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {SCHEMA}.users WHERE id = %s", (int(uid),))
+    r = cur.fetchone()
+    is_pro = bool(r and int(r[0] or 0) > int(time.time()))
+    pf, pp, ff, fp = _i("pin_limit_free", 5), _i("pin_limit_pro", 20), _i("folder_limit_free", 2), _i("folder_limit_pro", 10)
+    return {"is_pro": is_pro, "pins": pp if is_pro else pf, "folders": fp if is_pro else ff,
+            "pins_free": pf, "pins_pro": pp, "folders_free": ff, "folders_pro": fp}
+
 def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
@@ -3816,6 +3836,16 @@ def _handle(event: dict, context) -> dict:
         if not _is_chat_member(cur, int(chat_id), int(user_id)):
             conn.close()
             return err("Нет доступа к чату", 403)
+        if field == "pinned" and value:
+            _lim = _pro_limits(cur, int(user_id))
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.chat_settings WHERE user_id = %s AND pinned = TRUE AND chat_id <> %s AND COALESCE(hidden, FALSE) = FALSE",
+                (int(user_id), int(chat_id)),
+            )
+            if int(cur.fetchone()[0] or 0) >= _lim["pins"]:
+                conn.close()
+                return {"statusCode": 402, "headers": CORS,
+                        "body": json.dumps({"error": f"Можно закрепить не больше {_lim['pins']} чатов", "limit": "pins", **_lim}, ensure_ascii=False)}
         cur.execute(
             f"""INSERT INTO {SCHEMA}.chat_settings (user_id, chat_id, {field})
                 VALUES (%s, %s, %s)
@@ -4460,8 +4490,16 @@ def _handle(event: dict, context) -> dict:
                 "read": (r[0] in read_set) if is_out else False,
                 "reactions": reactions_map.get(r[0], []),
             })
+        cur.execute(
+            f"SELECT c.call_id, (SELECT COUNT(*) FROM {SCHEMA}.group_call_participants p "
+            f"WHERE p.call_id = c.call_id AND p.left_at IS NULL AND p.last_ping > %s) "
+            f"FROM {SCHEMA}.group_calls c WHERE c.group_id = %s AND c.ended_at IS NULL ORDER BY c.id DESC LIMIT 1",
+            (int(time.time()) - 25, int(group_id)),
+        )
+        _gc = cur.fetchone()
         conn.close()
-        return ok({"messages": messages})
+        active_call = {"call_id": _gc[0], "count": int(_gc[1] or 0)} if _gc and int(_gc[1] or 0) > 0 else None
+        return ok({"messages": messages, "active_call": active_call})
 
     # ── send_group_message ────────────────────────────────────────────────────
     if action == "send_group_message":
@@ -5359,6 +5397,243 @@ def _handle(event: dict, context) -> dict:
         if "classic" not in enabled:
             enabled.insert(0, "classic")
         return ok({"icons": enabled})
+
+    # ── Лимиты Pro, свои папки чатов ─────────────────────────────────────────
+    if action == "pro_limits":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        lim = _pro_limits(cur, int(user_id))
+        conn.close()
+        return ok(lim)
+
+    if action == "folders_list":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        cur.execute(
+            f"SELECT id, name, icon, chat_ids FROM {SCHEMA}.chat_folders WHERE user_id = %s ORDER BY sort_order, id",
+            (int(user_id),),
+        )
+        rows = cur.fetchall()
+        lim = _pro_limits(cur, int(user_id))
+        conn.close()
+        folders = [{"id": r[0], "name": r[1], "icon": r[2],
+                    "chat_ids": [x for x in (r[3] or "").split(",") if x]} for r in rows]
+        return ok({"folders": folders, "limit": lim["folders"], "is_pro": lim["is_pro"],
+                   "limit_pro": lim["folders_pro"]})
+
+    if action in ("folder_save", "folder_delete"):
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        fid = body.get("id")
+        if action == "folder_delete":
+            cur.execute(f"DELETE FROM {SCHEMA}.chat_folders WHERE id = %s AND user_id = %s", (int(fid or 0), int(user_id)))
+            conn.close()
+            return ok({"ok": True})
+        name = str(body.get("name") or "").strip()[:24]
+        icon = str(body.get("icon") or "Folder")[:32]
+        ids = body.get("chat_ids") or []
+        if not name:
+            conn.close(); return err("Введите название папки")
+        if not isinstance(ids, list):
+            ids = []
+        ids_s = ",".join(str(x)[:24] for x in ids[:500] if re.match(r"^[cg]\d+$", str(x)))
+        now = int(time.time())
+        if fid:
+            cur.execute(
+                f"UPDATE {SCHEMA}.chat_folders SET name=%s, icon=%s, chat_ids=%s WHERE id=%s AND user_id=%s RETURNING id",
+                (name, icon, ids_s, int(fid), int(user_id)),
+            )
+            r = cur.fetchone()
+            conn.close()
+            if not r:
+                return err("Папка не найдена", 404)
+            return ok({"id": r[0]})
+        lim = _pro_limits(cur, int(user_id))
+        cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.chat_folders WHERE user_id = %s", (int(user_id),))
+        if int(cur.fetchone()[0] or 0) >= lim["folders"]:
+            conn.close()
+            return {"statusCode": 402, "headers": CORS,
+                    "body": json.dumps({"error": f"Можно создать не больше {lim['folders']} папок", "limit": "folders", **lim}, ensure_ascii=False)}
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.chat_folders (user_id, name, icon, chat_ids, sort_order, created_at) "
+            f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (int(user_id), name, icon, ids_s, now, now),
+        )
+        new_id = cur.fetchone()[0]
+        conn.close()
+        return ok({"id": new_id})
+
+    # ── Групповые аудиозвонки (до 8 участников) ──────────────────────────────
+    if action.startswith("gcall_"):
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        uid = int(user_id)
+        now = int(time.time())
+        GCALL_MAX = 8
+        STALE = 25
+
+        def _member(gid):
+            cur.execute(
+                f"SELECT g.name, COALESCE(g.is_channel, FALSE) FROM {SCHEMA}.group_members gm "
+                f"JOIN {SCHEMA}.groups g ON g.id = gm.group_id "
+                f"WHERE gm.group_id = %s AND gm.user_id = %s AND gm.role <> 'removed' AND g.removed_at IS NULL",
+                (int(gid), uid),
+            )
+            return cur.fetchone()
+
+        def _active_call(gid):
+            cur.execute(
+                f"SELECT call_id, started_by, started_at FROM {SCHEMA}.group_calls "
+                f"WHERE group_id = %s AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+                (int(gid),),
+            )
+            return cur.fetchone()
+
+        def _participants(cid):
+            cur.execute(
+                f"SELECT p.user_id, u.name, u.avatar_url, p.muted FROM {SCHEMA}.group_call_participants p "
+                f"JOIN {SCHEMA}.users u ON u.id = p.user_id "
+                f"WHERE p.call_id = %s AND p.left_at IS NULL AND p.last_ping > %s ORDER BY p.joined_at",
+                (cid, now - STALE),
+            )
+            return [{"user_id": r[0], "name": r[1], "avatar_url": r[2], "muted": bool(r[3])} for r in cur.fetchall()]
+
+        def _close_if_empty(cid):
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.group_call_participants WHERE call_id = %s AND left_at IS NULL AND last_ping > %s",
+                (cid, now - STALE),
+            )
+            if int(cur.fetchone()[0] or 0) == 0:
+                cur.execute(f"UPDATE {SCHEMA}.group_calls SET ended_at = %s WHERE call_id = %s AND ended_at IS NULL", (now, cid))
+                return True
+            return False
+
+        gid = body.get("group_id")
+        if action == "gcall_status":
+            if not gid or not _member(gid):
+                conn.close(); return err("Нет доступа к группе", 403)
+            row = _active_call(gid)
+            if row and _close_if_empty(row[0]):
+                row = None
+            res = {"call": None}
+            if row:
+                res = {"call": {"call_id": row[0], "started_by": row[1], "started_at": row[2],
+                                "participants": _participants(row[0]), "max": GCALL_MAX}}
+            conn.close()
+            return ok(res)
+
+        if action == "gcall_join":
+            m = _member(gid) if gid else None
+            if not m:
+                conn.close(); return err("Нет доступа к группе", 403)
+            if m[1]:
+                conn.close(); return err("В каналах звонки недоступны")
+            row = _active_call(gid)
+            if row and _close_if_empty(row[0]):
+                row = None
+            started = False
+            if not row:
+                cid = f"gcall_{int(gid)}_{now}_{uid}"
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.group_calls (call_id, group_id, started_by, started_at) VALUES (%s, %s, %s, %s)",
+                    (cid, int(gid), uid, now),
+                )
+                started = True
+            else:
+                cid = row[0]
+            parts = _participants(cid)
+            if not any(p["user_id"] == uid for p in parts) and len(parts) >= GCALL_MAX:
+                conn.close(); return err(f"В звонке уже {GCALL_MAX} участников — это максимум")
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.group_call_participants (call_id, user_id, joined_at, last_ping, left_at) "
+                f"VALUES (%s, %s, %s, %s, NULL) ON CONFLICT (call_id, user_id) DO UPDATE "
+                f"SET joined_at = EXCLUDED.joined_at, last_ping = EXCLUDED.last_ping, left_at = NULL",
+                (cid, uid, now, now),
+            )
+            # Сигналы, оставшиеся от прошлого захода в этот звонок, больше не нужны
+            cur.execute(f"DELETE FROM {SCHEMA}.call_signals WHERE call_id LIKE %s AND to_user_id = %s",
+                        (cid + ":%", uid))
+            parts = _participants(cid)
+            if started:
+                cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+                nm = (cur.fetchone() or ["Кто-то"])[0]
+                text = f"📞 {nm} начал(а) групповой звонок"
+                cur.execute(
+                    f"UPDATE {SCHEMA}.groups SET last_message=%s, last_message_at=%s WHERE id=%s",
+                    (text, now, int(gid)),
+                )
+                conn.close()
+                push_url = _push_notify_url()
+                if push_url:
+                    _fire_and_forget_http(push_url, json.dumps({
+                        "action": "send_group", "group_id": int(gid), "group_name": m[0] or "",
+                        "sender_id": uid, "message": "📞 Групповой звонок — присоединяйтесь",
+                        "message_id": 0, "is_channel": False,
+                    }).encode("utf-8"), timeout=5.0)
+            else:
+                conn.close()
+            return ok({"call_id": cid, "participants": parts, "max": GCALL_MAX, "started": started})
+
+        cid = str(body.get("call_id") or "")[:80]
+        if not cid.startswith("gcall_"):
+            conn.close(); return err("Укажите call_id")
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.group_call_participants WHERE call_id = %s AND user_id = %s AND left_at IS NULL", (cid, uid))
+        inside = cur.fetchone() is not None
+
+        if action == "gcall_ping":
+            if not inside:
+                conn.close(); return ok({"left": True, "participants": []})
+            muted = body.get("muted")
+            if muted is None:
+                cur.execute(f"UPDATE {SCHEMA}.group_call_participants SET last_ping = %s WHERE call_id = %s AND user_id = %s", (now, cid, uid))
+            else:
+                cur.execute(f"UPDATE {SCHEMA}.group_call_participants SET last_ping = %s, muted = %s WHERE call_id = %s AND user_id = %s", (now, bool(muted), cid, uid))
+            cur.execute(f"SELECT ended_at FROM {SCHEMA}.group_calls WHERE call_id = %s", (cid,))
+            er = cur.fetchone()
+            parts = _participants(cid)
+            conn.close()
+            return ok({"participants": parts, "ended": bool(er and er[0])})
+
+        if action == "gcall_leave":
+            cur.execute(f"UPDATE {SCHEMA}.group_call_participants SET left_at = %s WHERE call_id = %s AND user_id = %s", (now, cid, uid))
+            _close_if_empty(cid)
+            conn.close()
+            return ok({"ok": True})
+
+        if action == "gcall_signal":
+            if not inside:
+                conn.close(); return err("Вы не в звонке", 403)
+            to = int(body.get("to_user_id") or 0)
+            st = str(body.get("type") or "")[:16]
+            if st not in ("offer", "answer", "candidate", "bye"):
+                conn.close(); return err("Неверный сигнал")
+            cur.execute(f"SELECT 1 FROM {SCHEMA}.group_call_participants WHERE call_id = %s AND user_id = %s AND left_at IS NULL", (cid, to))
+            if not cur.fetchone():
+                conn.close(); return ok({"ok": False})
+            pl = body.get("payload")
+            # call_id сигнала = «звонок:отправитель» — так он не попадает в обычные входящие
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.call_signals (call_id, from_user_id, to_user_id, type, payload, created_at) "
+                f"VALUES (%s, %s, %s, %s, %s, %s)",
+                (f"{cid}:{uid}", uid, to, "g_" + st, json.dumps(pl) if pl is not None else None, now),
+            )
+            conn.close()
+            return ok({"ok": True})
+
+        if action == "gcall_signals":
+            since_id = int(body.get("since_id") or 0)
+            cur.execute(
+                f"SELECT id, from_user_id, type, payload FROM {SCHEMA}.call_signals "
+                f"WHERE call_id LIKE %s AND to_user_id = %s AND id > %s ORDER BY id ASC LIMIT 80",
+                (cid + ":%", uid, since_id),
+            )
+            rows = cur.fetchall()
+            conn.close()
+            return ok({"signals": [{"id": r[0], "from_user_id": r[1], "type": r[2][2:],
+                                    "payload": json.loads(r[3]) if r[3] else None} for r in rows]})
+
+        conn.close()
+        return err("Неизвестное действие")
 
     # ── Красивый короткий ID (Nova Pro) ──────────────────────────────────────
     if action in ("nova_id_info", "nova_id_check", "nova_id_buy"):

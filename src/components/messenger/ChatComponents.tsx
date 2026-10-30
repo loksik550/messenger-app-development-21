@@ -395,6 +395,7 @@ export function ChatWindow({
         </div>
       ) : (
       <ChatInput
+        isPro={!!currentUser.is_pro}
         input={input}
         setInput={setInput}
         showAttach={showAttach}

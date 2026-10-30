@@ -173,8 +173,8 @@ export async function uploadLarge(file: File, userId: number, onProgress?: (done
 }
 
 /** Загрузка любого размера: маленькие файлы одним запросом, большие — частями с проверкой лимита. */
-export async function uploadAny(file: File, userId: number, onProgress?: (done: number, total: number) => void): Promise<UploadResult> {
-  if (file.size <= SINGLE_SHOT_BYTES) return uploadMedia(file, userId);
+export async function uploadAny(file: File, userId: number, onProgress?: (done: number, total: number) => void, opts?: { original?: boolean }): Promise<UploadResult> {
+  if (file.size <= SINGLE_SHOT_BYTES) return uploadMedia(file, userId, opts);
   const lim = await getFileLimits(userId);
   if (file.size > lim.max_mb * 1024 * 1024) {
     throw new FileTooLargeError(
@@ -189,9 +189,9 @@ export function formatMb(mb: number): string {
   return mb >= 1024 ? `${+(mb / 1024).toFixed(1)} ГБ` : `${mb} МБ`;
 }
 
-export async function uploadMedia(file: File, userId: number): Promise<UploadResult> {
+export async function uploadMedia(file: File, userId: number, opts?: { original?: boolean }): Promise<UploadResult> {
   const { compressImage } = await import("@/lib/compressImage");
-  const prepared = await compressImage(file);
+  const prepared = opts?.original ? file : await compressImage(file);
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {

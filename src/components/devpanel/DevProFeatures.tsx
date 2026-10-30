@@ -5,6 +5,10 @@ import { devApi, formatNum } from "@/lib/devApi";
 interface ProFeaturesData {
   file_limit_free_mb: number;
   file_limit_pro_mb: number;
+  pin_limit_free: number;
+  pin_limit_pro: number;
+  folder_limit_free: number;
+  folder_limit_pro: number;
   usage: { incognito: number; emoji_status: number; name_color: number; avatar_video: number; app_icon: number };
 }
 
@@ -17,6 +21,9 @@ const FEATURES: { icon: string; color: string; title: string; text: string; usag
   { icon: "FileUp", color: "#10b981", title: "Большие файлы", text: "Увеличенный лимит на размер файла" },
   { icon: "Video", color: "#d946ef", title: "Видео-аватар", text: "Видео до 10 секунд вместо фото — видят все", usageKey: "avatar_video" },
   { icon: "Hash", color: "#f97316", title: "Красивый ID", text: "Покупка за Молнии или рубли — раздел «Красивые ID»" },
+  { icon: "Pin", color: "#14b8a6", title: "Больше закреплённых чатов", text: "Лимит настраивается ниже" },
+  { icon: "FolderPlus", color: "#84cc16", title: "Больше папок", text: "Свои папки чатов — лимит настраивается ниже" },
+  { icon: "ImageUp", color: "#e11d48", title: "Фото и видео без сжатия", text: "Переключатель «Оригинал» при отправке" },
   { icon: "Smartphone", color: "#0ea5e9", title: "Значок приложения", text: "Классика, Океан, Закат, Монохром. Выбор сохраняется; на телефоне — после обновления Android-приложения", usageKey: "app_icon" },
 ];
 
@@ -26,6 +33,7 @@ export default function DevProFeatures({ editable }: { editable: boolean }) {
   const [data, setData] = useState<ProFeaturesData | null>(null);
   const [free, setFree] = useState("");
   const [pro, setPro] = useState("");
+  const [lim, setLim] = useState({ pin_limit_free: "", pin_limit_pro: "", folder_limit_free: "", folder_limit_pro: "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -35,6 +43,10 @@ export default function DevProFeatures({ editable }: { editable: boolean }) {
       setData(d);
       setFree(String(d.file_limit_free_mb));
       setPro(String(d.file_limit_pro_mb));
+      setLim({
+        pin_limit_free: String(d.pin_limit_free), pin_limit_pro: String(d.pin_limit_pro),
+        folder_limit_free: String(d.folder_limit_free), folder_limit_pro: String(d.folder_limit_pro),
+      });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : "Ошибка загрузки" });
     }
@@ -46,7 +58,11 @@ export default function DevProFeatures({ editable }: { editable: boolean }) {
     setBusy(true);
     setMsg(null);
     try {
-      await devApi("pro_features_save", { file_limit_free_mb: Number(free), file_limit_pro_mb: Number(pro) });
+      await devApi("pro_features_save", {
+        file_limit_free_mb: Number(free), file_limit_pro_mb: Number(pro),
+        pin_limit_free: Number(lim.pin_limit_free), pin_limit_pro: Number(lim.pin_limit_pro),
+        folder_limit_free: Number(lim.folder_limit_free), folder_limit_pro: Number(lim.folder_limit_pro),
+      });
       setMsg({ ok: true, text: "Сохранено — применяется в мессенджере в течение 5 минут" });
       load();
     } catch (e) {
@@ -56,7 +72,8 @@ export default function DevProFeatures({ editable }: { editable: boolean }) {
     }
   };
 
-  const changed = data && (Number(free) !== data.file_limit_free_mb || Number(pro) !== data.file_limit_pro_mb);
+  const changed = data && (Number(free) !== data.file_limit_free_mb || Number(pro) !== data.file_limit_pro_mb
+    || (Object.keys(lim) as (keyof typeof lim)[]).some((k) => Number(lim[k]) !== data[k]));
 
   return (
     <div className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.04] p-5 space-y-4">
@@ -85,6 +102,12 @@ export default function DevProFeatures({ editable }: { editable: boolean }) {
               {f.usageKey && data && (
                 <div className="text-[11px] text-violet-300 mt-0.5">Используют: {formatNum(data.usage[f.usageKey])}</div>
               )}
+              {f.title === "Больше закреплённых чатов" && data && (
+                <div className="text-[11px] text-violet-300 mt-0.5">Без Pro {data.pin_limit_free} · с Pro {data.pin_limit_pro}</div>
+              )}
+              {f.title === "Больше папок" && data && (
+                <div className="text-[11px] text-violet-300 mt-0.5">Без Pro {data.folder_limit_free} · с Pro {data.folder_limit_pro}</div>
+              )}
               {f.title === "Большие файлы" && data && (
                 <div className="text-[11px] text-violet-300 mt-0.5">
                   Без Pro {fmt(data.file_limit_free_mb)} · с Pro {fmt(data.file_limit_pro_mb)}
@@ -96,7 +119,7 @@ export default function DevProFeatures({ editable }: { editable: boolean }) {
       </div>
 
       <div className="rounded-xl bg-black/20 border border-white/10 p-4">
-        <div className="text-sm font-semibold mb-1">Лимит размера одного файла</div>
+        <div className="text-sm font-semibold mb-1">Лимиты</div>
         <p className="text-[11px] text-slate-500 mb-3">
           Для фото, видео, голосовых и документов в чатах и группах. Максимум — 2048 МБ.
         </p>
@@ -121,6 +144,27 @@ export default function DevProFeatures({ editable }: { editable: boolean }) {
               className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-violet-500/50 disabled:opacity-60"
             />
           </label>
+        </div>
+        <div className="text-sm font-semibold mt-4 mb-1">Закреплённые чаты и папки</div>
+        <p className="text-[11px] text-slate-500 mb-3">Сколько чатов можно закрепить наверху списка и сколько своих папок создать.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl">
+          {([
+            ["pin_limit_free", "Закрепов без Pro"],
+            ["pin_limit_pro", "Закрепов с Pro"],
+            ["folder_limit_free", "Папок без Pro"],
+            ["folder_limit_pro", "Папок с Pro"],
+          ] as const).map(([k, label]) => (
+            <label key={k} className="block">
+              <span className="text-xs text-slate-500 mb-1 block">{label}</span>
+              <input
+                value={lim[k]}
+                onChange={(e) => setLim((p) => ({ ...p, [k]: e.target.value.replace(/\D/g, "") }))}
+                disabled={!editable}
+                inputMode="numeric"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-violet-500/50 disabled:opacity-60"
+              />
+            </label>
+          ))}
         </div>
         {editable && (
           <button

@@ -11,6 +11,7 @@ import SelectionBar from "@/components/messenger/SelectionBar";
 import MessageActionSheet from "@/components/messenger/MessageActionSheet";
 import ForwardGroupDialog from "@/components/messenger/ForwardGroupDialog";
 import GroupChatHeader from "@/components/messenger/group-chat/GroupChatHeader";
+import { startGroupCall } from "@/components/messenger/gcall/GroupCallHost";
 import GroupChatMessages from "@/components/messenger/group-chat/GroupChatMessages";
 import GroupChatInput from "@/components/messenger/group-chat/GroupChatInput";
 import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
@@ -28,6 +29,7 @@ interface Props {
 
 export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, onGroupDeleted }: Props) {
   const [messages, setMessages] = useState<GroupMessage[]>([]);
+  const [activeCall, setActiveCall] = useState<{ call_id: string; count: number } | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [input, setInput] = useState("");
   const [lastSince, setLastSince] = useState(0);
@@ -66,6 +68,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
   const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
     const d = await api("get_group_messages", { group_id: group.id, since }, currentUser.id);
     if (!d.messages) return false;
+    setActiveCall(d.active_call || null);
     const msgs: GroupMessage[] = d.messages.map((m: GroupMessage) => ({ ...m, time: toTime(m.created_at) }));
     let changed = false;
     if (since === 0) {
@@ -372,6 +375,8 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         onOpenSearch={() => { setShowSearch(true); setSearchQuery(""); setSearchResults([]); }}
         onCloseSearch={() => { setShowSearch(false); setSearchQuery(""); setSearchResults([]); }}
         onSearch={runSearch}
+        activeCall={activeCall}
+        onCall={group.is_channel ? undefined : () => startGroupCall({ id: group.id, name: group.name, avatar_url: group.avatar_url })}
       />
 
       <GroupChatMessages
@@ -427,6 +432,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
       )}
 
       <GroupChatInput
+        isPro={!!currentUser.is_pro}
         group={group}
         canWrite={canWrite}
         input={input}

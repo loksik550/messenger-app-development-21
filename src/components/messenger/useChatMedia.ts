@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { track } from "@/lib/track";
 import { api, uploadAny, FileTooLargeError, type Chat, type Message, type User } from "@/lib/api";
 import { uploadAlbum, MAX_ALBUM } from "@/lib/uploadAlbum";
+import { getSendOriginal } from "@/lib/originalQuality";
 import { canEncryptChat, encryptFile, type MediaKey } from "@/lib/e2e";
 
 // Отправка файлов и запись голосовых сообщений.
@@ -30,7 +31,9 @@ export function useChatMedia({
   const sendFile = async (file: File, extra?: { duration?: number; mediaTypeOverride?: "audio" | "video" | "image" | "file" }) => {
     // Лимит размера: тело облачной функции ограничено, а base64 раздувает на ~33%.
     // Видео-кружки сжаты при записи, для них предел выше.
-    if (file.type.startsWith("image/") && !extra?.mediaTypeOverride) {
+    const original = !!currentUser.is_pro && getSendOriginal() && !extra?.mediaTypeOverride
+      && (file.type.startsWith("image/") || file.type.startsWith("video/"));
+    if (file.type.startsWith("image/") && !extra?.mediaTypeOverride && !original) {
       const { compressImage } = await import("@/lib/compressImage");
       file = await compressImage(file);
     }
@@ -49,10 +52,10 @@ export function useChatMedia({
         const enc = await encryptFile(file, file.name || "file");
         mediaKey = enc.key;
         const guessed = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "file";
-        const up = await uploadAny(new File([enc.blob], "encrypted.bin", { type: "application/octet-stream" }), currentUser.id, onProgress);
+        const up = await uploadAny(new File([enc.blob], "encrypted.bin", { type: "application/octet-stream" }), currentUser.id, onProgress, { original: true });
         result = { ...up, media_type: guessed, file_name: "encrypted.bin", file_size: file.size };
       } else {
-        result = await uploadAny(file, currentUser.id, onProgress);
+        result = await uploadAny(file, currentUser.id, onProgress, { original });
       }
       const finalMediaType = extra?.mediaTypeOverride || result.media_type;
       const localUrl = mediaKey ? URL.createObjectURL(file) : result.url;
@@ -111,7 +114,8 @@ export function useChatMedia({
     setShowAttach(false);
     setUploadLabel(`Загружаем фото 0/${Math.min(images.length, MAX_ALBUM)}...`);
     try {
-      const { urls, failed } = await uploadAlbum(images, currentUser.id, (d, t) => setUploadLabel(`Загружаем фото ${d}/${t}...`));
+      const original = !!currentUser.is_pro && getSendOriginal();
+      const { urls, failed } = await uploadAlbum(images, currentUser.id, (d, t) => setUploadLabel(`Загружаем фото ${d}/${t}...`), { original });
       if (urls.length === 0) throw new Error("Ни одно фото не загрузилось");
       const payload = urls.length > 1 ? { album: urls.map(url => ({ url })) } : undefined;
       const data = await api("send_message", {

@@ -1,3 +1,4 @@
+import { showProLimit } from "@/components/messenger/ProLimitSheet";
 import { api, type Chat, type Message, type User } from "@/lib/api";
 
 export type ConfirmState = { title: string; text: string; danger?: boolean; action: () => void | Promise<void> };
@@ -18,7 +19,11 @@ export function useChatActions({ chat, currentUser, onBack, onChatUpdated, onCha
   const setChatField = async (field: "muted" | "pinned" | "favorite", value: boolean) => {
     onChatUpdated?.({ ...chat, [field]: value });
     try {
-      await api("set_chat_setting", { chat_id: chat.id, field, value }, currentUser.id);
+      const r = await api("set_chat_setting", { chat_id: chat.id, field, value }, currentUser.id);
+      if (r?.error) {
+        onChatUpdated?.({ ...chat, [field]: !value });
+        if (r.limit === "pins") showProLimit({ kind: "pins", is_pro: !!r.is_pro, pins_free: r.pins_free, pins_pro: r.pins_pro });
+      }
     } catch {
       onChatUpdated?.({ ...chat, [field]: !value });
     }
