@@ -530,7 +530,6 @@ export default function Index() {
                 onClick={() => openOverlay(setShowPro)}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all hover:opacity-90"
                 style={{ background: "linear-gradient(135deg, #8b5cf6, #d946ef)", color: "#fff" }}
-                title={currentUser?.is_pro && currentUser.pro_until ? `Nova Pro активен до ${new Date(currentUser.pro_until * 1000).toLocaleDateString("ru")}` : "Оформить Nova Pro"}
               >
                 <Icon name={currentUser?.is_pro ? "BadgeCheck" : "Zap"} size={12} />
                 Nova Pro
