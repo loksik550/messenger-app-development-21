@@ -6,6 +6,7 @@ export const CHAT_API = "https://functions.poehali.dev/b97ade88-cc88-4702-a461-4
 export const CHAT_POLL_API = "https://functions.poehali.dev/3fc067b7-d1b3-4aed-8ad9-98df81040f0a";
 export const PUSH_API = "https://functions.poehali.dev/c9d141ca-3552-433f-a968-ac1e92da00af";
 export const UPLOAD_API = "https://functions.poehali.dev/c0e361f0-438f-44b3-8886-26f5afb7d935";
+export const UPLOAD_FINISH_API = "https://functions.poehali.dev/11ceff77-3f06-43cf-afd0-722a57ff4920";
 export const YOOKASSA_PAY_API = "https://functions.poehali.dev/2feb7862-ee04-4945-8549-c0596f30bdc9";
 export const SMS_API = "https://functions.poehali.dev/d5b81fb8-fe85-4a15-84a6-cc602997298c";
 export const ICE_API = "https://functions.poehali.dev/b47750f2-27d7-416d-9a72-c9b855945258";
@@ -64,6 +65,128 @@ export interface UploadResult {
   media_type: "image" | "video" | "audio" | "file";
   file_name: string;
   file_size: number;
+}
+
+export interface FileLimits { free_mb: number; pro_mb: number; is_pro: boolean; max_mb: number }
+
+let limitsCache: { at: number; userId: number; data: FileLimits } | null = null;
+
+export async function getFileLimits(userId: number, fresh = false): Promise<FileLimits> {
+  if (!fresh && limitsCache && limitsCache.userId === userId && Date.now() - limitsCache.at < 5 * 60 * 1000) return limitsCache.data;
+  try {
+    const res = await fetch(UPLOAD_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders(userId) },
+      body: JSON.stringify({ action: "limits" }),
+    });
+    const d = await res.json();
+    if (d && typeof d.max_mb === "number") {
+      limitsCache = { at: Date.now(), userId, data: d };
+      return d;
+    }
+  } catch { /* ignore */ }
+  return { free_mb: 50, pro_mb: 1024, is_pro: false, max_mb: 50 };
+}
+
+export class FileTooLargeError extends Error {
+  limitMb: number; proMb: number; isPro: boolean;
+  constructor(msg: string, limitMb: number, proMb: number, isPro: boolean) {
+    super(msg); this.limitMb = limitMb; this.proMb = proMb; this.isPro = isPro;
+  }
+}
+
+const CHUNK_BYTES = 2 * 1024 * 1024;
+const SINGLE_SHOT_BYTES = 3 * 1024 * 1024;
+
+function blobToBase64(b: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = r.result as string;
+      resolve(s.slice(s.indexOf(",") + 1));
+    };
+    r.onerror = reject;
+    r.readAsDataURL(b);
+  });
+}
+
+async function postJson(url: string, userId: number, body: unknown, tries = 3): Promise<Record<string, unknown>> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders(userId) },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) return d;
+      if (res.status === 413 || res.status === 400 || res.status === 401) {
+        const err = new Error(String(d?.error || `Ошибка загрузки (${res.status})`)) as Error & { data?: unknown; status?: number };
+        err.data = d; err.status = res.status;
+        throw err;
+      }
+      last = new Error(String(d?.error || `Ошибка загрузки (${res.status})`));
+    } catch (e) {
+      const st = (e as { status?: number }).status;
+      if (st === 413 || st === 400 || st === 401) throw e;
+      last = e;
+    }
+    await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+  }
+  throw last instanceof Error ? last : new Error("Ошибка загрузки");
+}
+
+export async function uploadLarge(file: File, userId: number, onProgress?: (done: number, total: number) => void): Promise<UploadResult> {
+  const uploadId = (crypto.randomUUID?.() || `${Date.now()}${Math.random()}`).replace(/[^a-zA-Z0-9]/g, "").slice(0, 32);
+  const parts = Math.ceil(file.size / CHUNK_BYTES);
+  let done = 0;
+  onProgress?.(0, file.size);
+  const sendPart = async (i: number) => {
+    const blob = file.slice(i * CHUNK_BYTES, Math.min(file.size, (i + 1) * CHUNK_BYTES));
+    const data = await blobToBase64(blob);
+    try {
+      await postJson(UPLOAD_API, userId, { action: "chunk", upload_id: uploadId, index: i, data, total_size: file.size });
+    } catch (e) {
+      const d = (e as { data?: { limit_mb?: number; pro_mb?: number; is_pro?: boolean } }).data;
+      if ((e as { status?: number }).status === 413 && d) {
+        throw new FileTooLargeError((e as Error).message, d.limit_mb || 0, d.pro_mb || 0, !!d.is_pro);
+      }
+      throw e;
+    }
+    done += blob.size;
+    onProgress?.(done, file.size);
+  };
+  await sendPart(0);
+  let next = 1;
+  const worker = async () => {
+    while (next < parts) {
+      const i = next++;
+      await sendPart(i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, Math.max(0, parts - 1)) }, worker));
+  const mime = (file.type || "application/octet-stream").split(";")[0].trim();
+  const res = await postJson(UPLOAD_FINISH_API, userId, { action: "finish", upload_id: uploadId, parts, mime, file_name: file.name }, 2);
+  if (!res.url) throw new Error(String(res.error || "Не удалось собрать файл"));
+  return res as unknown as UploadResult;
+}
+
+/** Загрузка любого размера: маленькие файлы одним запросом, большие — частями с проверкой лимита. */
+export async function uploadAny(file: File, userId: number, onProgress?: (done: number, total: number) => void): Promise<UploadResult> {
+  if (file.size <= SINGLE_SHOT_BYTES) return uploadMedia(file, userId);
+  const lim = await getFileLimits(userId);
+  if (file.size > lim.max_mb * 1024 * 1024) {
+    throw new FileTooLargeError(
+      `Файл больше ${lim.max_mb} МБ` + (lim.is_pro ? "" : `. С Nova Pro — до ${formatMb(lim.pro_mb)}`),
+      lim.max_mb, lim.pro_mb, lim.is_pro,
+    );
+  }
+  return uploadLarge(file, userId, onProgress);
+}
+
+export function formatMb(mb: number): string {
+  return mb >= 1024 ? `${+(mb / 1024).toFixed(1)} ГБ` : `${mb} МБ`;
 }
 
 export async function uploadMedia(file: File, userId: number): Promise<UploadResult> {

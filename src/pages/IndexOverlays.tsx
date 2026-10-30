@@ -1,4 +1,5 @@
 import SendDeniedToast from "@/components/messenger/SendDeniedToast";
+import FileTooLargeSheet from "@/components/messenger/FileTooLargeSheet";
 import { Suspense } from "react";
 import Icon from "@/components/ui/icon";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
@@ -178,6 +179,7 @@ export default function IndexOverlays({
     )}
 
     <SendDeniedToast />
+    <FileTooLargeSheet onOpenPro={() => setShowPro(true)} />
 
     {refToast && (
       <div className="fixed left-1/2 -translate-x-1/2 top-16 z-[300] px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-pink-500 text-white text-sm font-semibold shadow-lg animate-fade-in flex items-center gap-2">

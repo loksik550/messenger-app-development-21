@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, uploadMedia, type User, type Group, type GroupMessage } from "@/lib/api";
+import { api, uploadAny, FileTooLargeError, type User, type Group, type GroupMessage } from "@/lib/api";
 import { uploadAlbum, MAX_ALBUM } from "@/lib/uploadAlbum";
 
 interface Params {
@@ -36,18 +36,14 @@ export function useGroupMedia({ group, currentUser, setMessages, setLastSince, s
 
 
   const sendFile = async (file: File, opts?: { duration?: number; mediaTypeOverride?: string }) => {
-    const MAX_FILE_MB = 4.5;
     if (file.type.startsWith("image/") && !opts?.mediaTypeOverride) {
       const { compressImage } = await import("@/lib/compressImage");
       file = await compressImage(file);
     }
-    if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум ${MAX_FILE_MB} МБ. Сожми файл или запиши короче.`);
-      return;
-    }
     setUploading(true); setShowAttach(false);
+    const kindLabel = file.type.startsWith("video/") ? "видео" : file.type.startsWith("audio/") ? "аудио" : file.type.startsWith("image/") ? "фото" : "файл";
     try {
-      const result = await uploadMedia(file, currentUser.id);
+      const result = await uploadAny(file, currentUser.id, (done, total) => setUploadLabel(`Загружаем ${kindLabel}: ${Math.floor((done / Math.max(total, 1)) * 100)}%`));
       const mediaType = (opts?.mediaTypeOverride || result.media_type) as "audio" | "video" | "image" | "file";
       const d = await api("send_group_message", {
         group_id: group.id, media_type: mediaType, media_url: result.url,
@@ -67,9 +63,13 @@ export function useGroupMedia({ group, currentUser, setMessages, setLastSince, s
       }
     } catch (uploadErr) {
       console.error(uploadErr);
+      if (uploadErr instanceof FileTooLargeError) {
+        window.dispatchEvent(new CustomEvent("nova:file-too-large", { detail: { message: uploadErr.message, isPro: uploadErr.isPro, proMb: uploadErr.proMb, limitMb: uploadErr.limitMb } }));
+        return;
+      }
       const reason = uploadErr instanceof Error && uploadErr.message ? `\n\nПричина: ${uploadErr.message}` : "";
       alert(`Не удалось отправить файл. Проверь интернет и попробуй ещё раз.${reason}`);
-    } finally { setUploading(false); }
+    } finally { setUploading(false); setUploadLabel("Загружаем..."); }
   };
 
   const startRecording = async () => {

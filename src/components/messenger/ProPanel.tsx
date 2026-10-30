@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { api, type User, YOOKASSA_PAY_API } from "@/lib/api";
+import { api, type User, YOOKASSA_PAY_API, getFileLimits, formatMb } from "@/lib/api";
 import SbpQrModal from "@/components/messenger/SbpQrModal";
 import { authHeaders } from "@/lib/authToken";
 
@@ -33,6 +33,7 @@ const FEATURES = [
   { icon: "Brush", text: "Цветной ник в чатах и группах", color: "#818cf8" },
   { icon: "EyeOff", text: "Инкогнито — скрыть «в сети» ото всех", color: "#60a5fa" },
   { icon: "Palette", text: "4 эксклюзивные темы оформления", color: "#facc15" },
+  { icon: "FileUp", text: "Большие файлы", color: "#34d399" },
 ];
 
 const SPARKS = Array.from({ length: 46 }, (_, i) => {
@@ -47,6 +48,10 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
   const [method, setMethod] = useState<"yookassa" | "sbp" | "wallet">("yookassa");
   const [plans, setPlans] = useState<PlanItem[]>(FALLBACK_PLANS);
   const [qr, setQr] = useState<{ data: string; paymentId: string } | null>(null);
+  const [fileLim, setFileLim] = useState<{ free: number; pro: number }>({ free: 50, pro: 1024 });
+  useEffect(() => {
+    getFileLimits(currentUser.id).then(l => setFileLim({ free: l.free_mb, pro: l.pro_mb })).catch(() => null);
+  }, [currentUser.id]);
 
   // Тарифы настраиваются в Dev-панели и подтягиваются сюда
   useEffect(() => {
@@ -240,7 +245,9 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
               <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: f.color }}>
                 <Icon name={f.icon} size={17} className="text-white" />
               </div>
-              <span className="text-[15px]">{f.text}</span>
+              <span className="text-[15px]">
+                {f.icon === "FileUp" ? <>Файлы до {formatMb(fileLim.pro)} <span className="text-white/45 text-xs">вместо {formatMb(fileLim.free)}</span></> : f.text}
+              </span>
             </div>
           ))}
           <div className="flex items-center gap-3 px-4 py-3 border-t border-white/[0.06] text-white/50">
@@ -249,7 +256,7 @@ export default function ProPanel({ currentUser, onClose, onUserUpdate, onOpenWal
             </div>
             <div className="min-w-0">
               <div className="text-[15px]">Скоро — ещё больше функций</div>
-              <div className="text-xs text-white/40">Большие файлы, расшифровка голосовых и другое</div>
+              <div className="text-xs text-white/40">Расшифровка голосовых, перевод сообщений и другое</div>
             </div>
           </div>
         </div>

@@ -32,6 +32,16 @@
       },
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Chunk limits need auth",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "limits"
+      },
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }

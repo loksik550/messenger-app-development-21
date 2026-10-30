@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { track } from "@/lib/track";
-import { api, uploadMedia, type Chat, type Message, type User } from "@/lib/api";
+import { api, uploadAny, FileTooLargeError, type Chat, type Message, type User } from "@/lib/api";
 import { uploadAlbum, MAX_ALBUM } from "@/lib/uploadAlbum";
 import { canEncryptChat, encryptFile, type MediaKey } from "@/lib/e2e";
 
@@ -30,30 +30,29 @@ export function useChatMedia({
   const sendFile = async (file: File, extra?: { duration?: number; mediaTypeOverride?: "audio" | "video" | "image" | "file" }) => {
     // Лимит размера: тело облачной функции ограничено, а base64 раздувает на ~33%.
     // Видео-кружки сжаты при записи, для них предел выше.
-        const MAX_FILE_MB = 4.5;
     if (file.type.startsWith("image/") && !extra?.mediaTypeOverride) {
       const { compressImage } = await import("@/lib/compressImage");
       file = await compressImage(file);
     }
-    if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум ${MAX_FILE_MB} МБ. Сожми файл или запиши короче.`);
-      return;
-    }
     setUploading(true);
     setShowAttach(false);
     const labelMap: Record<string, string> = { image: "Загружаем фото...", video: "Загружаем видео...", audio: "Загружаем аудио...", file: "Загружаем файл..." };
+    const kindLabel = file.type.startsWith("video/") ? "видео" : file.type.startsWith("audio/") ? "аудио" : file.type.startsWith("image/") ? "фото" : "файл";
+    const onProgress = (done: number, total: number) => {
+      setUploadLabel(`Загружаем ${kindLabel}: ${Math.floor((done / Math.max(total, 1)) * 100)}%`);
+    };
     try {
       const secure = !chat.saved && !chat.group && await canEncryptChat(chat.id, currentUser.id);
       let mediaKey: MediaKey | null = null;
-      let result: Awaited<ReturnType<typeof uploadMedia>>;
+      let result: Awaited<ReturnType<typeof uploadAny>>;
       if (secure) {
         const enc = await encryptFile(file, file.name || "file");
         mediaKey = enc.key;
         const guessed = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "file";
-        const up = await uploadMedia(new File([enc.blob], "encrypted.bin", { type: "application/octet-stream" }), currentUser.id);
+        const up = await uploadAny(new File([enc.blob], "encrypted.bin", { type: "application/octet-stream" }), currentUser.id, onProgress);
         result = { ...up, media_type: guessed, file_name: "encrypted.bin", file_size: file.size };
       } else {
-        result = await uploadMedia(file, currentUser.id);
+        result = await uploadAny(file, currentUser.id, onProgress);
       }
       const finalMediaType = extra?.mediaTypeOverride || result.media_type;
       const localUrl = mediaKey ? URL.createObjectURL(file) : result.url;
@@ -89,9 +88,13 @@ export function useChatMedia({
       }
     } catch (uploadErr) {
       console.error(uploadErr);
+      if (uploadErr instanceof FileTooLargeError) {
+        window.dispatchEvent(new CustomEvent("nova:file-too-large", { detail: { message: uploadErr.message, isPro: uploadErr.isPro, proMb: uploadErr.proMb, limitMb: uploadErr.limitMb } }));
+        return;
+      }
       const reason = uploadErr instanceof Error && uploadErr.message ? `\n\nПричина: ${uploadErr.message}` : "";
       alert(`Не удалось отправить файл. Проверь интернет и попробуй ещё раз.${reason}`);
-    } finally { setUploading(false); }
+    } finally { setUploading(false); setUploadLabel("Загружаем..."); }
   };
 
   const sendFiles = async (files: File[]) => {

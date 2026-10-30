@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { devApi, formatNum } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
 import DevToggle from "./DevToggle";
+import DevProFeatures from "./DevProFeatures";
 
 interface PlanLimits {
   file_mb: number;
@@ -40,14 +41,6 @@ const EMPTY: Plan = {
   },
 };
 
-const LIMIT_LABELS: { key: keyof PlanLimits; label: string; unit: string }[] = [
-  { key: "file_mb", label: "Размер файла", unit: "МБ" },
-  { key: "storage_gb", label: "Хранилище", unit: "ГБ" },
-  { key: "pinned_chats", label: "Закреплённых чатов", unit: "шт" },
-  { key: "group_members", label: "Участников группы", unit: "чел" },
-  { key: "voice_minutes", label: "Голосовое сообщение", unit: "мин" },
-  { key: "devices", label: "Устройств", unit: "шт" },
-];
 
 export default function DevPlans({ can }: { can: (p: string) => boolean }) {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -135,8 +128,10 @@ export default function DevPlans({ can }: { can: (p: string) => boolean }) {
         </div>
       </div>
 
+      <DevProFeatures editable={editable} />
+
       <p className="text-xs text-slate-500">
-        Изменения применяются в мессенджере сразу — цены и лимиты подтягиваются из этой таблицы.
+        Цены и сроки тарифов применяются в мессенджере сразу. Возможности Pro одинаковы во всех тарифах и настраиваются в блоке выше.
       </p>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -199,11 +194,6 @@ export default function DevPlans({ can }: { can: (p: string) => boolean }) {
               </ul>
             )}
 
-            <div className="grid grid-cols-3 gap-1.5 mb-3">
-              <MiniLimit label="файл" value={`${p.limits.file_mb} МБ`} />
-              <MiniLimit label="диск" value={`${p.limits.storage_gb} ГБ`} />
-              <MiniLimit label="группа" value={formatNum(p.limits.group_members)} />
-            </div>
 
             {editable && (
               <div className="flex gap-2">
@@ -305,27 +295,8 @@ export default function DevPlans({ can }: { can: (p: string) => boolean }) {
                   onChange={(e) => setEdit({ ...edit, features: e.target.value.split("\n") })}
                   rows={5}
                   className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-violet-500/50 resize-none placeholder-slate-600"
-                  placeholder={"Файлы до 20 МБ\nХранилище 5 ГБ\nРасширенный поиск"}
+                  placeholder={"Значок Pro\nЭмодзи-статус\nИнкогнито"}
                 />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-500 mb-2 block">Лимиты тарифа</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {LIMIT_LABELS.map((l) => (
-                    <Field key={l.key} label={`${l.label}, ${l.unit}`}>
-                      <Inp
-                        value={String(edit.limits[l.key])}
-                        onChange={(v) =>
-                          setEdit({
-                            ...edit,
-                            limits: { ...edit.limits, [l.key]: Number(v.replace(/\D/g, "")) || 0 },
-                          })
-                        }
-                      />
-                    </Field>
-                  ))}
-                </div>
               </div>
 
               {saveErr && (
@@ -355,14 +326,6 @@ export default function DevPlans({ can }: { can: (p: string) => boolean }) {
   );
 }
 
-function MiniLimit({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-white/[0.03] border border-white/8 rounded-lg px-2 py-1.5 text-center">
-      <div className="text-xs font-bold truncate">{value}</div>
-      <div className="text-[9px] text-slate-600">{label}</div>
-    </div>
-  );
-}
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

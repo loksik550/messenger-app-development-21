@@ -1,0 +1,1 @@
+{"tests":[{"name":"Finish requires auth","method":"POST","path":"/","body":{"action":"finish","upload_id":"abc","parts":1},"expectedStatus":401,"bodyMatcher":"partial"}]}

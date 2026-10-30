@@ -15,7 +15,7 @@ interface Props {
 export function ShopPanel({ onBack }: Props) {
   const items: ShopItem[] = [
     { key: "premium", title: "Premium", desc: "Все возможности Nova без ограничений", icon: "Crown", gradient: "linear-gradient(135deg, #f59e0b, #f97316)" },
-    { key: "pro", title: "Nova Pro", desc: "Эмодзи-статус, цвет имени, инкогнито", icon: "Sparkles", gradient: "linear-gradient(135deg, #8b5cf6, #6366f1)" },
+    { key: "pro", title: "Nova Pro", desc: "Значок Pro, цветной ник, инкогнито, большие файлы", icon: "Sparkles", gradient: "linear-gradient(135deg, #8b5cf6, #6366f1)" },
     { key: "lightning", title: "Молнии", desc: "Валюта для подарков и реакций", icon: "Zap", gradient: "linear-gradient(135deg, #eab308, #f59e0b)" },
     { key: "stickers", title: "Стикеры", desc: "Наборы стикеров для чатов", icon: "Smile", gradient: "linear-gradient(135deg, #ec4899, #8b5cf6)" },
   ];

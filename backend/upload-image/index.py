@@ -5,6 +5,7 @@ import time
 import uuid
 import base64
 import boto3
+from botocore.config import Config
 import psycopg2
 import nova_auth
 
@@ -32,6 +33,179 @@ MEDIA_TYPE_MAP = {
     "application": "file",
     "text": "file",
 }
+
+
+DEFAULT_FREE_MB = 50
+DEFAULT_PRO_MB = 1024
+CHUNK_MAX = 2 * 1024 * 1024 + 1024
+
+
+def _resp(code: int, data: dict) -> dict:
+    return {"statusCode": code, "headers": CORS, "body": json.dumps(data, ensure_ascii=False)}
+
+
+def _s3():
+    return boto3.client("s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
+
+
+def _limits(user_id: str) -> dict:
+    """Лимит размера файла для пользователя: из настроек Dev-панели и активного Pro."""
+    free_mb, pro_mb, is_pro = DEFAULT_FREE_MB, DEFAULT_PRO_MB, False
+    c = psycopg2.connect(os.environ["DATABASE_URL"])
+    c.autocommit = True
+    try:
+        cur = c.cursor()
+        cur.execute(
+            f"SELECT key, value FROM {nova_auth.SCHEMA}.dev_settings "
+            f"WHERE key IN ('file_limit_free_mb', 'file_limit_pro_mb')"
+        )
+        cfg = {k: v for k, v in cur.fetchall()}
+        try:
+            free_mb = max(1, int(cfg.get("file_limit_free_mb") or DEFAULT_FREE_MB))
+        except ValueError:
+            pass
+        try:
+            pro_mb = max(free_mb, int(cfg.get("file_limit_pro_mb") or DEFAULT_PRO_MB))
+        except ValueError:
+            pass
+        if user_id == "admin":
+            is_pro = True
+        else:
+            cur.execute(f"SELECT COALESCE(pro_until, 0) FROM {nova_auth.SCHEMA}.users WHERE id = %s", (int(user_id),))
+            r = cur.fetchone()
+            is_pro = bool(r and int(r[0] or 0) > int(time.time()))
+    finally:
+        c.close()
+    return {"free_mb": free_mb, "pro_mb": pro_mb, "is_pro": is_pro, "max_mb": pro_mb if is_pro else free_mb}
+
+
+def _upload_id_ok(upload_id: str) -> bool:
+    return bool(upload_id) and len(upload_id) <= 40 and all(ch.isalnum() for ch in upload_id)
+
+
+def _chunked(body: dict, user_id: str) -> dict:
+    """Загрузка больших файлов частями по 2 МБ и сборка в один файл."""
+    action = body.get("action")
+    if action == "limits":
+        return _resp(200, _limits(user_id))
+
+    upload_id = str(body.get("upload_id") or "")
+    if not _upload_id_ok(upload_id):
+        return _resp(400, {"error": "Неверный upload_id"})
+    prefix = f"tmp-upload/{user_id}/{upload_id}"
+    s3 = _s3()
+
+    if action == "chunk":
+        try:
+            idx = int(body.get("index"))
+        except (TypeError, ValueError):
+            return _resp(400, {"error": "Неверный номер части"})
+        if idx < 0 or idx > 1100:
+            return _resp(400, {"error": "Неверный номер части"})
+        raw = "".join(str(body.get("data") or "").split())
+        pad = len(raw) % 4
+        if pad:
+            raw += "=" * (4 - pad)
+        try:
+            chunk = base64.b64decode(raw, validate=True)
+        except Exception:
+            return _resp(400, {"error": "Неверный base64"})
+        if not chunk or len(chunk) > CHUNK_MAX:
+            return _resp(400, {"error": "Неверный размер части"})
+        if idx == 0:
+            lim = _limits(user_id)
+            total = int(body.get("total_size") or 0)
+            if total > lim["max_mb"] * 1024 * 1024:
+                return _resp(413, {
+                    "error": f"Файл больше {lim['max_mb']} МБ" + ("" if lim["is_pro"] else f". С Nova Pro — до {lim['pro_mb']} МБ"),
+                    "limit_mb": lim["max_mb"], "pro_mb": lim["pro_mb"], "is_pro": lim["is_pro"],
+                })
+        s3.put_object(Bucket="files", Key=f"{prefix}/{idx:05d}", Body=chunk)
+        return _resp(200, {"ok": True, "index": idx})
+
+    # finish
+    try:
+        parts = int(body.get("parts") or 0)
+    except (TypeError, ValueError):
+        parts = 0
+    if parts < 1 or parts > 1100:
+        return _resp(400, {"error": "Неверное число частей"})
+    keys = [f"{prefix}/{i:05d}" for i in range(parts)]
+    sizes = []
+    for k in keys:
+        try:
+            sizes.append(int(s3.head_object(Bucket="files", Key=k)["ContentLength"]))
+        except Exception:
+            return _resp(400, {"error": "Часть файла потерялась, попробуйте ещё раз"})
+    total = sum(sizes)
+    lim = _limits(user_id)
+    if total > lim["max_mb"] * 1024 * 1024:
+        for k in keys:
+            try: s3.delete_object(Bucket="files", Key=k)
+            except Exception: pass
+        return _resp(413, {"error": f"Файл больше {lim['max_mb']} МБ", "limit_mb": lim["max_mb"]})
+
+    mime = str(body.get("mime") or "application/octet-stream")
+    file_name = str(body.get("file_name") or "")
+    mime_clean = mime.split(";")[0].strip().lower()
+    mime_main = mime_clean.split("/")[0]
+    if mime_clean in EXT_MAP:
+        ext = EXT_MAP[mime_clean]
+        store_mime = mime_clean
+    else:
+        ext = "bin"
+        store_mime = "application/octet-stream"
+        mime_main = "application"
+    media_type = "audio" if mime_main == "audio" else MEDIA_TYPE_MAP.get(mime_main, "file")
+    key = f"chat/{user_id}/{media_type}/{int(time.time())}-{uuid.uuid4().hex[:12]}.{ext}"
+
+    class _Joined:
+        def __init__(self):
+            self.i, self.cur, self.pos = 0, None, 0
+        def read(self, amt=-1):
+            out = bytearray()
+            want = amt if amt and amt > 0 else 1 << 62
+            while len(out) < want and self.i < len(keys):
+                if self.cur is None:
+                    self.cur = s3.get_object(Bucket="files", Key=keys[self.i])["Body"]
+                part = self.cur.read(min(want - len(out), 1 << 20))
+                if not part:
+                    self.cur = None
+                    self.i += 1
+                    continue
+                out += part
+            self.pos += len(out)
+            return bytes(out)
+        def tell(self):
+            return self.pos
+        def seek(self, off, whence=0):
+            if whence == 0 and off == 0:
+                self.i, self.cur, self.pos = 0, None, 0
+                return 0
+            return total if whence == 2 else self.pos
+
+    s3w = boto3.client("s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+        config=Config(request_checksum_calculation="when_required"),
+    )
+    extra = {"ContentDisposition": "attachment"} if store_mime == "application/octet-stream" else {}
+    s3w.put_object(Bucket="files", Key=key, Body=_Joined(), ContentLength=total, ContentType=store_mime, **extra)
+    for k in keys:
+        try:
+            s3.delete_object(Bucket="files", Key=k)
+        except Exception:
+            pass
+    cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+    return _resp(200, {
+        "url": cdn_url, "media_type": media_type,
+        "file_name": (file_name[:120] or f"file.{ext}"), "file_size": total,
+    })
 
 
 def _entry(event: dict, context) -> dict:
@@ -72,6 +246,8 @@ def _entry(event: dict, context) -> dict:
         if not _ok:
             return nova_auth.denied(CORS)
     body = json.loads(event.get("body") or "{}")
+    if body.get("action") in ("limits", "chunk"):
+        return _chunked(body, user_id)
     data_b64 = body.get("data", "")
     mime = body.get("mime", "image/jpeg")
     file_name = body.get("file_name", "")

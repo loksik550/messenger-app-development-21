@@ -74,6 +74,7 @@ ACTION_PERMS = {
     "notifications": "dashboard", "notifications_read": "dashboard",
     "moderation_summary": "dashboard",
     "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
+    "pro_features": "dashboard", "pro_features_save": "settings",
     "broadcast_send": "settings", "broadcast_history": "dashboard",
     "broadcast_preview": "settings",
     "mod_rules": "dashboard", "mod_rule_add": "settings", "mod_rule_delete": "settings",
@@ -1898,6 +1899,52 @@ def _handler(event: dict, context) -> dict:
                 (now,),
             )
             return ok({"plans": plans, "active_subscriptions": cur.fetchone()[0]})
+
+        if action == "pro_features":
+            cur.execute(
+                f"SELECT key, value FROM {SCHEMA}.dev_settings "
+                f"WHERE key IN ('file_limit_free_mb', 'file_limit_pro_mb')"
+            )
+            cfg = {r[0]: r[1] for r in cur.fetchall()}
+            def _int(v, d):
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    return d
+            now = int(time.time())
+            cur.execute(
+                f"SELECT COUNT(*) FILTER (WHERE COALESCE(incognito, FALSE)), "
+                f"COUNT(*) FILTER (WHERE emoji_status IS NOT NULL AND emoji_status <> ''), "
+                f"COUNT(*) FILTER (WHERE name_color IS NOT NULL AND name_color <> '') "
+                f"FROM {SCHEMA}.users WHERE COALESCE(pro_until, 0) > %s",
+                (now,),
+            )
+            inc, emo, col = cur.fetchone()
+            return ok({
+                "file_limit_free_mb": _int(cfg.get("file_limit_free_mb"), 50),
+                "file_limit_pro_mb": _int(cfg.get("file_limit_pro_mb"), 1024),
+                "usage": {"incognito": inc or 0, "emoji_status": emo or 0, "name_color": col or 0},
+            })
+
+        if action == "pro_features_save":
+            try:
+                free_mb = int(body.get("file_limit_free_mb"))
+                pro_mb = int(body.get("file_limit_pro_mb"))
+            except (TypeError, ValueError):
+                return err("Укажите лимиты числами")
+            if free_mb < 1 or free_mb > 2048:
+                return err("Лимит без Pro: от 1 до 2048 МБ")
+            if pro_mb < free_mb or pro_mb > 2048:
+                return err("Лимит с Pro: не меньше лимита без Pro и не больше 2048 МБ")
+            now = int(time.time())
+            for k, v in (("file_limit_free_mb", free_mb), ("file_limit_pro_mb", pro_mb)):
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.dev_settings (key, value, updated_at, updated_by) VALUES (%s, %s, %s, %s) "
+                    f"ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by",
+                    (k, str(v), now, admin["id"]),
+                )
+            audit(cur, admin, "pro_features_save", f"Лимит файлов: без Pro {free_mb} МБ, с Pro {pro_mb} МБ", ip)
+            return ok({"success": True})
 
         if action == "plan_save":
             pid = int(body.get("id") or 0)
