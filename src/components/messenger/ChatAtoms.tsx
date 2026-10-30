@@ -150,7 +150,7 @@ type ChatFilter = "all" | "unread" | "groups" | "personal";
 
 export function ChatList({
   chats, onSelect, selectedId,
-  onToggleMute, onToggleArchive, onDelete, onRefresh, onStartChat,
+  onToggleMute, onToggleArchive, onDelete, onRefresh, onStartChat, footer,
 }: {
   chats: Chat[];
   onSelect: (c: Chat) => void;
@@ -160,6 +160,7 @@ export function ChatList({
   onDelete?: (c: Chat, forAll: boolean) => void;
   onRefresh?: () => Promise<void> | void;
   onStartChat?: () => void;
+  footer?: React.ReactNode;
 }) {
   const [filter, setFilter] = useState<ChatFilter>("all");
   const [openId, setOpenId] = useState<number | null>(null);
@@ -294,6 +295,8 @@ export function ChatList({
               onToggleArchive={onToggleArchive}
               onDelete={onDelete ? (ch) => setDeleteTarget(ch) : undefined}
             />)}
+        {footer}
+        <div className="h-20" />
         </div>
       </div>
     </div>

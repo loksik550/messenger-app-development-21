@@ -7,6 +7,7 @@ import { track, setTrackUser } from "@/lib/track";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import Icon from "@/components/ui/icon";
 import { api, prefetchIceServers, type View, type Tab, type Chat, type User, type Group } from "@/lib/api";
+import ChatFab from "@/components/messenger/ChatFab";
 import GroupList from "@/components/messenger/GroupList";
 import { ChatList, ChatWindow } from "@/components/messenger/ChatComponents";
 import { SearchPanel, ProfilePanel, SettingsPanel } from "@/components/messenger/Panels";
@@ -591,7 +592,7 @@ export default function Index() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-hidden flex flex-col relative">
           {activeTab === "chats" && (
             <>
               {currentUser && (
@@ -701,45 +702,25 @@ export default function Index() {
                   if (data.chats) setRealChats(data.chats.map(mapChat));
                   if (typeof data.archived_count === "number") setArchivedCount(data.archived_count);
                 }}
-              />
-
-              {/* Группы и каналы */}
-              {currentUser && (
-                <GroupList
+                footer={currentUser ? (
+                  <GroupList
                   groups={groups.filter(g => {
-                    const q = searchQuery.toLocaleLowerCase().trim();
-                    return !q || (g.name || "").toLocaleLowerCase().includes(q);
-                  })}
-                  currentUser={currentUser}
-                  selectedId={selectedGroup?.id}
-                  showArchived={showArchived}
-                  onSelect={(g) => { setSelectedGroup(g); setSelectedChat(null); setShowSidebar(false); }}
-                  setGroups={setGroups}
-                  onSelectedRemoved={(id) => { if (selectedGroup?.id === id) setSelectedGroup(null); }}
-                />
-              )}
-
-              {/* Кнопки группы/каналы */}
-              <div className="px-4 pt-2 pb-2 space-y-1.5">
-                <button
-                  onClick={() => openOverlay(setShowCreateGroup)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl hover:bg-white/5 transition text-muted-foreground hover:text-foreground border border-dashed border-white/10"
-                >
-                  <div className="w-11 h-11 rounded-2xl bg-white/5 flex items-center justify-center flex-shrink-0">
-                    <Icon name="Plus" size={20} className="text-violet-400" />
-                  </div>
-                  <span className="text-sm font-medium">Создать группу или канал</span>
-                </button>
-                <button
-                  onClick={() => openOverlay(setShowJoinChannel)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl hover:bg-white/5 transition text-muted-foreground hover:text-foreground border border-dashed border-white/10"
-                >
-                  <div className="w-11 h-11 rounded-2xl bg-white/5 flex items-center justify-center flex-shrink-0">
-                    <Icon name="Search" size={20} className="text-cyan-400" />
-                  </div>
-                  <span className="text-sm font-medium">Найти канал по ссылке</span>
-                </button>
-              </div>
+                      const q = searchQuery.toLocaleLowerCase().trim();
+                      return !q || (g.name || "").toLocaleLowerCase().includes(q);
+                    })}
+                    currentUser={currentUser}
+                    selectedId={selectedGroup?.id}
+                    showArchived={showArchived}
+                    onSelect={(g) => { setSelectedGroup(g); setSelectedChat(null); setShowSidebar(false); }}
+                    setGroups={setGroups}
+                    onSelectedRemoved={(id) => { if (selectedGroup?.id === id) setSelectedGroup(null); }}
+                  />
+                ) : null}
+              />
+              <ChatFab
+                onCreate={() => openOverlay(setShowCreateGroup)}
+                onJoin={() => openOverlay(setShowJoinChannel)}
+              />
             </>
           )}
           {activeTab === "stories" && currentUser && (
