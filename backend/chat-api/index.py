@@ -5461,7 +5461,7 @@ def _handle(event: dict, context) -> dict:
             duration = int(prow[1] or 30) * 86400
         else:
             prices = {"month": 199.0, "year": 1490.0, "trial": 0.0}
-            durations = {"month": 30 * 86400, "year": 365 * 86400, "trial": 3 * 86400}
+            durations = {"month": 30 * 86400, "year": 365 * 86400, "trial": 7 * 86400}
             if plan not in prices:
                 conn.close(); return err("Тариф не найден")
             price = prices[plan]

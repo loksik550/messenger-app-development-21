@@ -22,7 +22,7 @@ interface PlanItem {
 
 // Запасные тарифы: используются, если настройки не успели загрузиться
 const FALLBACK_PLANS: PlanItem[] = [
-  { id: "trial", title: "Пробные 3 дня", price: 0, sub: "Бесплатно, один раз", badge: "FREE", purpose: "" },
+  { id: "trial", title: "Пробные 7 дней", price: 0, sub: "Бесплатно, один раз", badge: "FREE", purpose: "" },
   { id: "month", title: "1 месяц", price: 199, sub: "199 ₽/мес", badge: "", purpose: "pro_month" },
   { id: "year", title: "1 год", price: 1490, sub: "124 ₽/мес · −38%", badge: "ВЫГОДНО", purpose: "pro_year" },
 ];
