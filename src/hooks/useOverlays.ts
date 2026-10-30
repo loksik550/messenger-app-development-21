@@ -15,7 +15,6 @@ export function useOverlays() {
   const [showStickers, setShowStickers] = useState(false);
   const [showAdminStickers, setShowAdminStickers] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
-  const [showBots, setShowBots] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -38,7 +37,6 @@ export function useOverlays() {
     setShowStickers(false);
     setShowAdminStickers(false);
     setShowProgress(false);
-    setShowBots(false);
     setShowSupport(false);
     setShowPrivacy(false);
     setShowNotifications(false);
@@ -68,7 +66,6 @@ export function useOverlays() {
     showStickers, setShowStickers,
     showAdminStickers, setShowAdminStickers,
     showProgress, setShowProgress,
-    showBots, setShowBots,
     showSupport, setShowSupport,
     showPrivacy, setShowPrivacy,
     showNotifications, setShowNotifications,

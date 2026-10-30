@@ -68,7 +68,6 @@ export function ProfileScreen() {
       <div className="space-y-4">
         {[
           { i: "Crown", t: "Оформить Nova Pro", s: "Больше возможностей", c: "from-amber-500 to-orange-600" },
-          { i: "Bot", t: "Мои боты", s: "Создавай ботов для автоматизации", c: "from-sky-500 to-blue-600" },
           { i: "LifeBuoy", t: "Поддержка Nova", s: "Помощь, баги, идеи", c: "from-pink-500 to-rose-600" },
           { i: "ShieldCheck", t: "Безопасность и приватность", s: "PIN, кто видит, сессии", c: "from-emerald-500 to-teal-600" },
         ].map((r) => (

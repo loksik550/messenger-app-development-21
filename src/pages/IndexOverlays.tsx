@@ -11,7 +11,6 @@ const LightningPanel = lazyWithRetry(() => import("@/components/messenger/Lightn
 const StickersStorePanel = lazyWithRetry(() => import("@/components/messenger/StickersStorePanel"));
 const FundraiserPanel = lazyWithRetry(() => import("@/components/messenger/FundraiserPanel"));
 const AdminStickersPanel = lazyWithRetry(() => import("@/components/messenger/AdminStickersPanel").then(m => ({ default: m.AdminStickersPanel })));
-const BotsPanel = lazyWithRetry(() => import("@/components/messenger/BotsPanel"));
 const ProgressPanel = lazyWithRetry(() => import("@/components/messenger/ProgressPanel"));
 const SupportPanel = lazyWithRetry(() => import("@/components/messenger/SupportPanel"));
 const PremiumPanel = lazyWithRetry(() => import("@/components/messenger/PremiumPanel"));
@@ -42,7 +41,7 @@ export default function IndexOverlays({
     showPro, setShowPro, showWallet, setShowWallet, showProSettings, setShowProSettings,
     showLightning, setShowLightning, showStickers, setShowStickers,
     showAdminStickers, setShowAdminStickers, showProgress, setShowProgress,
-    showBots, setShowBots, showSupport, setShowSupport, showPrivacy, setShowPrivacy,
+    showSupport, setShowSupport, showPrivacy, setShowPrivacy,
     showNotifications, setShowNotifications, showAppearance, setShowAppearance,
     showSavedNotes, setShowSavedNotes, showPayments, setShowPayments,
     showPremium, setShowPremium, showCalls, setShowCalls, showInvite, setShowInvite,
@@ -189,16 +188,6 @@ export default function IndexOverlays({
         currentUser={currentUser}
         onClose={() => setShowPayments(false)}
       />
-    )}
-
-    {/* Мои боты */}
-    {showBots && currentUser && (
-      <div className="fixed inset-0 z-[200] bg-background animate-fade-in">
-        <BotsPanel
-          currentUser={currentUser}
-          onBack={() => setShowBots(false)}
-        />
-      </div>
     )}
 
     {/* Fundraiser */}

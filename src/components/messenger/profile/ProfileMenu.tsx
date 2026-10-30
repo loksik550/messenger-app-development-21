@@ -13,7 +13,6 @@ export interface ProfileMenuActions {
   onOpenPro?: () => void;
   onOpenProSettings?: () => void;
   onOpenProgress?: () => void;
-  onOpenBots?: () => void;
   onOpenSupport?: () => void;
   onOpenPrivacy?: () => void;
   onOpenNotifications?: () => void;
@@ -36,7 +35,7 @@ interface Props extends ProfileMenuActions {
 
 export function ProfileMenu({
   currentUser, chatsCount, contactsCount, onEditProfile, onSettings,
-  onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenBots, onOpenSupport,
+  onOpenWallet, onOpenPro, onOpenProSettings, onOpenProgress, onOpenSupport,
   onOpenPrivacy, onOpenNotifications, onOpenAppearance, onOpenSavedNotes, onOpenPayments,
   onOpenVerification, onOpenPromo, onOpenCalls, onOpenFavorites, onOpenInvite,
 }: Props) {
@@ -84,21 +83,6 @@ export function ProfileMenu({
             </div>
             <Icon name="ChevronRight" size={20} className="text-white/60 flex-shrink-0" />
           </div>
-        </button>
-      </div>
-    )}
-
-    {onOpenBots && (
-      <div className="px-4 mb-3">
-        <button onClick={onOpenBots} className="w-full glass rounded-2xl p-3 flex items-center gap-3 hover:bg-white/8 transition">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg, #6366f1, #06b6d4)" }}>
-            <Icon name="Bot" size={18} className="text-white" />
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="text-sm font-bold truncate">Мои боты</div>
-            <div className="text-[11px] text-muted-foreground truncate">Создавай ботов для автоматизации</div>
-          </div>
-          <Icon name="ChevronRight" size={16} className="text-muted-foreground flex-shrink-0" />
         </button>
       </div>
     )}

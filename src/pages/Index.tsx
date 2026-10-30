@@ -193,7 +193,7 @@ export default function Index() {
 
   const { t: tr } = useT();
   const {
-    setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowProgress, setShowBots, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
+    setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowProgress, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
   } = overlays;
   const openOverlay = overlays.open;
 
@@ -855,7 +855,6 @@ export default function Index() {
             onOpenPro={() => openOverlay(setShowPro)}
             onOpenProSettings={() => openOverlay(setShowProSettings)}
             onOpenProgress={() => openOverlay(setShowProgress)}
-            onOpenBots={() => openOverlay(setShowBots)}
             onOpenSupport={() => openOverlay(setShowSupport)}
             onOpenPrivacy={() => openOverlay(setShowPrivacy)}
             onOpenNotifications={() => openOverlay(setShowNotifications)}
