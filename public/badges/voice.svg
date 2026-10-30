@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<defs>
+ <linearGradient id="rvoice" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3e8ff"/><stop offset=".5" stop-color="#a855f7"/><stop offset="1" stop-color="#581c87"/></linearGradient>
+ <linearGradient id="bvoice" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#581c87"/></linearGradient>
+ <radialGradient id="hvoice" cx=".5" cy=".18" r=".7"><stop offset="0" stop-color="#d8b4fe" stop-opacity=".95"/><stop offset=".55" stop-color="#d8b4fe" stop-opacity="0"/></radialGradient>
+ <linearGradient id="gvoice" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f3e8ff"/></linearGradient>
+ <linearGradient id="shvoice" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+ <filter id="svoice" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.4" flood-color="#581c87" flood-opacity=".9"/></filter>
+ <clipPath id="cvoice"><path d="M32 4 A28 28 0 1 1 31.99 4 Z" transform="translate(32 32) scale(.86) translate(-32 -32)"/></clipPath>
+</defs>
+<path d="M32 4 A28 28 0 1 1 31.99 4 Z" fill="url(#rvoice)" stroke="#581c87" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M32 4 A28 28 0 1 1 31.99 4 Z" fill="url(#bvoice)" stroke="#581c87" stroke-opacity=".6" stroke-width="1" stroke-linejoin="round" transform="translate(32 32) scale(.86) translate(-32 -32)"/>
+<path d="M32 4 A28 28 0 1 1 31.99 4 Z" fill="url(#hvoice)" transform="translate(32 32) scale(.86) translate(-32 -32)"/>
+<g clip-path="url(#cvoice)"><ellipse cx="32" cy="14" rx="24" ry="11" fill="#fff" opacity=".18"/></g>
+
+<g fill="url(#gvoice)" color="#ffffff" filter="url(#svoice)" transform="translate(32 32) scale(.92) translate(-32 -32)"><rect x="26" y="13" width="12" height="22" rx="6"/><path d="M20 30 C20 37 25.5 42 32 42 C38.5 42 44 37 44 30 M32 42 V49 M25.5 49 H38.5" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/></g>
+
+</svg>

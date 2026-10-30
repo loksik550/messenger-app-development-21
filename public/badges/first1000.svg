@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<defs>
+ <linearGradient id="rfirst1000" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d1fae5"/><stop offset=".5" stop-color="#10b981"/><stop offset="1" stop-color="#065f46"/></linearGradient>
+ <linearGradient id="bfirst1000" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#065f46"/></linearGradient>
+ <radialGradient id="hfirst1000" cx=".5" cy=".18" r=".7"><stop offset="0" stop-color="#6ee7b7" stop-opacity=".95"/><stop offset=".55" stop-color="#6ee7b7" stop-opacity="0"/></radialGradient>
+ <linearGradient id="gfirst1000" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d1fae5"/></linearGradient>
+ <linearGradient id="shfirst1000" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+ <filter id="sfirst1000" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.4" flood-color="#065f46" flood-opacity=".9"/></filter>
+ <clipPath id="cfirst1000"><path d="M32 3.5 L55.5 11.5 V30 C55.5 44.5 46 54.5 32 60.5 C18 54.5 8.5 44.5 8.5 30 V11.5 Z" transform="translate(32 32) scale(.86) translate(-32 -32)"/></clipPath>
+</defs>
+<path d="M32 3.5 L55.5 11.5 V30 C55.5 44.5 46 54.5 32 60.5 C18 54.5 8.5 44.5 8.5 30 V11.5 Z" fill="url(#rfirst1000)" stroke="#065f46" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M32 3.5 L55.5 11.5 V30 C55.5 44.5 46 54.5 32 60.5 C18 54.5 8.5 44.5 8.5 30 V11.5 Z" fill="url(#bfirst1000)" stroke="#065f46" stroke-opacity=".6" stroke-width="1" stroke-linejoin="round" transform="translate(32 32) scale(.86) translate(-32 -32)"/>
+<path d="M32 3.5 L55.5 11.5 V30 C55.5 44.5 46 54.5 32 60.5 C18 54.5 8.5 44.5 8.5 30 V11.5 Z" fill="url(#hfirst1000)" transform="translate(32 32) scale(.86) translate(-32 -32)"/>
+<g clip-path="url(#cfirst1000)"><ellipse cx="32" cy="14" rx="24" ry="11" fill="#fff" opacity=".18"/></g>
+<g clip-path="url(#cfirst1000)"><rect x="-40" y="-10" width="16" height="90" fill="url(#shfirst1000)" transform="rotate(25 32 32)"><animate attributeName="x" values="-40;90;90" dur="3.2s" repeatCount="indefinite"/></rect></g>
+<g fill="url(#gfirst1000)" color="#ffffff" filter="url(#sfirst1000)" transform="translate(32 32) scale(.92) translate(-32 -32)"><rect x="19" y="14" width="4" height="36" rx="2"/><path d="M23 16 C29 13 33 19 39 17 C42 16 44 15 46 14 V33 C44 34 42 35 39 36 C33 38 29 32 23 35 Z"/></g>
+
+</svg>

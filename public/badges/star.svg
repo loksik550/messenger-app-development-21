@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<defs>
+ <linearGradient id="rstar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fefce8"/><stop offset=".5" stop-color="#facc15"/><stop offset="1" stop-color="#854d0e"/></linearGradient>
+ <linearGradient id="bstar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#facc15"/><stop offset="1" stop-color="#854d0e"/></linearGradient>
+ <radialGradient id="hstar" cx=".5" cy=".18" r=".7"><stop offset="0" stop-color="#fef08a" stop-opacity=".95"/><stop offset=".55" stop-color="#fef08a" stop-opacity="0"/></radialGradient>
+ <linearGradient id="gstar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#fefce8"/></linearGradient>
+ <linearGradient id="shstar" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+ <filter id="sstar" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.4" flood-color="#854d0e" flood-opacity=".9"/></filter>
+ <clipPath id="cstar"><path d="M32.00,3.00 L41.99,19.25 L60.53,23.73 L48.17,38.25 L49.63,57.27 L32.00,50.00 L14.37,57.27 L15.83,38.25 L3.47,23.73 L22.01,19.25 Z" transform="translate(32 32) scale(.86) translate(-32 -32)"/></clipPath>
+</defs>
+<path d="M32.00,3.00 L41.99,19.25 L60.53,23.73 L48.17,38.25 L49.63,57.27 L32.00,50.00 L14.37,57.27 L15.83,38.25 L3.47,23.73 L22.01,19.25 Z" fill="url(#rstar)" stroke="#854d0e" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M32.00,3.00 L41.99,19.25 L60.53,23.73 L48.17,38.25 L49.63,57.27 L32.00,50.00 L14.37,57.27 L15.83,38.25 L3.47,23.73 L22.01,19.25 Z" fill="url(#bstar)" stroke="#854d0e" stroke-opacity=".6" stroke-width="1" stroke-linejoin="round" transform="translate(32 32) scale(.86) translate(-32 -32)"/>
+<path d="M32.00,3.00 L41.99,19.25 L60.53,23.73 L48.17,38.25 L49.63,57.27 L32.00,50.00 L14.37,57.27 L15.83,38.25 L3.47,23.73 L22.01,19.25 Z" fill="url(#hstar)" transform="translate(32 32) scale(.86) translate(-32 -32)"/>
+<g clip-path="url(#cstar)"><ellipse cx="32" cy="14" rx="24" ry="11" fill="#fff" opacity=".18"/></g>
+<g clip-path="url(#cstar)"><rect x="-40" y="-10" width="16" height="90" fill="url(#shstar)" transform="rotate(25 32 32)"><animate attributeName="x" values="-40;90;90" dur="3.2s" repeatCount="indefinite"/></rect></g>
+<g fill="url(#gstar)" color="#ffffff" filter="url(#sstar)" transform="translate(32 32) scale(.92) translate(-32 -32)"><path d="M32.00,18.00 L35.88,27.66 L46.27,28.36 L38.28,35.04 L40.82,45.14 L32.00,39.60 L23.18,45.14 L25.72,35.04 L17.73,28.36 L28.12,27.66 Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></g>
+<path d="M52.00,5.80 L52.83,9.17 L56.20,10.00 L52.83,10.83 L52.00,14.20 L51.17,10.83 L47.80,10.00 L51.17,9.17 Z" fill="#fff" opacity="0.95"/><path d="M9.00,49.00 L9.59,51.41 L12.00,52.00 L9.59,52.59 L9.00,55.00 L8.41,52.59 L6.00,52.00 L8.41,51.41 Z" fill="#fff" opacity="0.8"/><path d="M55.00,47.60 L55.48,49.52 L57.40,50.00 L55.48,50.48 L55.00,52.40 L54.52,50.48 L52.60,50.00 L54.52,49.52 Z" fill="#fff" opacity="0.7"/>
+</svg>
