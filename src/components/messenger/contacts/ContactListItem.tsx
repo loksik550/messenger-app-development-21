@@ -24,7 +24,7 @@ export function ContactListItem({
         {contact.name[0]?.toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm truncate"><ProName name={contact.name} isPro={contact.is_pro} emoji={contact.emoji_status} color={contact.name_color} badgeSize={12} /></p>
+        <p className="font-semibold text-sm truncate"><ProName name={contact.name} isPro={contact.is_pro} emoji={contact.emoji_status} color={contact.name_color} effect={contact.name_effect} badges={contact.badges} maxBadges={2} badgeSize={12} /></p>
         <p className="text-xs text-muted-foreground truncate">{contact.phone}</p>
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

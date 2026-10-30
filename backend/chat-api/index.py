@@ -119,7 +119,8 @@ def err(msg, code=400):
     return {"statusCode": code, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
-USER_COLS = "id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE), avatar_video_url, app_icon, profile_bg"
+USER_COLS = ("id, phone, name, avatar_url, created_at, about, gender, birthdate, COALESCE(wallet_balance, 0), pro_until, emoji_status, name_color, COALESCE(incognito, FALSE), COALESCE(who_can_message, 'everyone'), COALESCE(who_can_call, 'everyone'), COALESCE(lightning_balance, 0), COALESCE(pro_trial_used, FALSE), stickers_subscription_until, COALESCE(xp, 0), COALESCE(level, 1), COALESCE(daily_streak, 0), COALESCE(theme_id, 'dark'), COALESCE(accent_color, 'violet'), chat_wallpaper, COALESCE(bubble_style, 'default'), COALESCE(font_size, 16), COALESCE(verified, FALSE), verified_kind, nova_id, COALESCE(notify_messages, TRUE), COALESCE(notify_groups, TRUE), COALESCE(notify_preview, TRUE), COALESCE(phone_visibility, 'contacts'), COALESCE(profile_photo_visibility, 'everyone'), COALESCE(last_seen_visibility, 'everyone'), COALESCE(read_receipts_enabled, TRUE), avatar_video_url, app_icon, profile_bg, "
+    + "(SELECT e.effect_code FROM " + SCHEMA + ".user_name_effects e WHERE e.user_id = " + SCHEMA + ".users.id AND e.effect_code = " + SCHEMA + ".users.name_effect AND (e.expires_at IS NULL OR e.expires_at > EXTRACT(EPOCH FROM NOW())::bigint) LIMIT 1), (SELECT string_agg(b.badge_code, ',' ORDER BY b.id) FROM " + SCHEMA + ".user_shop_badges b WHERE b.user_id = " + SCHEMA + ".users.id AND b.revoked_at IS NULL AND b.shown)")
 
 
 
@@ -203,13 +204,15 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
                           WHERE c.user_id = u.id AND c.contact_id = %s
                             AND (c.name_override IS NULL OR c.name_override <> 'DELETED')),
                    COALESCE(u.pro_until, 0), u.emoji_status, u.name_color, COALESCE(u.incognito, FALSE),
-                   u.avatar_video_url, u.profile_bg
+                   u.avatar_video_url, u.profile_bg,
+                   (SELECT e.effect_code FROM {SCHEMA}.user_name_effects e WHERE e.user_id = u.id AND e.effect_code = u.name_effect AND (e.expires_at IS NULL OR e.expires_at > EXTRACT(EPOCH FROM NOW())::bigint) LIMIT 1),
+                   (SELECT string_agg(b.badge_code, ',' ORDER BY b.id) FROM {SCHEMA}.user_shop_badges b WHERE b.user_id = u.id AND b.revoked_at IS NULL AND b.shown)
             FROM {SCHEMA}.users u WHERE u.id IN ({in_ids})""",
         (int(viewer_id),),
     )
     out = {}
     now_ts = int(time.time())
-    for uid, ph, photo, seen, receipts, is_contact, pro_until, emoji, color, incognito, avatar_video, profile_bg in cur.fetchall():
+    for uid, ph, photo, seen, receipts, is_contact, pro_until, emoji, color, incognito, avatar_video, profile_bg, name_eff, badges_s in cur.fetchall():
         def allowed(v):
             if uid == int(viewer_id):
                 return True
@@ -224,6 +227,8 @@ def _privacy_map(cur, viewer_id: int, user_ids) -> dict:
             "name_color": color if is_pro else None,
             "avatar_video_url": avatar_video if (is_pro and allowed(photo)) else None,
             "profile_bg": _bg_visible(profile_bg, is_pro) if allowed(photo) else None,
+            "name_effect": name_eff,
+            "badges": [x for x in (badges_s or "").split(",") if x],
         }
     return out
 
@@ -246,7 +251,8 @@ def _pro_fields(pv: dict, uid) -> dict:
     """Публичные Pro-поля пользователя для показа другим."""
     d = pv.get(uid) or {}
     return {"is_pro": bool(d.get("pro")), "emoji_status": d.get("emoji_status"), "name_color": d.get("name_color"),
-            "avatar_video_url": d.get("avatar_video_url"), "profile_bg": d.get("profile_bg")}
+            "avatar_video_url": d.get("avatar_video_url"), "profile_bg": d.get("profile_bg"),
+            "name_effect": d.get("name_effect"), "badges": d.get("badges") or []}
 
 
 def _receipts_on(cur, user_id: int) -> bool:
@@ -318,6 +324,8 @@ def serialize_user(row):
         "avatar_video_url": (row[36] if len(row) > 36 and row[36] and bool(row[9]) and int(row[9]) > int(time.time()) else None),
         "app_icon": (row[37] if len(row) > 37 and row[37] and bool(row[9]) and int(row[9]) > int(time.time()) else "classic"),
         "profile_bg": _bg_visible(row[38] if len(row) > 38 else None, bool(row[9]) and int(row[9] or 0) > int(time.time())),
+        "name_effect": row[39] if len(row) > 39 else None,
+        "badges": [x for x in (row[40] or "").split(",") if x] if len(row) > 40 else [],
     }
 
 
@@ -4514,6 +4522,8 @@ def _handle(event: dict, context) -> dict:
                 "sender_emoji": _gpv.get(r[1], {}).get("emoji_status"),
                 "sender_color": _gpv.get(r[1], {}).get("name_color"),
                 "sender_avatar_video": _gpv.get(r[1], {}).get("avatar_video_url"),
+                "sender_effect": _gpv.get(r[1], {}).get("name_effect"),
+                "sender_badges": _gpv.get(r[1], {}).get("badges") or [],
                 "media_type": r[5], "media_url": r[6],
                 "file_name": r[7], "file_size": r[8], "duration": r[9],
                 "reply_to_id": r[10], "created_at": r[11],
@@ -5667,6 +5677,163 @@ def _handle(event: dict, context) -> dict:
 
         conn.close()
         return err("Неизвестное действие")
+
+    # ── Магазин: значки и эффекты имени ──────────────────────────────────────
+    if action in ("shop_catalog", "badge_buy", "badge_show", "effect_buy", "effect_set", "shop_user_badges"):
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        uid = int(user_id)
+        now = int(time.time())
+
+        if action == "shop_user_badges":
+            target = int(body.get("target_user_id") or uid)
+            cur.execute(
+                f"SELECT ub.badge_code, ub.serial, b.title, b.rarity, b.supply, b.description FROM {SCHEMA}.user_shop_badges ub "
+                f"JOIN {SCHEMA}.badges b ON b.code = ub.badge_code "
+                f"WHERE ub.user_id = %s AND ub.revoked_at IS NULL AND (ub.shown OR ub.user_id = %s) ORDER BY ub.id",
+                (target, uid),
+            )
+            rows = cur.fetchall()
+            conn.close()
+            return ok({"badges": [{"code": r[0], "serial": r[1], "title": r[2], "rarity": r[3], "supply": r[4], "description": r[5]} for r in rows]})
+
+        if action == "shop_catalog":
+            cur.execute(
+                f"SELECT code, title, description, rarity, price_lightning, supply, issued FROM {SCHEMA}.badges "
+                f"WHERE on_sale = TRUE AND price_lightning IS NOT NULL ORDER BY sort_order, code"
+            )
+            badges = [{"code": r[0], "title": r[1], "description": r[2], "rarity": r[3], "price": r[4],
+                       "supply": r[5], "issued": r[6]} for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT ub.badge_code, ub.serial, ub.shown, b.title, b.rarity, b.supply FROM {SCHEMA}.user_shop_badges ub "
+                f"JOIN {SCHEMA}.badges b ON b.code = ub.badge_code WHERE ub.user_id = %s AND ub.revoked_at IS NULL ORDER BY ub.id",
+                (uid,),
+            )
+            mine = [{"code": r[0], "serial": r[1], "shown": bool(r[2]), "title": r[3], "rarity": r[4], "supply": r[5]} for r in cur.fetchall()]
+            cur.execute(f"SELECT code, title, description, price_lightning, duration_days FROM {SCHEMA}.name_effects WHERE on_sale = TRUE ORDER BY sort_order, code")
+            effects = [{"code": r[0], "title": r[1], "description": r[2], "price": r[3], "duration_days": r[4]} for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT effect_code, expires_at FROM {SCHEMA}.user_name_effects WHERE user_id = %s AND (expires_at IS NULL OR expires_at > %s)",
+                (uid, now),
+            )
+            owned_eff = {r[0]: r[1] for r in cur.fetchall()}
+            cur.execute(f"SELECT COALESCE(lightning_balance, 0), name_effect FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            u = cur.fetchone() or (0, None)
+            conn.close()
+            for e in effects:
+                e["owned"] = e["code"] in owned_eff
+                e["expires_at"] = owned_eff.get(e["code"])
+            return ok({"badges": badges, "my_badges": mine, "effects": effects, "balance": int(u[0] or 0),
+                       "name_effect": u[1] if u[1] in owned_eff else None})
+
+        def _spend(price, desc):
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET lightning_balance = COALESCE(lightning_balance,0) - %s "
+                f"WHERE id = %s AND COALESCE(lightning_balance,0) >= %s RETURNING lightning_balance",
+                (price, uid, price),
+            )
+            r = cur.fetchone()
+            if not r:
+                return None
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.lightning_transactions (user_id, amount, kind, description, balance_after, created_at) "
+                f"VALUES (%s,%s,'spent',%s,%s,%s)",
+                (uid, -price, desc, int(r[0]), now),
+            )
+            return int(r[0])
+
+        def _refund(price, desc):
+            cur.execute(f"UPDATE {SCHEMA}.users SET lightning_balance = COALESCE(lightning_balance,0) + %s WHERE id = %s RETURNING lightning_balance", (price, uid))
+            r = cur.fetchone()
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.lightning_transactions (user_id, amount, kind, description, balance_after, created_at) "
+                f"VALUES (%s,%s,'refund',%s,%s,%s)",
+                (uid, price, desc, int(r[0]) if r else 0, now),
+            )
+
+        if action == "badge_buy":
+            code = str(body.get("code") or "")[:32]
+            cur.execute(f"SELECT title, price_lightning, supply, issued, on_sale FROM {SCHEMA}.badges WHERE code = %s", (code,))
+            b = cur.fetchone()
+            if not b or not b[4] or b[1] is None:
+                conn.close(); return err("Этот значок не продаётся")
+            cur.execute(f"SELECT 1 FROM {SCHEMA}.user_shop_badges WHERE user_id = %s AND badge_code = %s AND revoked_at IS NULL", (uid, code))
+            if cur.fetchone():
+                conn.close(); return err("У вас уже есть этот значок")
+            price = int(b[1])
+            cur.execute(
+                f"UPDATE {SCHEMA}.badges SET issued = issued + 1 WHERE code = %s AND (supply IS NULL OR issued < supply) RETURNING issued",
+                (code,),
+            )
+            r = cur.fetchone()
+            if not r:
+                conn.close(); return err("Тираж закончился — все экземпляры раскуплены", 409)
+            serial = int(r[0])
+            bal = _spend(price, f"Значок «{b[0]}» №{serial}")
+            if bal is None:
+                cur.execute(f"UPDATE {SCHEMA}.badges SET issued = issued - 1 WHERE code = %s AND issued = %s", (code, serial))
+                conn.close(); return err(f"Не хватает Молний: нужно {price} ⚡", 402)
+            try:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.user_shop_badges (user_id, badge_code, serial, method, price_lightning, created_at) "
+                    f"VALUES (%s, %s, %s, 'lightning', %s, %s)",
+                    (uid, code, serial, price, now),
+                )
+            except Exception:
+                _refund(price, f"Возврат за значок «{b[0]}»")
+                conn.close(); return err("Не получилось, Молнии возвращены. Попробуйте ещё раз", 409)
+            conn.close()
+            return ok({"ok": True, "serial": serial, "balance": bal})
+
+        if action == "badge_show":
+            code = str(body.get("code") or "")[:32]
+            cur.execute(
+                f"UPDATE {SCHEMA}.user_shop_badges SET shown = %s WHERE user_id = %s AND badge_code = %s AND revoked_at IS NULL",
+                (bool(body.get("shown")), uid, code),
+            )
+            conn.close()
+            return ok({"ok": True})
+
+        if action == "effect_buy":
+            code = str(body.get("code") or "")[:32]
+            cur.execute(f"SELECT title, price_lightning, duration_days FROM {SCHEMA}.name_effects WHERE code = %s AND on_sale = TRUE", (code,))
+            e = cur.fetchone()
+            if not e:
+                conn.close(); return err("Этот эффект не продаётся")
+            cur.execute(f"SELECT expires_at FROM {SCHEMA}.user_name_effects WHERE user_id = %s AND effect_code = %s", (uid, code))
+            ex = cur.fetchone()
+            active = ex is not None and (ex[0] is None or int(ex[0]) > now)
+            if active and e[2] is None:
+                conn.close(); return err("Этот эффект уже ваш")
+            price = int(e[1])
+            bal = _spend(price, f"Эффект имени «{e[0]}»")
+            if bal is None:
+                conn.close(); return err(f"Не хватает Молний: нужно {price} ⚡", 402)
+            exp = None
+            if e[2]:
+                base = int(ex[0]) if active and ex and ex[0] else now
+                exp = base + int(e[2]) * 86400
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_name_effects (user_id, effect_code, expires_at, created_at) VALUES (%s, %s, %s, %s) "
+                f"ON CONFLICT (user_id, effect_code) DO UPDATE SET expires_at = EXCLUDED.expires_at",
+                (uid, code, exp, now),
+            )
+            cur.execute(f"UPDATE {SCHEMA}.users SET name_effect = %s WHERE id = %s", (code, uid))
+            conn.close()
+            return ok({"ok": True, "balance": bal, "expires_at": exp})
+
+        if action == "effect_set":
+            code = body.get("code") or None
+            if code:
+                cur.execute(
+                    f"SELECT 1 FROM {SCHEMA}.user_name_effects WHERE user_id = %s AND effect_code = %s AND (expires_at IS NULL OR expires_at > %s)",
+                    (uid, str(code)[:32], now),
+                )
+                if not cur.fetchone():
+                    conn.close(); return err("Сначала купите этот эффект")
+            cur.execute(f"UPDATE {SCHEMA}.users SET name_effect = %s WHERE id = %s", (code, uid))
+            conn.close()
+            return ok({"ok": True})
 
     # ── Красивый короткий ID (Nova Pro) ──────────────────────────────────────
     if action in ("nova_id_info", "nova_id_check", "nova_id_buy"):

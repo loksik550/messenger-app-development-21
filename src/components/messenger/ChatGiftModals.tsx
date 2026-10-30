@@ -45,7 +45,7 @@ export function GiftSendModal({ currentUser, chatId, onClose, onSent, onUserUpda
   };
 
   return (
-    <div className="fixed inset-0 z-[290] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[290] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in" onClick={onClose} style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
       <div className="glass-strong rounded-3xl p-5 w-full max-w-sm animate-slide-up" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-black text-lg flex items-center gap-2">
@@ -136,7 +136,7 @@ export function FundraiserAttachModal({ currentUser, chatId, onClose, onSent, on
   };
 
   return (
-    <div className="fixed inset-0 z-[290] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[290] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in" onClick={onClose} style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
       <div className="glass-strong rounded-3xl p-5 w-full max-w-md max-h-[80vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-black text-lg flex items-center gap-2">

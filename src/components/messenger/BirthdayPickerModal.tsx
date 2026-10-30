@@ -30,7 +30,7 @@ export function BirthdayPickerModal({
   const dayValid = bdDay <= daysInMonth ? bdDay : daysInMonth;
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-4 animate-fade-in" onClick={onClose} style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
       <div className="glass-strong rounded-3xl p-5 w-full max-w-sm animate-scale-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-base flex items-center gap-2">

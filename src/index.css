@@ -729,3 +729,30 @@
 .dev-light .text-violet-300,
 .dev-light .text-violet-200 { color: #6d28d9 !important; }
 .dev-light .text-sky-400 { color: #0369a1 !important; }
+
+/* Эффекты имени из магазина */
+.name-shimmer {
+  background: linear-gradient(90deg, #f0abfc, #fde047, #67e8f9, #a78bfa, #f0abfc);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: name-shimmer 4s linear infinite;
+}
+@keyframes name-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+.name-neon {
+  color: #fff !important;
+  text-shadow: 0 0 4px var(--neon, #22d3ee), 0 0 10px var(--neon, #22d3ee), 0 0 18px var(--neon, #22d3ee);
+  animation: name-neon 2.6s ease-in-out infinite;
+}
+@keyframes name-neon {
+  0%, 100% { text-shadow: 0 0 4px var(--neon, #22d3ee), 0 0 10px var(--neon, #22d3ee), 0 0 18px var(--neon, #22d3ee); }
+  50% { text-shadow: 0 0 2px var(--neon, #22d3ee), 0 0 6px var(--neon, #22d3ee), 0 0 10px var(--neon, #22d3ee); }
+}
+.name-crown { filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+@media (prefers-reduced-motion: reduce) {
+  .name-shimmer, .name-neon { animation: none; }
+}

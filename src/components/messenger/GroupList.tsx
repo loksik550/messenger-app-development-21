@@ -111,7 +111,7 @@ export default function GroupList({
       </div>
 
       {target && (
-        <div className="fixed inset-0 z-[220] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 animate-fade-in" onClick={() => !busy && setTarget(null)}>
+        <div className="fixed inset-0 z-[220] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 animate-fade-in" onClick={() => !busy && setTarget(null)} style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           <div className="w-full max-w-sm glass-strong rounded-3xl p-5 animate-scale-in" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-base mb-1 truncate">
               {isOwner(target) ? `Удалить ${kind(target)} «${target.name}»?` : `Выйти из «${target.name}»?`}

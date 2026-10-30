@@ -507,6 +507,33 @@
         "action": "gcall_signal"
       },
       "expectedStatus": 400
+    },
+    {
+      "name": "shop_catalog requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "shop_catalog"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "badge_buy requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "badge_buy"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "effect_buy requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "effect_buy"
+      },
+      "expectedStatus": 400
     }
   ]
 }

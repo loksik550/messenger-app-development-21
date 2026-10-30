@@ -76,6 +76,8 @@ ACTION_PERMS = {
     "moderation_summary": "dashboard",
     "plans": "dashboard", "plan_save": "settings", "plan_delete": "settings",
     "pro_features": "dashboard", "pro_features_save": "settings",
+    "badges_admin": "dashboard", "badge_grant": "settings", "badge_revoke": "settings", "badge_update": "settings",
+    "user_shop_badges": "users",
     "nova_ids_list": "dashboard", "nova_id_check_admin": "dashboard",
     "nova_id_grant": "settings", "nova_ids_settings_save": "settings",
     "broadcast_send": "settings", "broadcast_history": "dashboard",
@@ -1902,6 +1904,98 @@ def _handler(event: dict, context) -> dict:
                 (now,),
             )
             return ok({"plans": plans, "active_subscriptions": cur.fetchone()[0]})
+
+        if action == "badges_admin":
+            cur.execute(
+                f"SELECT code, title, description, rarity, price_lightning, supply, issued, on_sale, sort_order FROM {SCHEMA}.badges ORDER BY sort_order, code"
+            )
+            badges = [{"code": r[0], "title": r[1], "description": r[2], "rarity": r[3], "price": r[4], "supply": r[5],
+                       "issued": r[6], "on_sale": bool(r[7]), "sort_order": r[8]} for r in cur.fetchall()]
+            cur.execute(
+                f"SELECT ub.id, ub.user_id, u.name, u.phone, ub.badge_code, ub.serial, ub.method, ub.price_lightning, ub.created_at, ub.revoked_at, a.name "
+                f"FROM {SCHEMA}.user_shop_badges ub LEFT JOIN {SCHEMA}.users u ON u.id = ub.user_id "
+                f"LEFT JOIN {SCHEMA}.dev_admins a ON a.id = ub.granted_by ORDER BY ub.id DESC LIMIT 200"
+            )
+            items = [{"id": r[0], "user_id": r[1], "user_name": r[2], "phone": r[3], "code": r[4], "serial": r[5], "method": r[6],
+                      "price": r[7], "created_at": r[8], "revoked_at": r[9], "admin_name": r[10]} for r in cur.fetchall()]
+            cur.execute(f"SELECT COALESCE(SUM(price_lightning), 0), COUNT(*) FROM {SCHEMA}.user_shop_badges WHERE method = 'lightning'")
+            t = cur.fetchone()
+            cur.execute(
+                f"SELECT e.code, e.title, e.price_lightning, e.duration_days, e.on_sale, "
+                f"(SELECT COUNT(*) FROM {SCHEMA}.user_name_effects x WHERE x.effect_code = e.code) FROM {SCHEMA}.name_effects e ORDER BY e.sort_order"
+            )
+            effects = [{"code": r[0], "title": r[1], "price": r[2], "duration_days": r[3], "on_sale": bool(r[4]), "buyers": r[5]} for r in cur.fetchall()]
+            return ok({"badges": badges, "items": items, "totals": {"lightning": int(t[0] or 0), "sold": int(t[1] or 0)}, "effects": effects})
+
+        if action == "user_shop_badges":
+            uid = int(body.get("user_id") or 0)
+            cur.execute(
+                f"SELECT ub.badge_code, ub.serial, b.title, b.rarity FROM {SCHEMA}.user_shop_badges ub JOIN {SCHEMA}.badges b ON b.code = ub.badge_code "
+                f"WHERE ub.user_id = %s AND ub.revoked_at IS NULL ORDER BY ub.id",
+                (uid,),
+            )
+            return ok({"badges": [{"code": r[0], "serial": r[1], "title": r[2], "rarity": r[3]} for r in cur.fetchall()]})
+
+        if action == "badge_grant":
+            uid = int(body.get("user_id") or 0)
+            code = str(body.get("code") or "")[:32]
+            cur.execute(f"SELECT title FROM {SCHEMA}.badges WHERE code = %s", (code,))
+            b = cur.fetchone()
+            cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            u = cur.fetchone()
+            if not b or not u:
+                return err("Пользователь или значок не найден")
+            cur.execute(f"SELECT 1 FROM {SCHEMA}.user_shop_badges WHERE user_id = %s AND badge_code = %s AND revoked_at IS NULL", (uid, code))
+            if cur.fetchone():
+                return err("У пользователя уже есть этот значок")
+            cur.execute(f"UPDATE {SCHEMA}.badges SET issued = issued + 1 WHERE code = %s RETURNING issued", (code,))
+            serial = int(cur.fetchone()[0])
+            now = int(time.time())
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_shop_badges (user_id, badge_code, serial, method, granted_by, created_at) VALUES (%s, %s, %s, 'admin', %s, %s)",
+                (uid, code, serial, admin["id"], now),
+            )
+            audit(cur, admin, "badge_grant", f"Значок «{b[0]}» №{serial} → {u[0]} (ID {uid})", ip)
+            return ok({"success": True, "serial": serial})
+
+        if action == "badge_revoke":
+            uid = int(body.get("user_id") or 0)
+            code = str(body.get("code") or "")[:32]
+            cur.execute(
+                f"UPDATE {SCHEMA}.user_shop_badges SET revoked_at = %s WHERE user_id = %s AND badge_code = %s AND revoked_at IS NULL RETURNING serial",
+                (int(time.time()), uid, code),
+            )
+            r = cur.fetchone()
+            if not r:
+                return err("У пользователя нет этого значка")
+            audit(cur, admin, "badge_revoke", f"Забран значок {code} №{r[0]} у ID {uid}", ip)
+            return ok({"success": True})
+
+        if action == "badge_update":
+            code = str(body.get("code") or "")[:32]
+            price = body.get("price")
+            supply = body.get("supply")
+            try:
+                price = None if price in (None, "") else max(1, int(price))
+                supply = None if supply in (None, "") else max(1, int(supply))
+            except (TypeError, ValueError):
+                return err("Цена и тираж — числа")
+            on_sale = bool(body.get("on_sale"))
+            if on_sale and price is None:
+                return err("Чтобы продавать значок, укажите цену")
+            cur.execute(f"SELECT issued FROM {SCHEMA}.badges WHERE code = %s", (code,))
+            ir = cur.fetchone()
+            if not ir:
+                return err("Значок не найден")
+            if supply is not None and supply < int(ir[0]):
+                return err(f"Уже выдано {ir[0]} — тираж не может быть меньше")
+            cur.execute(
+                f"UPDATE {SCHEMA}.badges SET price_lightning = %s, supply = %s, on_sale = %s WHERE code = %s RETURNING title, issued",
+                (price, supply, on_sale, code),
+            )
+            r = cur.fetchone()
+            audit(cur, admin, "badge_update", f"Значок «{r[0]}»: цена {price}, тираж {supply or '∞'}, {'в продаже' if on_sale else 'снят'}", ip)
+            return ok({"success": True})
 
         if action == "pro_features":
             cur.execute(

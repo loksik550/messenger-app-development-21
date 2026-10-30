@@ -59,7 +59,7 @@ export default function E2EPanel({
   const groups = code ? code.split(" ") : [];
 
   return (
-    <div className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-fade-in" onClick={onClose} style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
       <div className="w-full max-w-sm glass-strong rounded-3xl p-5 max-h-[90vh] overflow-y-auto animate-scale-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${sec?.encrypted ? "bg-emerald-500/15 text-emerald-400" : "bg-white/8 text-muted-foreground"}`}>

@@ -1,0 +1,2 @@
+ALTER TABLE t_p67547116_messenger_app_develo.users ADD COLUMN IF NOT EXISTS name_effect TEXT NULL;
+CREATE INDEX IF NOT EXISTS idx_user_badges_user ON t_p67547116_messenger_app_develo.user_badges (user_id);

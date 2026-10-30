@@ -194,7 +194,7 @@ export default function Index() {
 
   const { t: tr } = useT();
   const {
-    setShowPro, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowProgress, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
+    setShowPro, setShowLightning, showComingSoon, setShowComingSoon, showCreateGroup, setShowCreateGroup, showJoinChannel, setShowJoinChannel, setShowWallet, setShowProSettings, setShowStickers, setShowProgress, setShowSupport, setShowPrivacy, setShowNotifications, setShowAppearance, setShowSavedNotes, setShowPayments, setShowPremium, setShowCalls, setShowInvite, setFundraiserView,
   } = overlays;
   const openOverlay = overlays.open;
 
@@ -843,7 +843,7 @@ export default function Index() {
         ) : view === "search" ? (
           <SearchPanel users={users} currentUser={currentUser} onStartChat={handleStartChat} onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "shop" ? (
-          <ShopPanel onBack={() => { setView("chats"); setShowSidebar(true); }} />
+          <ShopPanel currentUser={currentUser} onUserUpdate={(u) => setCurrentUser(u)} onOpenLightning={() => openOverlay(setShowLightning)} onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "contacts" ? (
           <ContactsPanel currentUser={currentUser} onStartChat={(chat) => { setSelectedChat(chat); setShowSidebar(false); }} onCall={startCall} onBack={() => { setView("chats"); setShowSidebar(true); }} />
         ) : view === "profile" ? (

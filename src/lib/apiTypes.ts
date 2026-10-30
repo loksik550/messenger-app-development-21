@@ -10,6 +10,8 @@ export interface Contact {
   is_pro?: boolean;
   emoji_status?: string | null;
   name_color?: string | null;
+  name_effect?: string | null;
+  badges?: string[];
 }
 export type Tab = "chats" | "stories" | "contacts";
 export type IconName = string;
@@ -118,6 +120,8 @@ export interface Chat {
   nameColor?: string | null;
   avatarVideo?: string | null;
   profileBg?: string | null;
+  nameEffect?: string | null;
+  badges?: string[];
 }
 
 // "был в сети N назад" / "в сети" по unix-времени last_seen
@@ -139,6 +143,8 @@ export interface User {
   is_pro?: boolean;
   emoji_status?: string | null;
   name_color?: string | null;
+  name_effect?: string | null;
+  badges?: string[];
   incognito?: boolean;
   who_can_message?: "everyone" | "contacts" | "nobody";
   who_can_call?: "everyone" | "contacts" | "nobody";
@@ -300,6 +306,8 @@ export interface GroupMessage {
   sender_emoji?: string | null;
   sender_color?: string | null;
   sender_avatar_video?: string | null;
+  sender_effect?: string | null;
+  sender_badges?: string[];
   text: string;
   media_type?: "image" | "video" | "audio" | "file" | null;
   media_url?: string | null;

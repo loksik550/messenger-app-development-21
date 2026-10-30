@@ -57,7 +57,7 @@ export default function ResetApprovalPrompt({ userId }: { userId: number }) {
   const when = new Date(item.created_at * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-4 animate-fade-in" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
       <div className="glass-strong rounded-3xl p-5 w-full max-w-sm animate-scale-in">
         <div className="w-14 h-14 rounded-2xl bg-amber-500/15 text-amber-400 flex items-center justify-center mx-auto mb-3">
           <Icon name="ShieldAlert" size={28} />

@@ -17,6 +17,7 @@ import DevTeam from "@/components/devpanel/DevTeam";
 import DevSettings from "@/components/devpanel/DevSettings";
 import DevVerification from "@/components/devpanel/DevVerification";
 import DevPlans from "@/components/devpanel/DevPlans";
+import DevBadges from "@/components/devpanel/DevBadges";
 import DevNovaIds from "@/components/devpanel/DevNovaIds";
 import DevPromo from "@/components/devpanel/DevPromo";
 import DevPayments from "@/components/devpanel/DevPayments";
@@ -41,7 +42,8 @@ type Section =
   | "rustore_reviews"
   | "autorules"
   | "errors"
-  | "nova_ids";
+  | "nova_ids"
+  | "badges";
 
 const NAV: { key: Section; label: string; icon: string; perm: string; hint: string; keywords: string }[] = [
   { key: "dashboard", label: "Дашборд", icon: "LayoutDashboard", perm: "dashboard", hint: "Главные цифры и что требует внимания", keywords: "статистика главная обзор цифры" },
@@ -55,6 +57,7 @@ const NAV: { key: Section; label: string; icon: string; perm: string; hint: stri
   { key: "broadcast", label: "Рассылка", icon: "Send", perm: "settings", hint: "Отправить объявление всем или выборочно", keywords: "объявление уведомление сообщение всем новость" },
   { key: "plans", label: "Тарифы Premium", icon: "Crown", perm: "dashboard", hint: "Цены, сроки и что входит в подписку", keywords: "цены подписка премиум стоимость лимиты" },
   { key: "nova_ids", label: "Красивые ID", icon: "Hash", perm: "dashboard", hint: "Кто купил короткий ID, цены и выдача вручную", keywords: "id айди номер короткий красивый 666 выдать продажа" },
+  { key: "badges", label: "Значки и эффекты", icon: "Award", perm: "dashboard", hint: "Продажи значков, выдать или забрать вручную", keywords: "значки бейджи награды магазин эффекты ник корона неон выдать забрать тираж" },
   { key: "promo", label: "Промокоды и бонусы", icon: "Ticket", perm: "dashboard", hint: "Скидки, подарки и приглашения друзей", keywords: "скидка акция подарок рефералы бонус" },
   { key: "payments", label: "Платежи", icon: "Receipt", perm: "dashboard", hint: "Кто и сколько заплатил, возвраты, отчёты", keywords: "деньги доход оплата возврат выручка чеки экспорт" },
   { key: "moderation", label: "Автомодерация", icon: "ShieldCheck", perm: "settings", hint: "Стоп-слова и защита от спама", keywords: "фильтр мат стоп-слова антиспам блокировка" },
@@ -428,6 +431,7 @@ export default function DevPanel() {
           {activeSection === "support" && <DevSupport />}
           {activeSection === "plans" && <DevPlans can={can} />}
           {activeSection === "nova_ids" && <DevNovaIds can={can} />}
+          {activeSection === "badges" && <DevBadges can={can} />}
           {activeSection === "promo" && <DevPromo can={can} />}
           {activeSection === "payments" && <DevPayments can={can} />}
           {activeSection === "broadcast" && <DevBroadcast can={can} />}

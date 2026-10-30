@@ -37,7 +37,7 @@ export function ComingSoon({ open, onClose, focus }: { open: boolean; onClose: (
   const items = focus ? FEATURES.filter(f => f.id === focus) : FEATURES;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose} style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       <div className="w-full max-w-lg bg-[#15151f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold">Все возможности Nova</h2>
