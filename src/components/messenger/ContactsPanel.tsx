@@ -7,9 +7,7 @@ import { ImportHelpModal } from "@/components/messenger/contacts/ImportHelpModal
 import { SyncBanners } from "@/components/messenger/contacts/SyncBanners";
 import { AddContactForm } from "@/components/messenger/contacts/AddContactForm";
 import { ContactListItem } from "@/components/messenger/contacts/ContactListItem";
-import FabMenu from "@/components/messenger/FabMenu";
 import PhoneBookPanel from "@/components/messenger/contacts/PhoneBookPanel";
-import InvitePanel from "@/components/messenger/InvitePanel";
 
 export function ContactsPanel({
   currentUser,
@@ -32,7 +30,6 @@ export function ContactsPanel({
   const [addError, setAddError] = useState("");
   const [search, setSearch] = useState("");
   const [showBook, setShowBook] = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
 
   const loadContacts = async () => {
     setLoading(true);
@@ -223,16 +220,7 @@ export function ContactsPanel({
             ))}
           </div>
         ))}
-        <div className="h-20" />
       </div>
-
-      <FabMenu
-        label="Добавить или пригласить"
-        items={[
-          { key: "add", label: "Добавить контакт", icon: "UserPlus", color: "text-violet-500", onClick: () => { setShowAdd(true); setAddError(""); } },
-          { key: "invite", label: "Пригласить друга", icon: "Send", color: "text-cyan-600", onClick: () => setShowInvite(true) },
-        ]}
-      />
 
       {showBook && (
         <PhoneBookPanel
@@ -243,7 +231,6 @@ export function ContactsPanel({
           onPickFile={() => vcfInputRef.current?.click()}
         />
       )}
-      {showInvite && <InvitePanel currentUser={currentUser} onClose={() => setShowInvite(false)} />}
 
       <input
         ref={vcfInputRef}
