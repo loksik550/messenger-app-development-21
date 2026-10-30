@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { devApi, formatTs, timeAgo, formatNum } from "@/lib/devApi";
 import DevUserBilling from "@/components/devpanel/DevUserBilling";
 import DevUserHistory from "./DevUserHistory";
+import DevUserBadges from "./DevUserBadges";
 import { DevUserChatsTab, DevUserMediaTab } from "./DevUserTabs";
 import { DevPhoneVk } from "@/components/devpanel/DevPhoneVk";
 import DevNovaMessage from "./DevNovaMessage";
@@ -42,7 +43,7 @@ interface Device {
 
 
 
-type Tab = "profile" | "history" | "billing" | "chats" | "media";
+type Tab = "profile" | "badges" | "history" | "billing" | "chats" | "media";
 
 interface Props {
   userId: number;
@@ -167,10 +168,11 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
 
       {can("user_write") && <DevNovaMessage userId={user.id} userName={user.name} />}
 
-      <div className="flex gap-1 p-1 bg-black/30 rounded-xl mb-4">
+      <div className="flex gap-1 p-1 bg-black/30 rounded-xl mb-4 overflow-x-auto">
         {(
           [
             ["profile", "Профиль", "User"],
+            ["badges", "Значки", "Award"],
             ["history", "История", "History"],
             ["billing", "Оплаты", "Receipt"],
             ["chats", "Переписка", "MessagesSquare"],
@@ -180,7 +182,7 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`flex-1 py-2 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 ${
+            className={`flex-1 min-w-[72px] py-2 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 ${
               tab === k ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white" : "text-slate-400 hover:text-slate-200"
             }`}
           >
@@ -192,6 +194,7 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
 
       <div className="max-h-[52vh] overflow-y-auto pr-1">
         {tab === "history" && <DevUserHistory userId={user.id} />}
+        {tab === "badges" && <DevUserBadges userId={user.id} canEdit={can("settings")} />}
 
         {tab === "billing" && (
           <DevUserBilling

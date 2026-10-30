@@ -7,6 +7,8 @@ import { useSupportUnread } from "@/hooks/useSupportUnread";
 import { APP_VERSION } from "@/lib/version";
 
 const MyStickersPanel = lazy(() => import("@/components/messenger/MyStickersPanel"));
+const TestThemesPanel = lazy(() => import("@/components/messenger/profile/TestThemesPanel"));
+import { useSkinAccess } from "@/hooks/useSkinAccess";
 
 export interface ProfileMenuActions {
   onSettings: () => void;
@@ -50,6 +52,8 @@ export function ProfileMenu({
 }: Props) {
   const { t: tr } = useT();
   const [showMyStickers, setShowMyStickers] = useState(false);
+  const [showSkins, setShowSkins] = useState(false);
+  const skinAccess = useSkinAccess(currentUser?.id);
   const supportUnread = useSupportUnread(currentUser?.id);
 
   const invite = async () => {
@@ -66,6 +70,7 @@ export function ProfileMenu({
       rows: [
         { icon: "UserPen", label: tr("profile.editProfile"), sub: "Имя, фото, статус", action: onEditProfile, color: "#8b5cf6" },
         !!onOpenProSettings && { icon: "Sparkles", label: "Персонализация", sub: "Эмодзи-статус, цвет ника, инкогнито", action: onOpenProSettings, color: "#d946ef" },
+        skinAccess && { icon: "Palette", label: "Тестовые темы", sub: "Новые оформления мессенджера — в разработке", action: () => setShowSkins(true), color: "#f59e0b" },
         !!onOpenVerification && { icon: "BadgeCheck", label: "Верификация", sub: currentUser.verified ? "Аккаунт подтверждён" : "Получить синюю галочку", action: onOpenVerification, color: "#3b82f6" },
       ],
     },
@@ -113,6 +118,11 @@ export function ProfileMenu({
     {showMyStickers && (
       <Suspense fallback={null}>
         <MyStickersPanel currentUser={currentUser} onClose={() => setShowMyStickers(false)} />
+      </Suspense>
+    )}
+    {showSkins && (
+      <Suspense fallback={null}>
+        <TestThemesPanel onClose={() => setShowSkins(false)} />
       </Suspense>
     )}
     <div className="grid grid-cols-2 gap-2 px-4 mb-5">

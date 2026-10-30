@@ -64,7 +64,7 @@ export function SearchPanel({ users, currentUser, onStartChat, onBack }: { users
           <button key={u.id} onClick={() => onStartChat(u.id, { name: u.name, avatar_url: u.avatar_url })} className={`w-full flex items-center gap-3 p-3 glass rounded-2xl hover:bg-white/8 transition-all animate-fade-in stagger-${Math.min(i + 1, 5)}`}>
             <Avatar label={u.name[0]?.toUpperCase() || "?"} id={u.id} src={u.avatar_url} video={u.avatar_video_url} online={currentUser.id !== u.id && Date.now() / 1000 - (u.last_seen || 0) < 60} />
             <div className="text-left">
-              <div className="font-semibold text-sm"><ProName name={u.name} isPro={!!u.is_pro} emoji={u.emoji_status} color={u.name_color} effect={u.name_effect} badges={u.badges} maxBadges={2} badgeSize={12} /></div>
+              <div className="font-semibold text-sm"><ProName name={u.name} isPro={!!u.is_pro} emoji={u.emoji_status} color={u.name_color} effect={u.name_effect} badges={u.badges} userId={u.id} maxBadges={2} badgeSize={12} /></div>
               {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}
               {u.nova_id && isIdSearch && <div className="text-xs text-violet-300 font-mono">ID {u.nova_id}</div>}
             </div>

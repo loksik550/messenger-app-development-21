@@ -22,7 +22,7 @@ export function effectClass(effect?: string | null) {
 }
 
 export default function ProName({
-  name, isPro, emoji, color, className = "", badgeSize = 14, effect, badges, maxBadges = 3,
+  name, isPro, emoji, color, className = "", badgeSize = 14, effect, badges, maxBadges = 3, userId,
 }: {
   name: string;
   isPro?: boolean;
@@ -33,6 +33,7 @@ export default function ProName({
   effect?: string | null;
   badges?: string[] | null;
   maxBadges?: number;
+  userId?: number;
 }) {
   const fx = effectClass(effect);
   const style = fx === "name-shimmer" ? undefined : isPro && color ? ({ color, ["--neon" as string]: color } as React.CSSProperties) : undefined;
@@ -44,7 +45,7 @@ export default function ProName({
       <span className={`truncate ${className} ${fx}`} style={style}>{name}</span>
       {isPro && emoji ? <span className="flex-shrink-0 leading-none" style={{ fontSize: badgeSize }}>{emoji}</span> : null}
       {isPro ? <ProBadge size={badgeSize} /> : null}
-      <BadgeIcons codes={badges} size={Math.round(badgeSize * 1.15)} max={maxBadges} />
+      <BadgeIcons codes={badges} size={Math.round(badgeSize * 1.15)} max={maxBadges} ownerId={userId} />
     </span>
   );
 }

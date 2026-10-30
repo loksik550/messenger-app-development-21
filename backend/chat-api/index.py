@@ -5679,6 +5679,14 @@ def _handle(event: dict, context) -> dict:
         return err("Неизвестное действие")
 
     # ── Магазин: значки и эффекты имени ──────────────────────────────────────
+    if action == "test_themes_access":
+        if not user_id:
+            conn.close(); return err("Нужен X-User-Id")
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.test_themes_access WHERE user_id = %s", (int(user_id),))
+        allowed = cur.fetchone() is not None
+        conn.close()
+        return ok({"allowed": allowed})
+
     if action in ("shop_catalog", "badge_buy", "badge_show", "effect_buy", "effect_set", "shop_user_badges"):
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")
@@ -5688,14 +5696,15 @@ def _handle(event: dict, context) -> dict:
         if action == "shop_user_badges":
             target = int(body.get("target_user_id") or uid)
             cur.execute(
-                f"SELECT ub.badge_code, ub.serial, b.title, b.rarity, b.supply, b.description FROM {SCHEMA}.user_shop_badges ub "
+                f"SELECT ub.badge_code, ub.serial, b.title, b.rarity, b.supply, b.description, ub.note, ub.method, ub.created_at FROM {SCHEMA}.user_shop_badges ub "
                 f"JOIN {SCHEMA}.badges b ON b.code = ub.badge_code "
                 f"WHERE ub.user_id = %s AND ub.revoked_at IS NULL AND (ub.shown OR ub.user_id = %s) ORDER BY ub.id",
                 (target, uid),
             )
             rows = cur.fetchall()
             conn.close()
-            return ok({"badges": [{"code": r[0], "serial": r[1], "title": r[2], "rarity": r[3], "supply": r[4], "description": r[5]} for r in rows]})
+            return ok({"badges": [{"code": r[0], "serial": r[1], "title": r[2], "rarity": r[3], "supply": r[4], "description": r[5],
+                                   "note": r[6], "method": r[7], "created_at": r[8]} for r in rows]})
 
         if action == "shop_catalog":
             cur.execute(

@@ -91,7 +91,7 @@ export function ChatHeader({
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <ProName name={chat.name} isPro={chat.isPro} emoji={chat.emojiStatus} color={chat.nameColor} effect={chat.nameEffect} badges={chat.badges} maxBadges={2} className="font-semibold text-foreground" />
+            <ProName name={chat.name} isPro={chat.isPro} emoji={chat.emojiStatus} color={chat.nameColor} effect={chat.nameEffect} badges={chat.badges} userId={chat.partner_id} maxBadges={2} className="font-semibold text-foreground" />
             {chat.verified && <Icon name="BadgeCheck" size={14} className="text-sky-400 flex-shrink-0" />}
             {chat.muted && <Icon name="BellOff" size={12} className="text-muted-foreground flex-shrink-0" />}
             {chat.pinned && <Icon name="Pin" size={12} className="text-violet-400 flex-shrink-0" />}

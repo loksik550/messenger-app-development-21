@@ -40,7 +40,7 @@ export default function VkCallback() {
   }, []);
 
   return (
-    <div className="h-screen flex items-center justify-center p-6 text-center">
+    <div className="h-full flex items-center justify-center p-6 text-center">
       <div className="mesh-bg" />
       <div className="glass-strong rounded-3xl p-6 max-w-sm w-full relative">
         {state === "loading" && (

@@ -87,7 +87,7 @@ export default function PinLockScreen({ onUnlock }: Props) {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col items-center justify-center relative overflow-hidden px-6">
+    <div className="h-full flex flex-col items-center justify-center relative overflow-hidden px-6">
       <div className="mesh-bg" />
       <div className="absolute top-[-10%] right-[-10%] w-80 h-80 rounded-full bg-violet-600/20 blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 rounded-full bg-sky-600/15 blur-3xl pointer-events-none" />

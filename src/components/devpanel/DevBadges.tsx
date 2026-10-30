@@ -24,6 +24,7 @@ export default function DevBadges({ can }: { can: (p: string) => boolean }) {
   const [target, setTarget] = useState<FoundUser | null>(null);
   const [targetBadges, setTargetBadges] = useState<UserBadge[]>([]);
   const [busy, setBusy] = useState("");
+  const [grantNote, setGrantNote] = useState("");
   const [edit, setEdit] = useState<Badge | null>(null);
   const [editPrice, setEditPrice] = useState("");
   const [editSupply, setEditSupply] = useState("");
@@ -60,7 +61,7 @@ export default function DevBadges({ can }: { can: (p: string) => boolean }) {
     if (!target) return;
     setBusy(code);
     try {
-      const r = await devApi<{ serial: number }>("badge_grant", { user_id: target.id, code });
+      const r = await devApi<{ serial: number }>("badge_grant", { user_id: target.id, code, note: grantNote.trim() });
       flash(true, `Выдан №${r.serial}`);
       await Promise.all([loadTarget(target), load()]);
     } catch (e) { flash(false, e instanceof Error ? e.message : "Ошибка"); }
@@ -139,6 +140,12 @@ export default function DevBadges({ can }: { can: (p: string) => boolean }) {
               <span className="text-xs text-slate-500">ID {target.id}</span>
               <button onClick={() => { setTarget(null); setTargetBadges([]); }} className="ml-auto text-xs text-slate-400 hover:text-white">Сбросить</button>
             </div>
+            <input
+              value={grantNote}
+              onChange={(e) => setGrantNote(e.target.value.slice(0, 120))}
+              placeholder="За что выдаём (например: За тестирование) — увидят все при нажатии на значок"
+              className="w-full max-w-xl mb-3 bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-violet-500/50"
+            />
             <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
               {data.badges.map((b) => {
                 const own = has.has(b.code);

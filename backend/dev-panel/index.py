@@ -78,6 +78,7 @@ ACTION_PERMS = {
     "pro_features": "dashboard", "pro_features_save": "settings",
     "badges_admin": "dashboard", "badge_grant": "settings", "badge_revoke": "settings", "badge_update": "settings",
     "user_shop_badges": "users",
+    "test_themes_list": "dashboard", "test_themes_grant": "settings", "test_themes_revoke": "settings",
     "nova_ids_list": "dashboard", "nova_id_check_admin": "dashboard",
     "nova_id_grant": "settings", "nova_ids_settings_save": "settings",
     "broadcast_send": "settings", "broadcast_history": "dashboard",
@@ -1905,6 +1906,32 @@ def _handler(event: dict, context) -> dict:
             )
             return ok({"plans": plans, "active_subscriptions": cur.fetchone()[0]})
 
+        if action == "test_themes_list":
+            cur.execute(
+                f"SELECT t.user_id, u.name, u.phone, t.created_at, a.name FROM {SCHEMA}.test_themes_access t "
+                f"LEFT JOIN {SCHEMA}.users u ON u.id = t.user_id LEFT JOIN {SCHEMA}.dev_admins a ON a.id = t.granted_by ORDER BY t.created_at DESC"
+            )
+            return ok({"users": [{"id": r[0], "name": r[1], "phone": r[2], "created_at": r[3], "admin_name": r[4]} for r in cur.fetchall()]})
+
+        if action == "test_themes_grant":
+            uid = int(body.get("user_id") or 0)
+            cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            u = cur.fetchone()
+            if not u:
+                return err("Пользователь не найден")
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.test_themes_access (user_id, granted_by, created_at) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO NOTHING",
+                (uid, admin["id"], int(time.time())),
+            )
+            audit(cur, admin, "test_themes_grant", f"Тестовые темы открыты: {u[0]} (ID {uid})", ip)
+            return ok({"success": True})
+
+        if action == "test_themes_revoke":
+            uid = int(body.get("user_id") or 0)
+            cur.execute(f"DELETE FROM {SCHEMA}.test_themes_access WHERE user_id = %s", (uid,))
+            audit(cur, admin, "test_themes_revoke", f"Тестовые темы закрыты для ID {uid}", ip)
+            return ok({"success": True})
+
         if action == "badges_admin":
             cur.execute(
                 f"SELECT code, title, description, rarity, price_lightning, supply, issued, on_sale, sort_order FROM {SCHEMA}.badges ORDER BY sort_order, code"
@@ -1930,15 +1957,16 @@ def _handler(event: dict, context) -> dict:
         if action == "user_shop_badges":
             uid = int(body.get("user_id") or 0)
             cur.execute(
-                f"SELECT ub.badge_code, ub.serial, b.title, b.rarity FROM {SCHEMA}.user_shop_badges ub JOIN {SCHEMA}.badges b ON b.code = ub.badge_code "
+                f"SELECT ub.badge_code, ub.serial, b.title, b.rarity, ub.note, ub.method, ub.created_at FROM {SCHEMA}.user_shop_badges ub JOIN {SCHEMA}.badges b ON b.code = ub.badge_code "
                 f"WHERE ub.user_id = %s AND ub.revoked_at IS NULL ORDER BY ub.id",
                 (uid,),
             )
-            return ok({"badges": [{"code": r[0], "serial": r[1], "title": r[2], "rarity": r[3]} for r in cur.fetchall()]})
+            return ok({"badges": [{"code": r[0], "serial": r[1], "title": r[2], "rarity": r[3], "note": r[4], "method": r[5], "created_at": r[6]} for r in cur.fetchall()]})
 
         if action == "badge_grant":
             uid = int(body.get("user_id") or 0)
             code = str(body.get("code") or "")[:32]
+            note = (str(body.get("note") or "").strip()[:120]) or None
             cur.execute(f"SELECT title FROM {SCHEMA}.badges WHERE code = %s", (code,))
             b = cur.fetchone()
             cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (uid,))
@@ -1952,10 +1980,10 @@ def _handler(event: dict, context) -> dict:
             serial = int(cur.fetchone()[0])
             now = int(time.time())
             cur.execute(
-                f"INSERT INTO {SCHEMA}.user_shop_badges (user_id, badge_code, serial, method, granted_by, created_at) VALUES (%s, %s, %s, 'admin', %s, %s)",
-                (uid, code, serial, admin["id"], now),
+                f"INSERT INTO {SCHEMA}.user_shop_badges (user_id, badge_code, serial, method, granted_by, created_at, note) VALUES (%s, %s, %s, 'admin', %s, %s, %s)",
+                (uid, code, serial, admin["id"], now, note),
             )
-            audit(cur, admin, "badge_grant", f"Значок «{b[0]}» №{serial} → {u[0]} (ID {uid})", ip)
+            audit(cur, admin, "badge_grant", f"Значок «{b[0]}» №{serial} → {u[0]} (ID {uid})" + (f": {note}" if note else ""), ip)
             return ok({"success": True, "serial": serial})
 
         if action == "badge_revoke":

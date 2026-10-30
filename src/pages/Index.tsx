@@ -52,6 +52,7 @@ import VkPhonePrompt from "@/components/messenger/VkPhonePrompt";
 import { reportAppVersion } from "@/lib/reportAppVersion";
 import { NAV_ITEMS } from "@/pages/navItems";
 import ShopPanel from "@/components/messenger/ShopPanel";
+import { useSkinAccess } from "@/hooks/useSkinAccess";
 import { applyTheme, applyAccent, applyFontSize, applyBubbleStyle, isThemeId, getStoredFontSize } from "@/lib/theme";
 
 const LAZY_FALLBACK = (
@@ -64,6 +65,7 @@ export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const currentUserId = currentUser?.id;
   useEffect(() => { if (currentUserId) reportAppVersion(currentUserId); }, [currentUserId]);
+  useSkinAccess(currentUserId);
   const currentUserRef = useRef<User | null>(null);
   currentUserRef.current = currentUser;
   useDraftsVersion();
@@ -313,7 +315,7 @@ export default function Index() {
   };
 
   if (!sessionChecked) return (
-    <div className="h-screen flex items-center justify-center relative overflow-hidden">
+    <div className="h-full flex items-center justify-center relative overflow-hidden">
       <div className="mesh-bg" />
       <div className="flex flex-col items-center gap-4">
         <div className="w-20 h-20 grad-primary rounded-3xl flex items-center justify-center glow-primary animate-float">
@@ -439,7 +441,7 @@ export default function Index() {
 
   return (
     <Suspense fallback={LAZY_FALLBACK}>
-    <div className="flex overflow-hidden relative" style={{ height: "100dvh", minHeight: "100dvh" }}>
+    <div className="flex overflow-hidden relative h-full">
       {/* Mesh background */}
       <div className="mesh-bg" />
       <ConnectionBanner />
@@ -505,7 +507,7 @@ export default function Index() {
       <aside
         className={`
           flex flex-col flex-shrink-0
-          glass-strong !bg-[#0f0c1d] md:!bg-white/[0.07] border-r border-white/5
+          app-sidebar glass-strong !bg-[#0f0c1d] md:!bg-white/[0.07] border-r border-white/5
           transition-transform duration-300 ease-in-out
           md:w-80 lg:w-96
           absolute inset-y-0 left-0 z-20 w-full
@@ -515,7 +517,7 @@ export default function Index() {
         aria-hidden={!showSidebar ? true : undefined}
       >
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between px-4 pb-3" style={{ paddingTop: "calc(1.25rem + env(safe-area-inset-top))" }}>
+        <div className="flex items-center justify-between px-4 pb-3" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
           {/* Служебная панель открывается пятикратным нажатием на логотип —
               она не предназначена для обычных пользователей */}
           <div className="flex items-center gap-2 select-none">
@@ -778,7 +780,7 @@ export default function Index() {
                   </span>
                 )}
                 {item.tab === "shop" && (
-                  <span className="absolute -top-0.5 -right-2 px-1 rounded-md bg-amber-500 text-[8px] font-bold text-white leading-[14px]">скоро</span>
+                  <span className="absolute -top-0.5 -right-2 px-1 rounded-md bg-emerald-500 text-[8px] font-bold text-white leading-[14px]">new</span>
                 )}
                 <span className="text-[9px] font-medium">{tr(item.labelKey)}</span>
               </button>
@@ -956,7 +958,7 @@ function MaintenanceScreen({
       className={`flex items-center justify-center p-6 overflow-hidden ${
         overlay
           ? "fixed inset-0 z-[100] bg-background/95 backdrop-blur-md"
-          : "h-screen relative"
+          : "h-full relative"
       }`}
     >
       {!overlay && <div className="mesh-bg" />}

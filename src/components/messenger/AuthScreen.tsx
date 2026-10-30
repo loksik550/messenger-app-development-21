@@ -167,7 +167,7 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
   }
 
   return (
-    <div className="h-[100dvh] relative overflow-hidden">
+    <div className="h-full relative overflow-hidden">
       <div className="absolute inset-0 overflow-y-auto overscroll-contain">
       <div className="min-h-full flex items-center justify-center py-6" style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top))", paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
       <div className="mesh-bg" />
