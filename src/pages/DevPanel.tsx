@@ -55,7 +55,7 @@ const NAV: { key: Section; label: string; icon: string; perm: string; hint: stri
   { key: "channels", label: "Каналы и группы", icon: "Radio", perm: "channels", hint: "Список сообществ, переименовать или удалить", keywords: "чаты сообщества группы каналы" },
   { key: "verification", label: "Верификация", icon: "BadgeCheck", perm: "reports", hint: "Заявки на синюю галочку", keywords: "галочка подтверждение заявки" },
   { key: "reports", label: "Жалобы", icon: "Flag", perm: "reports", hint: "На что жалуются пользователи", keywords: "модерация нарушения спам" },
-  { key: "support", label: "Поддержка", icon: "LifeBuoy", perm: "support", hint: "Обращения пользователей и ответы", keywords: "тикеты вопросы обращения помощь" },
+  { key: "support", label: "Поддержка", icon: "LifeBuoy", perm: "support", hint: "Обращения и сброс паролей", keywords: "тикеты вопросы обращения помощь пароль сброс восстановление" },
   { key: "broadcast", label: "Рассылка", icon: "Send", perm: "settings", hint: "Отправить объявление всем или выборочно", keywords: "объявление уведомление сообщение всем новость" },
   { key: "plans", label: "Тарифы Premium", icon: "Crown", perm: "dashboard", hint: "Цены, сроки и что входит в подписку", keywords: "цены подписка премиум стоимость лимиты" },
   { key: "nova_ids", label: "Красивые ID", icon: "Hash", perm: "dashboard", hint: "Кто купил короткий ID, цены и выдача вручную", keywords: "id айди номер короткий красивый 666 выдать продажа" },

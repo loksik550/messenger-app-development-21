@@ -41,7 +41,6 @@ export default function DevPasswordResets() {
     }
   };
 
-  if (!items.length) return null;
   const pending = items.filter((i) => i.status === "pending").length;
 
   return (
@@ -55,6 +54,9 @@ export default function DevPasswordResets() {
         Заявки от людей, у которых нет другого устройства со входом. Одобряйте, только если уверены, что это владелец.
       </p>
       {msg && <div className="text-xs text-emerald-300 mb-2">{msg}</div>}
+      {items.length === 0 && (
+        <div className="text-xs text-slate-400 py-3 text-center bg-white/[0.02] rounded-xl">Заявок пока нет</div>
+      )}
       <div className="space-y-2">
         {items.slice(0, 10).map((r) => {
           const st = STATUS[r.status] || STATUS.expired;
