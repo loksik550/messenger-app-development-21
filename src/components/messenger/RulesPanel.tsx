@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Icon from "@/components/ui/icon";
 import type { IconName } from "@/lib/api";
 
@@ -68,9 +69,12 @@ const RULES: Rule[] = [
 
 export default function RulesPanel({ onClose }: { onClose: () => void }) {
   const [open, setOpen] = useState<number | null>(0);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-[300] flex flex-col bg-background animate-fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[400] flex flex-col bg-background text-foreground animate-fade-in">
       <header
         className="flex items-center gap-3 px-4 pb-3 border-b border-border shrink-0"
         style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
@@ -124,6 +128,7 @@ export default function RulesPanel({ onClose }: { onClose: () => void }) {
           })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
