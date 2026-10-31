@@ -2996,7 +2996,7 @@ def _handler(event: dict, context) -> dict:
                 f"SELECT r.id, r.user_id, u.name, u.phone, r.route, r.status, r.device_name, r.ip_addr, r.created_at, "
                 f"(SELECT MAX(created_at) FROM {SCHEMA}.login_events le WHERE le.user_id = r.user_id) "
                 f"FROM {SCHEMA}.password_resets r JOIN {SCHEMA}.users u ON u.id = r.user_id "
-                f"WHERE r.route = 'admin' ORDER BY (r.status = 'pending') DESC, r.id DESC LIMIT 50"
+                f"ORDER BY (r.status = 'pending') DESC, r.id DESC LIMIT 50"
             )
             items = [{
                 "id": x[0], "user_id": x[1], "name": x[2], "phone": x[3], "route": x[4], "status": x[5],
@@ -3010,7 +3010,7 @@ def _handler(event: dict, context) -> dict:
             now = int(time.time())
             cur.execute(
                 f"SELECT user_id, new_password_hash FROM {SCHEMA}.password_resets "
-                f"WHERE id = %s AND status = 'pending' AND route = 'admin' AND expires_at > %s",
+                f"WHERE id = %s AND status = 'pending' AND expires_at > %s",
                 (rid, now),
             )
             r = cur.fetchone()

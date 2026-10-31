@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import { devApi, formatTs } from "@/lib/devApi";
 
 interface ResetItem {
-  id: number; user_id: number; name: string; phone: string; status: string;
+  id: number; user_id: number; name: string; phone: string; status: string; route?: string;
   device: string; ip: string; created_at: number; last_login: number | null;
 }
 
@@ -51,7 +51,7 @@ export default function DevPasswordResets() {
         {pending > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">{pending} ждут</span>}
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        Заявки от людей, у которых нет другого устройства со входом. Одобряйте, только если уверены, что это владелец.
+        Все заявки на смену пароля. «Ждёт подтверждения на устройстве» — человек может подтвердить сам на другом своём телефоне, но вы тоже можете одобрить. Одобряйте, только если уверены, что это владелец.
       </p>
       {msg && <div className="text-xs text-emerald-300 mb-2">{msg}</div>}
       {items.length === 0 && (
@@ -69,6 +69,9 @@ export default function DevPasswordResets() {
                   {r.last_login ? ` · последний вход ${formatTs(r.last_login)}` : ""}
                 </div>
               </div>
+              {r.status === "pending" && r.route === "device" && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300">Ждёт подтверждения на устройстве</span>
+              )}
               <span className={`text-[11px] px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
               {r.status === "pending" && (
                 <div className="flex gap-1.5">
