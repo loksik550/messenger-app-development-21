@@ -11,6 +11,7 @@ import threading
 import psycopg2
 import nova_auth
 import nova_ids
+from name_filter import is_offensive
 import secrets as _secrets
 
 
@@ -304,6 +305,8 @@ def _name_error(name: str):
         return "Имя слишком длинное"
     if not _NAME_RE.match(name):
         return "Имя может содержать только буквы — без точек, тире, цифр и других символов"
+    if is_offensive(name):
+        return "Имя содержит нецензурные или оскорбительные слова. Укажите настоящее имя"
     return None
 
 

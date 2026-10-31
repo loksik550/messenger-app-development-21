@@ -91,6 +91,8 @@ export function ProfilePanel({ currentUser, onUserUpdate, onBack, chatsCount = 0
         onUserUpdate?.(data.user);
         localStorage.setItem("nova_user", JSON.stringify(data.user));
         setEditing(false);
+      } else if (data.error) {
+        alert(data.error);
       }
     } catch { /* ignore */ } finally { setSaving(false); }
   };
