@@ -11,7 +11,7 @@ interface NovaUpdatePlugin {
 
 export const NovaUpdate = registerPlugin<NovaUpdatePlugin>("NovaUpdate");
 
-/** Есть ли в установленном приложении модуль обновления внутри (появился в 1.1.8). */
+/** Есть ли в установленном приложении модуль обновления внутри (появился в 1.1.9). */
 export function hasInAppUpdate() {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android" && Capacitor.isPluginAvailable("NovaUpdate");
 }
