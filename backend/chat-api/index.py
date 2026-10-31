@@ -2,6 +2,7 @@ import os
 import errlog
 import json
 import time
+import re
 import hashlib
 import hmac
 import urllib.request
@@ -174,6 +175,8 @@ def _vk_login_user(cur, info: dict) -> int:
         (phone, name[:64], (info.get("avatar") or None), vk_id, now, now),
     )
     new_id = int(cur.fetchone()[0])
+    if _name_error(_clean_name(name[:64])):
+        cur.execute(f"UPDATE {SCHEMA}.users SET name_fix_deadline = %s WHERE id = %s", (now + 72 * 3600, new_id))
     _grant_xp(cur, new_id, "registered")
     _award_badge(cur, new_id, "newcomer")
     return new_id
@@ -284,6 +287,42 @@ def _inbound_denied(cur, sender_id: int, recipient_id: int, kind: str):
     if kind == "message":
         return "Пользователь принимает сообщения только от своих контактов" if mode == "contacts" else "Пользователь ограничил входящие сообщения"
     return "Пользователь принимает звонки только от своих контактов" if mode == "contacts" else "Пользователь ограничил входящие звонки"
+
+
+_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁё]+( [A-Za-zА-Яа-яЁё]+)*$")
+
+
+def _clean_name(raw) -> str:
+    return " ".join(str(raw or "").split())
+
+
+def _name_error(name: str):
+    """Проверяет, что имя состоит только из букв (слова через один пробел)."""
+    if len(name) < 2:
+        return "Имя слишком короткое"
+    if len(name) > 40:
+        return "Имя слишком длинное"
+    if not _NAME_RE.match(name):
+        return "Имя может содержать только буквы — без точек, тире, цифр и других символов"
+    return None
+
+
+def _enforce_name_deadline(cur, uid: int) -> bool:
+    """Удаляет аккаунт, если человек не сменил некорректное имя за 72 часа."""
+    now = int(time.time())
+    cur.execute(f"SELECT name, phone FROM {SCHEMA}.users WHERE id = %s AND name_fix_deadline IS NOT NULL AND name_fix_deadline < %s", (uid, now))
+    r = cur.fetchone()
+    if not r:
+        return False
+    cur.execute(
+        f"UPDATE {SCHEMA}.users SET name = %s, phone = %s, avatar_url = NULL, about = NULL, vk_id = NULL, "
+        f"banned_until = %s, banned_reason = %s, banned_at = %s, last_seen = 0, name_fix_deadline = NULL WHERE id = %s",
+        ("Удалённый аккаунт", f"deleted_{uid}_{now}", now + 3650 * 86400,
+         "Аккаунт удалён: имя не было изменено за 72 часа", now, uid),
+    )
+    cur.execute(f"UPDATE {SCHEMA}.user_sessions SET revoked = TRUE WHERE user_id = %s", (uid,))
+    cur.execute(f"DELETE FROM {SCHEMA}.push_subscriptions WHERE user_id = %s", (uid,))
+    return True
 
 
 def serialize_user(row):
@@ -955,7 +994,7 @@ def _handle(event: dict, context) -> dict:
     if action == "auth_password":
         phone = (body.get("phone") or "").strip()
         password = (body.get("password") or "")
-        name = (body.get("name") or "").strip()
+        name = _clean_name(body.get("name"))
         digits = "".join(c for c in phone if c.isdigit())
         if not digits or len(digits) < 11:
             conn.close()
@@ -980,6 +1019,9 @@ def _handle(event: dict, context) -> dict:
                 if not _verify_password(password, pwd_hash):
                     conn.close()
                     return err("Неверный пароль")
+                if _enforce_name_deadline(cur, int(user_id_db)):
+                    conn.close()
+                    return err("Аккаунт удалён: имя не было изменено за 72 часа. Зарегистрируйтесь заново с настоящим именем.", 403)
             else:
                 # Аккаунт без пароля (старый SMS-вход, бот, служебный) — пароль
                 # по номеру не назначаем: иначе любой, кто знает номер, займёт
@@ -1016,6 +1058,10 @@ def _handle(event: dict, context) -> dict:
         if not name:
             conn.close()
             return ok({"need_name": True})
+        _ne = _name_error(name)
+        if _ne:
+            conn.close()
+            return err(_ne)
 
         cur.execute(
             f"""INSERT INTO {SCHEMA}.users (phone, name, password_hash, last_seen, created_at)
@@ -1172,12 +1218,18 @@ def _handle(event: dict, context) -> dict:
         if not user_id:
             conn.close()
             return err("Нужен X-User-Id")
+        if _enforce_name_deadline(cur, int(user_id)):
+            conn.close()
+            return nova_auth.denied(CORS)
         _maybe_streak_bonus(cur, int(user_id))
         cur.execute(f"SELECT {USER_COLS} FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
         row = cur.fetchone()
         if not row:
             conn.close()
             return err("Пользователь не найден", 404)
+        cur.execute(f"SELECT name_fix_deadline FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        _nr = cur.fetchone()
+        nfd = int(_nr[0]) if _nr and _nr[0] else None
         _admin_env = os.environ.get("ADMIN_USER_ID", "").strip()
         is_staff = _admin_env.isdigit() and int(_admin_env) == int(user_id)
         if not is_staff:
@@ -1190,6 +1242,7 @@ def _handle(event: dict, context) -> dict:
         conn.close()
         u = serialize_user(row)
         u["is_staff"] = bool(is_staff)
+        u["name_fix_deadline"] = nfd
         return ok({"user": u})
 
     # ── get_users ─────────────────────────────────────────────────────────────
@@ -3140,12 +3193,14 @@ def _handle(event: dict, context) -> dict:
         sets = []
         vals = []
         if "name" in body and body.get("name") is not None:
-            new_name = (body.get("name") or "").strip()
-            if not new_name or len(new_name) < 2:
+            new_name = _clean_name(body.get("name"))
+            _ne = _name_error(new_name)
+            if _ne:
                 conn.close()
-                return err("Имя слишком короткое")
+                return err(_ne)
             sets.append("name = %s")
             vals.append(new_name)
+            sets.append("name_fix_deadline = NULL")
         if "avatar_video_url" in body:
             av = body.get("avatar_video_url") or None
             if av is not None:

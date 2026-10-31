@@ -4,6 +4,7 @@ import { api, type User } from "@/lib/api";
 import PrivacyPolicyPanel from "./PrivacyPolicyPanel";
 import ResetWaiting, { loadResetTicket, saveResetTicket, type ResetTicket } from "./ResetWaiting";
 import VkLoginButton from "@/components/messenger/VkLoginButton";
+import { filterNameInput, nameError } from "@/lib/nameRules";
 
 type Step = "phone" | "password" | "name" | "reset" | "waiting";
 const DRAFT_KEY = "nova_auth_draft";
@@ -111,8 +112,9 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
 
   const handleNameSubmit = async () => {
     if (loading) return;
-    const clean = name.replace(/\s+/g, " ").trim().slice(0, 64);
-    if (clean.length < 2) { setErrorMsg("Имя — от 2 символов"); triggerShake(); return; }
+    const clean = name.replace(/\s+/g, " ").trim().slice(0, 40);
+    const nErr = nameError(clean);
+    if (nErr) { setErrorMsg(nErr); triggerShake(); return; }
     if (password.length < 4) { setErrorMsg("Введите пароль ещё раз"); setStep("password"); return; }
     setLoading(true);
     setErrorMsg("");
@@ -390,10 +392,10 @@ export function AuthScreen({ onDone: onDoneRaw }: { onDone: (user: User, token?:
                   name="nova-display-name"
                   type="text"
                   value={name}
-                  onChange={e => { setName(e.target.value); if (errorMsg) setErrorMsg(""); }}
+                  onChange={e => { setName(filterNameInput(e.target.value)); if (errorMsg) setErrorMsg(""); }}
                   onFocus={keepVisible}
                   placeholder="Ваше имя"
-                  maxLength={64}
+                  maxLength={40}
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="words"

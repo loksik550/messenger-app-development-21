@@ -49,6 +49,7 @@ import { type Contact } from "@/lib/api";
 import { restoreAuthToken, setAuthToken, onAuthExpired } from "@/lib/authToken";
 import ResetApprovalPrompt from "@/components/messenger/ResetApprovalPrompt";
 import VkPhonePrompt from "@/components/messenger/VkPhonePrompt";
+import NameFixPrompt from "@/components/messenger/NameFixPrompt";
 import { reportAppVersion } from "@/lib/reportAppVersion";
 import { NAV_ITEMS } from "@/pages/navItems";
 import ShopPanel from "@/components/messenger/ShopPanel";
@@ -451,6 +452,12 @@ export default function Index() {
       {/* Подсказка о включении push-уведомлений */}
       {currentUser && <EnableNotificationsBanner userId={currentUser.id} />}
       {currentUser && <ResetApprovalPrompt userId={currentUser.id} />}
+      {currentUser?.name_fix_deadline ? (
+        <NameFixPrompt
+          user={currentUser}
+          onUpdated={(u) => { localStorage.setItem("nova_user", JSON.stringify(u)); setCurrentUser(u); }}
+        />
+      ) : null}
       {currentUser && (
         <VkPhonePrompt
           user={currentUser}

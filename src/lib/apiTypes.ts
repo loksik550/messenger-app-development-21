@@ -173,6 +173,7 @@ export interface User {
   notify_messages?: boolean;
   notify_preview?: boolean;
   is_staff?: boolean;
+  name_fix_deadline?: number | null;
   notify_groups?: boolean;
   notify_calls?: boolean;
   notify_sound?: string;

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { api, uploadMedia, uploadAny, type User } from "@/lib/api";
+import { filterNameInput, nameError } from "@/lib/nameRules";
 import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
 import { applyTheme, getStoredTheme, getStoredFontSize } from "@/lib/theme";
 import { BirthdayPickerModal } from "@/components/messenger/BirthdayPickerModal";
@@ -81,7 +82,8 @@ export function ProfilePanel({ currentUser, onUserUpdate, onBack, chatsCount = 0
   }, [currentUser.id]);
 
   const saveName = async () => {
-    if (editName.trim().length < 2) return;
+    const nErr = nameError(editName);
+    if (nErr) { alert(nErr); return; }
     setSaving(true);
     try {
       const data = await api("update_profile", { name: editName.trim() }, currentUser.id);
@@ -195,7 +197,7 @@ export function ProfilePanel({ currentUser, onUserUpdate, onBack, chatsCount = 0
         removeAvatar={removeAvatar}
         editing={editing}
         editName={editName}
-        setEditName={setEditName}
+        setEditName={(v: string) => setEditName(filterNameInput(v))}
         saving={saving}
         saveName={saveName}
         setEditing={setEditing}
