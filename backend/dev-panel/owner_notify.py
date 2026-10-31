@@ -99,8 +99,8 @@ def send_daily_summary(cur, schema: str, push=None) -> int:
     new_users = int(cur.fetchone()[0] or 0)
     cur.execute(
         f"SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM {s}orders "
-        f"WHERE status = 'paid' AND paid_at >= to_timestamp(%s) AT TIME ZONE 'UTC'",
-        (start,),
+        f"WHERE status = 'paid' AND paid_at >= %s::timestamp",
+        (time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start)),),
     )
     revenue, pays = cur.fetchone()
     cur.execute(f"SELECT COUNT(*) FROM {s}reports WHERE status = 'open'")

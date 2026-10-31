@@ -80,7 +80,7 @@ export default function DevDashboard({ onNavigate, canSend = false }: { onNaviga
 
   useEffect(() => {
     load();
-    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 120000);
     devApi<{ items: FeedItem[] }>("live_feed")
       .then((r) => setFeed(r.items))
       .catch(() => {});

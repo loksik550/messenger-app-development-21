@@ -2754,9 +2754,6 @@ def _handle(event: dict, context) -> dict:
         if existing:
             if existing[1] == emoji:
                 # Та же реакция — убираем
-                cur.execute(f"UPDATE {SCHEMA}.message_reactions SET emoji = %s WHERE id = %s", (None, existing[0]))
-                # Нельзя SET NULL в уникальной строке, просто обновим на другое значение или удалим через update
-                # Используем флаг удаления через обновление поля created_at на 0
                 cur.execute(f"UPDATE {SCHEMA}.message_reactions SET emoji = %s WHERE id = %s", ('__removed__', existing[0]))
                 conn.close()
                 return ok({"ok": True, "removed": True})

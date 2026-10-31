@@ -25,7 +25,7 @@ export default function DevStatusBar() {
         .catch(() => {});
     };
     load();
-    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 120000);
     const tick = setInterval(() => {
       setClock(
         new Date().toLocaleTimeString("ru", {

@@ -31,7 +31,7 @@ export default function DevUndoBar() {
 
   useEffect(() => {
     check();
-    const timer = setInterval(() => { if (document.visibilityState === "visible") check(); }, 15000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") check(); }, 60000);
     const onAct = () => setTimeout(check, 800);
     window.addEventListener("dev-action-done", onAct);
     const stop = () => window.removeEventListener("dev-action-done", onAct);
