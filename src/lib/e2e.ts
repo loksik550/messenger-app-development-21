@@ -383,7 +383,7 @@ async function decryptEnvelope(chatId: number, userId: number, senderId: number,
   const cacheKey = `${userId}|${chatId}|${senderId}|${enc}`;
   const hit = plainCache.get(cacheKey);
   if (hit) return hit;
-  const res = await (async (): Promise<Plain> => {
+  const attempt = async (): Promise<Plain> => {
     let env: Envelope;
     try { env = JSON.parse(enc); } catch { return { text: "⚠️ Повреждённое сообщение", state: "bad" }; }
     if (env.v !== 1 || env.c !== chatId || env.su !== senderId) return { text: "⚠️ Сообщение не прошло проверку подлинности", state: "bad" };
@@ -418,11 +418,25 @@ async function decryptEnvelope(chatId: number, userId: number, senderId: number,
       report("unwrap", e);
       return { text: "⚠️ Не удалось расшифровать сообщение", state: "bad" };
     }
-  })().catch((e) => {
-    console.warn("[e2e] decrypt failed", e instanceof Error ? e.message : e);
-    report("retry", e);
-    return { text: RETRY_TEXT, state: "retry" as DecryptState };
-  });
+  };
+  let res: Plain;
+  try {
+    res = await attempt();
+  } catch {
+    try {
+      await new Promise((r) => setTimeout(r, 800));
+      res = await attempt();
+    } catch {
+      try {
+        await new Promise((r) => setTimeout(r, 2000));
+        res = await attempt();
+      } catch (e) {
+        console.warn("[e2e] decrypt failed", e instanceof Error ? e.message : e);
+        report("retry", e);
+        res = { text: RETRY_TEXT, state: "retry" };
+      }
+    }
+  }
   if (res.state !== "retry") {
     if (plainCache.size > 3000) plainCache.clear();
     plainCache.set(cacheKey, res);
