@@ -7,6 +7,7 @@ import { Empty } from "./DevAutoRules";
 import { Pick, Box, BulkDialog } from "./DevUsersParts";
 import { DevPhoneVk } from "@/components/devpanel/DevPhoneVk";
 import DevRolePopover from "./DevRolePopover";
+import DevCountryFlag from "./DevCountryFlag";
 
 interface DevUser {
   id: number;
@@ -394,6 +395,7 @@ export default function DevUsers({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
+                    <DevCountryFlag phone={u.phone} />
                     <span className="font-medium truncate text-sm">{u.name || "Без имени"}</span>
                     {u.verified && <Icon name="BadgeCheck" size={13} className="text-sky-400 shrink-0" />}
                   </div>
@@ -476,6 +478,7 @@ export default function DevUsers({
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
+                            <DevCountryFlag phone={u.phone} />
                             <div className="font-medium truncate">{u.name || "Без имени"}</div>
                             {u.verified && (
                               <Icon name="BadgeCheck" size={14} className="text-sky-400 shrink-0" />

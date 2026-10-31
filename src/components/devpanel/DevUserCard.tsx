@@ -7,6 +7,7 @@ import DevUserBadges from "./DevUserBadges";
 import { DevUserChatsTab, DevUserMediaTab } from "./DevUserTabs";
 import { DevPhoneVk } from "@/components/devpanel/DevPhoneVk";
 import DevNovaMessage from "./DevNovaMessage";
+import DevCountryFlag from "./DevCountryFlag";
 
 const BAN_REASONS = [
   "Спам и массовые рассылки",
@@ -138,6 +139,7 @@ export default function DevUserCard({ userId, onClose, onChanged, can }: Props) 
             </div>
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
+              <DevCountryFlag phone={user.phone} size={18} />
               <h3 className="font-bold text-lg truncate">{user.name || "Без имени"}</h3>
               {user.verified && (
                 <Icon name="BadgeCheck" size={17} className="text-sky-400 shrink-0" />
