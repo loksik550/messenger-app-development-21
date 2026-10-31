@@ -1,7 +1,6 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type Message, type IconName } from "@/lib/api";
-import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
 import OriginalQualityToggle from "@/components/messenger/OriginalQualityToggle";
 import { useAutoGrow } from "@/hooks/useAutoGrow";
 import { isSendKey } from "@/lib/sendKey";
@@ -67,7 +66,6 @@ export function ChatInput({
   scheduledCount?: number;
   isPro?: boolean;
 }) {
-  const [showEmoji, setShowEmoji] = useState(false);
   const taRef = useAutoGrow(input);
   return (
     <div className="px-3 pt-1.5 pb-1 glass-strong border-t border-white/5 relative" style={{ paddingBottom: "calc(0.25rem + env(safe-area-inset-bottom))" }}>
@@ -229,19 +227,6 @@ export function ChatInput({
               aria-label="Сообщение"
               className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 text-foreground placeholder-muted-foreground resize-none break-words"
             />
-            <div className="relative">
-              <button
-                onClick={() => setShowEmoji(v => !v)}
-                className={`transition-colors ${showEmoji ? "text-violet-400" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                <Icon name="Smile" size={20} />
-              </button>
-              <EmojiStickerPicker
-                open={showEmoji}
-                onClose={() => setShowEmoji(false)}
-                onPick={(e) => setInput(input + e)}
-              />
-            </div>
           </div>
           {input.trim() ? (
             <button

@@ -1,7 +1,6 @@
 import type { RefObject } from "react";
 import Icon from "@/components/ui/icon";
 import { Avatar } from "@/components/messenger/ChatAtoms";
-import EmojiStickerPicker from "@/components/messenger/EmojiStickerPicker";
 import OriginalQualityToggle from "@/components/messenger/OriginalQualityToggle";
 import { useAutoGrow } from "@/hooks/useAutoGrow";
 import { isSendKey } from "@/lib/sendKey";
@@ -47,7 +46,6 @@ export default function GroupChatInput({
   replyTo,
   editing,
   showAttach,
-  showEmoji,
   recording,
   recordSec,
   mentionCandidates,
@@ -64,9 +62,6 @@ export default function GroupChatInput({
   onToggleAttach,
   onCloseAttach,
   onOpenVideoCircle,
-  onToggleEmoji,
-  onCloseEmoji,
-  onPickEmoji,
   onApplyMention,
   onStartRecording,
   onStopRecording,
@@ -195,14 +190,6 @@ export default function GroupChatInput({
             enterKeyHint="enter"
             className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 placeholder:text-muted-foreground resize-none break-words"
           />
-          <div className="relative">
-            <button onClick={onToggleEmoji}
-              className={`transition ${showEmoji ? "text-violet-400" : "text-muted-foreground hover:text-foreground"}`}>
-              <Icon name="Smile" size={20} />
-            </button>
-            <EmojiStickerPicker open={showEmoji} onClose={onCloseEmoji}
-              onPick={onPickEmoji} />
-          </div>
         </div>
         {input.trim() ? (
           <button onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()} onClick={onSend} className="p-2.5 rounded-xl grad-primary text-white glow-primary">
