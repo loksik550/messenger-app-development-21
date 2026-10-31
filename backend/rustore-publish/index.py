@@ -486,9 +486,29 @@ def do_upload(body, admin=None, ip="", context=None):
         file_resp = requests.get(rel["aab_url"], timeout=(10, 25))
         if file_resp.status_code != 200 or len(file_resp.content) < 100000:
             raise RuStoreError("Не удалось скачать .aab из GitHub")
-        rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
-           files={"file": (rel["aab_name"], file_resp.content, "application/octet-stream")},
-           timeout=(10, read_timeout - (time.time() - t0)))
+        aab_bytes = file_resp.content
+        last_err = None
+        for attempt in range(3):
+            remain = read_timeout - (time.time() - t0)
+            if remain < 20:
+                break
+            try:
+                rs("POST", f"/public/v1/application/{PACKAGE}/version/{version_id}/aab", tok,
+                   files={"file": (rel["aab_name"], aab_bytes, "application/octet-stream")},
+                   timeout=(10, remain))
+                last_err = None
+                break
+            except (RuStoreError, requests.exceptions.RequestException) as e:
+                last_err = e
+                es = str(e).lower()
+                transient = ("timelimiter" in es or "feign" in es or "timeout" in es
+                             or "502" in es or "503" in es or "504" in es)
+                if not transient:
+                    raise
+                print(f"[upload] {version_id}: попытка {attempt + 1} не удалась ({e}), повтор")
+                time.sleep(3)
+        if last_err is not None:
+            raise last_err
     except requests.exceptions.ReadTimeout:
         waited = int(time.time() - t0)
         print(f"[upload] {version_id}: RuStore не ответил за {waited} сек — загрузка прервана")
@@ -507,6 +527,10 @@ def do_upload(body, admin=None, ip="", context=None):
             rs("DELETE", f"/public/v1/application/{PACKAGE}/version/{version_id}", tok)
         except Exception:
             pass
+        es = str(e).lower()
+        if "timelimiter" in es or "feign" in es:
+            raise RuStoreError("RuStore сейчас перегружен и не принял файл (временный сбой на их стороне). "
+                               "Мы сделали 3 попытки подряд. Черновик удалён — подождите пару минут и нажмите «Отправить» ещё раз.")
         raise RuStoreError(f"RuStore не принял файл приложения: {e}. Черновик удалён — попробуйте ещё раз.")
     print(f"[upload] {version_id}: загружено за {int(time.time() - t0)} сек")
     _up_state(version_id, "done")
