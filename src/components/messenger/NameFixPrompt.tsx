@@ -36,7 +36,7 @@ export default function NameFixPrompt({ user, onUpdated }: { user: User; onUpdat
         </div>
         <h3 className="text-lg font-bold text-center mb-1">Укажите настоящее имя</h3>
         <p className="text-sm text-muted-foreground text-center mb-1">
-          Сейчас ваше имя — «{user.name}». В Nova имя может состоять только из букв, без точек, тире и цифр.
+          Сейчас ваше имя — «{user.name}». По правилам Nova имя может состоять только из букв — без точек, тире, цифр и нецензурных слов.
         </p>
         <p className="text-sm text-amber-300 text-center mb-4">
           Если не сменить имя, аккаунт будет удалён через {leftText(deadline, Date.now())}.

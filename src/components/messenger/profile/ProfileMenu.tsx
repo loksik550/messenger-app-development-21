@@ -8,6 +8,7 @@ import { APP_VERSION } from "@/lib/version";
 
 const MyStickersPanel = lazy(() => import("@/components/messenger/MyStickersPanel"));
 const BadgeCollection = lazy(() => import("@/components/messenger/BadgeCollection"));
+const RulesPanel = lazy(() => import("@/components/messenger/RulesPanel"));
 const TestThemesPanel = lazy(() => import("@/components/messenger/profile/TestThemesPanel"));
 import { useSkinAccess } from "@/hooks/useSkinAccess";
 
@@ -55,6 +56,7 @@ export function ProfileMenu({
   const [showMyStickers, setShowMyStickers] = useState(false);
   const [showSkins, setShowSkins] = useState(false);
   const [showBadges, setShowBadges] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const skinAccess = useSkinAccess(currentUser?.id).allowed;
   const supportUnread = useSupportUnread(currentUser?.id);
 
@@ -105,6 +107,7 @@ export function ProfileMenu({
     {
       title: "Помощь",
       rows: [
+        { icon: "BookOpen", label: "Правила Nova", sub: "Памятка: имя, общение, что запрещено", action: () => setShowRules(true), color: "#8b5cf6" },
         !!onOpenHelp && { icon: "CircleHelp", label: "Частые вопросы", sub: "Ответы на популярные вопросы", action: onOpenHelp, color: "#14b8a6" },
         !!onOpenSupport && {
           icon: "LifeBuoy", label: "Поддержка Nova", color: "#a855f7", action: onOpenSupport, badge: supportUnread, alert: supportUnread > 0,
@@ -121,6 +124,11 @@ export function ProfileMenu({
     {showMyStickers && (
       <Suspense fallback={null}>
         <MyStickersPanel currentUser={currentUser} onClose={() => setShowMyStickers(false)} />
+      </Suspense>
+    )}
+    {showRules && (
+      <Suspense fallback={null}>
+        <RulesPanel onClose={() => setShowRules(false)} />
       </Suspense>
     )}
     {showBadges && (
