@@ -42,22 +42,13 @@ export default function StickerPicker({ currentUser, onPick, onClose, onOpenStor
   };
 
   return (
-    <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 mx-3 z-30 glass-strong rounded-2xl p-3 animate-fade-in shadow-2xl"
+    <div className="-mx-3 mt-1.5 border-t border-white/5 flex flex-col animate-fade-in"
+      style={{ height: 290 }}
       onClick={e => e.stopPropagation()}>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-bold flex items-center gap-1.5">
-          <Icon name="Palette" size={12} className="text-pink-400" />
-          Стикеры
-        </span>
-        <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/8">
-          <Icon name="X" size={14} />
-        </button>
-      </div>
-
       {loading ? (
-        <div className="text-center text-xs text-muted-foreground py-6">Загружаем...</div>
+        <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">Загружаем...</div>
       ) : packs.length === 0 ? (
-        <div className="text-center py-6">
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
           <Icon name="Palette" size={28} className="text-pink-400 mx-auto mb-2 opacity-60" />
           <div className="text-xs text-muted-foreground mb-3">У тебя пока нет стикеров</div>
           <button onClick={onOpenStore}
@@ -67,13 +58,13 @@ export default function StickerPicker({ currentUser, onPick, onClose, onOpenStor
         </div>
       ) : (
         <>
-          <div className="max-h-[200px] overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 pt-2">
             {activePack && activePack.items.length > 0 ? (
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-5 gap-1.5">
                 {activePack.items.map(it => (
                   <button key={it.id}
                     onClick={() => onPick({ pack_id: activePack.id, sticker_id: it.id, image_url: it.image_url, emoji: it.emoji })}
-                    className="aspect-square rounded-lg bg-white/5 hover:bg-white/10 active:scale-90 transition p-1 flex items-center justify-center">
+                    className="aspect-square rounded-lg hover:bg-white/10 active:scale-90 transition p-0.5 flex items-center justify-center">
                     <img src={it.image_url} alt={it.emoji} className="w-full h-full object-contain" draggable={false} />
                   </button>
                 ))}
@@ -84,7 +75,7 @@ export default function StickerPicker({ currentUser, onPick, onClose, onOpenStor
           </div>
 
           {/* Pack tabs */}
-          <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/5 overflow-x-auto">
+          <div className="flex items-center gap-1 px-3 py-2 border-t border-white/5 overflow-x-auto flex-shrink-0">
             {packs.map(p => (
               <button key={p.id} onClick={() => switchPack(p.id)}
                 className={`flex-shrink-0 w-9 h-9 rounded-lg overflow-hidden transition ${

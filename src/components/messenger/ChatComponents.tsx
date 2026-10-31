@@ -419,7 +419,9 @@ export function ChatWindow({
         onCancelEdit={() => { setEditing(null); setInput(""); }}
         onSendGift={() => { setShowAttach(false); setShowGiftModal(true); }}
         onAttachFundraiser={() => { setShowAttach(false); setShowFundModal(true); }}
-        onOpenStickerPicker={() => { setShowAttach(false); setShowStickerPicker(p => !p); }}
+        onOpenStickerPicker={() => { setShowAttach(false); setShowStickerPicker(true); }}
+        onCloseStickerPicker={() => setShowStickerPicker(false)}
+        stickerOpen={showStickerPicker}
         onSchedule={() => { setShowAttach(false); setShowSchedule(true); }}
         onShowScheduledList={() => setShowScheduledList(true)}
         scheduledCount={scheduled.length}

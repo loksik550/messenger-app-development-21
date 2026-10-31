@@ -30,6 +30,8 @@ export function ChatInput({
   onSendGift,
   onAttachFundraiser,
   onOpenStickerPicker,
+  onCloseStickerPicker,
+  stickerOpen,
   stickerPickerSlot,
   onSchedule,
   onShowScheduledList,
@@ -60,6 +62,8 @@ export function ChatInput({
   onSendGift?: () => void;
   onAttachFundraiser?: () => void;
   onOpenStickerPicker?: () => void;
+  onCloseStickerPicker?: () => void;
+  stickerOpen?: boolean;
   stickerPickerSlot?: React.ReactNode;
   onSchedule?: () => void;
   onShowScheduledList?: () => void;
@@ -136,12 +140,6 @@ export function ChatInput({
               <span className="text-[10px] text-muted-foreground">Сбор</span>
             </button>
           )}
-          {onOpenStickerPicker && (
-            <button onClick={onOpenStickerPicker} className="flex flex-col items-center gap-1 p-3 glass rounded-2xl hover:bg-white/8 transition-colors">
-              <Icon name="Palette" size={20} className="text-pink-400" />
-              <span className="text-[10px] text-muted-foreground">Стикеры</span>
-            </button>
-          )}
           {onSchedule && (
             <button onClick={onSchedule} className="flex flex-col items-center gap-1 p-3 glass rounded-2xl hover:bg-white/8 transition-colors">
               <Icon name="Clock" size={20} className="text-cyan-400" />
@@ -160,7 +158,6 @@ export function ChatInput({
           <Icon name="ChevronRight" size={14} className="ml-auto" />
         </button>
       )}
-      {stickerPickerSlot}
       {uploading && (
         <div className="flex items-center gap-2 mb-2 px-1 animate-fade-in">
           <div className="w-4 h-4 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
@@ -204,7 +201,7 @@ export function ChatInput({
       ) : (
         <div className="flex items-end gap-2">
           <button
-            onClick={() => setShowAttach(v => !v)}
+            onClick={() => { if (stickerOpen) onCloseStickerPicker?.(); setShowAttach(v => !v); }}
             className={`p-2.5 rounded-xl transition-all ${showAttach ? "bg-violet-500/20 text-violet-400" : "hover:bg-white/8 text-muted-foreground hover:text-foreground"}`}
           >
             <Icon name={showAttach ? "X" : "Paperclip"} size={20} />
@@ -214,6 +211,7 @@ export function ChatInput({
               ref={taRef}
               value={input}
               onChange={e => { setInput(e.target.value); onNotifyTyping(); }}
+              onFocus={() => { if (stickerOpen) onCloseStickerPicker?.(); }}
               onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); onSend(); } }}
               placeholder="Сообщение..."
               rows={1}
@@ -227,6 +225,26 @@ export function ChatInput({
               aria-label="Сообщение"
               className="flex-1 min-w-0 bg-transparent outline-none text-sm leading-5 py-0.5 text-foreground placeholder-muted-foreground resize-none break-words"
             />
+            {onOpenStickerPicker && (
+              <button
+                onPointerDown={e => e.preventDefault()}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => {
+                  if (stickerOpen) {
+                    onCloseStickerPicker?.();
+                    taRef.current?.focus();
+                  } else {
+                    taRef.current?.blur();
+                    setShowAttach(false);
+                    onOpenStickerPicker();
+                  }
+                }}
+                className={`flex-shrink-0 transition-colors ${stickerOpen ? "text-violet-400" : "text-muted-foreground hover:text-foreground"}`}
+                aria-label={stickerOpen ? "Клавиатура" : "Стикеры"}
+              >
+                <Icon name={stickerOpen ? "Keyboard" : "Sticker"} size={20} />
+              </button>
+            )}
           </div>
           {input.trim() ? (
             <button
@@ -261,6 +279,7 @@ export function ChatInput({
           )}
         </div>
       )}
+      {stickerPickerSlot}
     </div>
   );
 }
