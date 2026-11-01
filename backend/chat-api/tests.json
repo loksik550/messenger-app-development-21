@@ -534,6 +534,26 @@
         "action": "effect_buy"
       },
       "expectedStatus": 400
+    },
+    {
+      "name": "my_group_invites requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "my_group_invites"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "group_invite_decide requires X-User-Id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "group_invite_decide",
+        "invite_id": 1,
+        "accept": true
+      },
+      "expectedStatus": 400
     }
   ]
 }

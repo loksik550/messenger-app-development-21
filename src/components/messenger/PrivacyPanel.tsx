@@ -37,6 +37,7 @@ export default function PrivacyPanel({
   useEdgeSwipeBack(onClose);
 
   const [readReceipts, setReadReceipts] = useState<boolean>(currentUser.read_receipts_enabled ?? true);
+  const [inviteApproval, setInviteApproval] = useState<boolean>(currentUser.group_invite_approval ?? true);
   const [lastSeen, setLastSeen] = useState<Vis>((currentUser.last_seen_visibility as Vis) || "everyone");
   const [photoVis, setPhotoVis] = useState<Vis>((currentUser.profile_photo_visibility as Vis) || "everyone");
   const [phoneVis, setPhoneVis] = useState<Vis>((currentUser.phone_visibility as Vis) || "contacts");
@@ -125,6 +126,8 @@ export default function PrivacyPanel({
         <SettingsGroup title="Сообщения" footer="Если выключить, вы тоже перестанете видеть, прочитали ли ваши сообщения — как в WhatsApp.">
           <SettingsToggleRow icon="CheckCheck" color="#8b5cf6" label="Отчёты о прочтении" sub="Собеседник видит, что вы прочитали"
             on={readReceipts} onToggle={() => { const v = !readReceipts; setReadReceipts(v); update("read_receipts_enabled", v); }} />
+          <SettingsToggleRow icon="UserPlus" color="#06b6d4" label="Добавление в группы только с моего согласия" sub="Вас не смогут добавить в группу или канал без спроса — придёт приглашение"
+            on={inviteApproval} onToggle={() => { const v = !inviteApproval; setInviteApproval(v); update("group_invite_approval", v); }} />
         </SettingsGroup>
 
         <SettingsGroup title="Устройства">

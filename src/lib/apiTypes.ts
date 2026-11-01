@@ -174,6 +174,7 @@ export interface User {
   notify_preview?: boolean;
   is_staff?: boolean;
   name_fix_deadline?: number | null;
+  group_invite_approval?: boolean;
   notify_groups?: boolean;
   notify_calls?: boolean;
   notify_sound?: string;

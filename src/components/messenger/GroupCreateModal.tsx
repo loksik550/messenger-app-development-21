@@ -63,7 +63,11 @@ export function GroupCreateModal({ currentUser, open, onClose, onCreated }: Prop
         is_channel: isChannel,
         member_ids: selected,
       }, currentUser.id);
-      if (d && d.group) { onCreated(d.group); onClose(); }
+      if (d && d.group) {
+        onCreated(d.group);
+        onClose();
+        if (d.invited > 0) alert(`Приглашения отправлены: ${d.invited}. Участники появятся, когда примут их.`);
+      }
       else setError((d && d.error) || "Ошибка создания группы");
     } catch (e) {
       setError((e as Error)?.message || "Ошибка соединения");

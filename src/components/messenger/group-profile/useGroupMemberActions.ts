@@ -34,6 +34,7 @@ export function useGroupMemberActions({
   const setRole = async (userId: number, role: "admin" | "member") => {
     const r = await api("set_member_role", { group_id: group.id, target_user_id: userId, role }, currentUser.id);
     if (r?.error) { alert(r.error); return; }
+    if (r?.status === "invited") alert("Пользователь добавляет в группы только с согласия — ему отправлено приглашение");
     onMembersChanged();
   };
 

@@ -60,3 +60,23 @@ def is_offensive(name: str) -> bool:
             if any(re.search(p, v) for p in _RU_WORD + _EN_WORD):
                 return True
     return False
+
+
+_VOWELS = set("аеёиоуыэюяaeiouy")
+
+
+def gibberish_error(name: str):
+    """Возвращает текст ошибки, если имя похоже на бессмысленный набор букв."""
+    for word in (name or "").split():
+        w = word.lower()
+        if len(w) > 15:
+            return "Слово в имени слишком длинное — не больше 15 букв"
+        if re.search(r"(.)\1\1", w):
+            return "Имя не должно состоять из повторяющихся букв"
+        if re.search(r"(..+?)\1\1", w):
+            return "Имя не должно состоять из повторяющихся слогов"
+        if len(w) >= 4 and not any(c in _VOWELS for c in w):
+            return "Похоже на случайный набор букв. Укажите настоящее имя"
+        if len(w) >= 6 and len(set(w)) <= 2:
+            return "Похоже на случайный набор букв. Укажите настоящее имя"
+    return None

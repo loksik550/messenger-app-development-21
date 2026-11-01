@@ -11,7 +11,7 @@ import threading
 import psycopg2
 import nova_auth
 import nova_ids
-from name_filter import is_offensive
+from name_filter import is_offensive, gibberish_error
 import secrets as _secrets
 
 
@@ -305,6 +305,9 @@ def _name_error(name: str):
         return "Имя слишком длинное"
     if not _NAME_RE.match(name):
         return "Имя может содержать только буквы — без точек, тире, цифр и других символов"
+    _ge = gibberish_error(name)
+    if _ge:
+        return _ge
     if is_offensive(name):
         return "Имя содержит нецензурные или оскорбительные слова. Укажите настоящее имя"
     return None
@@ -326,6 +329,53 @@ def _enforce_name_deadline(cur, uid: int) -> bool:
     cur.execute(f"UPDATE {SCHEMA}.user_sessions SET revoked = TRUE WHERE user_id = %s", (uid,))
     cur.execute(f"DELETE FROM {SCHEMA}.push_subscriptions WHERE user_id = %s", (uid,))
     return True
+
+
+def _invite_or_add(cur, group_id: int, uid: int, inviter_id: int, now: int) -> str:
+    """Добавляет человека в группу сразу или отправляет приглашение, если он требует согласия."""
+    if uid == inviter_id:
+        return "skip"
+    cur.execute(f"SELECT role FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s", (group_id, uid))
+    r = cur.fetchone()
+    if r and r[0] != "removed":
+        return "already"
+    cur.execute(f"SELECT COALESCE(group_invite_approval, TRUE) FROM {SCHEMA}.users WHERE id=%s", (uid,))
+    u = cur.fetchone()
+    if not u:
+        return "skip"
+    if not u[0]:
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.group_members (group_id, user_id, role, joined_at) VALUES (%s, %s, 'member', %s)
+                ON CONFLICT (group_id, user_id) DO UPDATE SET role='member', joined_at=EXCLUDED.joined_at""",
+            (group_id, uid, now),
+        )
+        return "added"
+    cur.execute(
+        f"SELECT 1 FROM {SCHEMA}.group_invites WHERE group_id=%s AND user_id=%s AND status='pending'",
+        (group_id, uid),
+    )
+    if cur.fetchone():
+        return "invited"
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.group_invites (group_id, user_id, inviter_id, created_at) VALUES (%s, %s, %s, %s)",
+        (group_id, uid, inviter_id, now),
+    )
+    cur.execute(f"SELECT name, COALESCE(is_channel, FALSE) FROM {SCHEMA}.groups WHERE id=%s", (group_id,))
+    g = cur.fetchone() or ("группа", False)
+    cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id=%s", (inviter_id,))
+    inv = (cur.fetchone() or ("Пользователь",))[0]
+    kind_word = "канал" if g[1] else "группу"
+    title = f"Приглашение в {kind_word}"
+    text = f"{inv} приглашает вас в {kind_word} «{g[0]}». Откройте приложение, чтобы принять или отклонить."
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) VALUES (%s, 'group_invite', %s, %s)",
+        (uid, title, text),
+    )
+    _fire_and_forget_http(_push_notify_url(), json.dumps({
+        "action": "send", "recipient_id": uid, "sender_name": title,
+        "message": f"{inv} приглашает вас в {kind_word} «{g[0]}»",
+    }).encode("utf-8"), timeout=5.0)
+    return "invited"
 
 
 def serialize_user(row):
@@ -1230,9 +1280,10 @@ def _handle(event: dict, context) -> dict:
         if not row:
             conn.close()
             return err("Пользователь не найден", 404)
-        cur.execute(f"SELECT name_fix_deadline FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
+        cur.execute(f"SELECT name_fix_deadline, COALESCE(group_invite_approval, TRUE) FROM {SCHEMA}.users WHERE id = %s", (int(user_id),))
         _nr = cur.fetchone()
         nfd = int(_nr[0]) if _nr and _nr[0] else None
+        gia = bool(_nr[1]) if _nr else True
         _admin_env = os.environ.get("ADMIN_USER_ID", "").strip()
         is_staff = _admin_env.isdigit() and int(_admin_env) == int(user_id)
         if not is_staff:
@@ -1246,6 +1297,7 @@ def _handle(event: dict, context) -> dict:
         u = serialize_user(row)
         u["is_staff"] = bool(is_staff)
         u["name_fix_deadline"] = nfd
+        u["group_invite_approval"] = gia
         return ok({"user": u})
 
     # ── get_users ─────────────────────────────────────────────────────────────
@@ -1862,6 +1914,7 @@ def _handle(event: dict, context) -> dict:
             "status_text", "status_until",
             "notify_messages", "notify_groups", "notify_calls", "notify_preview",
             "notify_sound", "notify_vibration", "quiet_hours_from", "quiet_hours_to",
+            "group_invite_approval",
         }
         fields, vals = [], []
         for k, v in (body or {}).items():
@@ -4424,19 +4477,22 @@ def _handle(event: dict, context) -> dict:
             f"INSERT INTO {SCHEMA}.group_members (group_id, user_id, role, joined_at) VALUES (%s, %s, 'owner', %s)",
             (group_id, int(user_id), now)
         )
-        for mid in member_ids:
+        added_n, invited_n = 0, 0
+        for mid in member_ids[:200]:
             try:
-                cur.execute(
-                    f"INSERT INTO {SCHEMA}.group_members (group_id, user_id, role, joined_at) VALUES (%s, %s, 'member', %s) ON CONFLICT DO NOTHING",
-                    (group_id, int(mid), now)
-                )
-            except Exception:
-                pass
+                res = _invite_or_add(cur, group_id, int(mid), int(user_id), now)
+            except (TypeError, ValueError):
+                continue
+            if res == "added":
+                added_n += 1
+            elif res == "invited":
+                invited_n += 1
         conn.close()
         return ok({"group": {"id": group_id, "name": name, "description": description,
                              "avatar_url": avatar_url, "owner_id": int(user_id),
                              "is_channel": is_channel, "invite_link": invite,
-                             "created_at": now, "members_count": 1 + len(member_ids)}})
+                             "created_at": now, "members_count": 1 + added_n},
+                   "added": added_n, "invited": invited_n})
 
     # ── get_groups ────────────────────────────────────────────────────────────
     if action == "get_groups":
@@ -4883,13 +4939,58 @@ def _handle(event: dict, context) -> dict:
             conn.close()
             return err("Только владелец или администратор может добавлять участников", 403)
         now = int(time.time())
-        cur.execute(
-            f"""INSERT INTO {SCHEMA}.group_members (group_id, user_id, role, joined_at)
-                VALUES (%s, %s, 'member', %s) ON CONFLICT (group_id, user_id) DO NOTHING""",
-            (int(group_id), int(new_user_id), now)
-        )
+        res = _invite_or_add(cur, int(group_id), int(new_user_id), int(user_id), now)
         conn.close()
-        return ok({"ok": True})
+        return ok({"ok": True, "status": res})
+
+    # ── приглашения в группы и каналы ─────────────────────────────────────────
+    if action == "my_group_invites":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        cur.execute(
+            f"""SELECT i.id, i.group_id, g.name, COALESCE(g.is_channel, FALSE), g.avatar_url, u.name, i.created_at,
+                       (SELECT COUNT(*) FROM {SCHEMA}.group_members gm WHERE gm.group_id = g.id AND gm.role <> 'removed')
+                FROM {SCHEMA}.group_invites i
+                JOIN {SCHEMA}.groups g ON g.id = i.group_id
+                LEFT JOIN {SCHEMA}.users u ON u.id = i.inviter_id
+                WHERE i.user_id = %s AND i.status = 'pending'
+                ORDER BY i.created_at DESC LIMIT 20""",
+            (int(user_id),)
+        )
+        items = [{"id": r[0], "group_id": r[1], "group_name": r[2], "is_channel": bool(r[3]),
+                  "avatar_url": r[4], "inviter_name": r[5] or "Пользователь", "created_at": r[6],
+                  "members_count": int(r[7] or 0)} for r in cur.fetchall()]
+        conn.close()
+        return ok({"items": items})
+
+    if action == "group_invite_decide":
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        inv_id = int(body.get("invite_id") or 0)
+        accept = bool(body.get("accept"))
+        cur.execute(
+            f"SELECT group_id FROM {SCHEMA}.group_invites WHERE id=%s AND user_id=%s AND status='pending'",
+            (inv_id, int(user_id))
+        )
+        r = cur.fetchone()
+        if not r:
+            conn.close()
+            return err("Приглашение не найдено или уже обработано", 404)
+        now = int(time.time())
+        cur.execute(
+            f"UPDATE {SCHEMA}.group_invites SET status=%s, decided_at=%s WHERE id=%s",
+            ("accepted" if accept else "declined", now, inv_id)
+        )
+        if accept:
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.group_members (group_id, user_id, role, joined_at) VALUES (%s, %s, 'member', %s)
+                    ON CONFLICT (group_id, user_id) DO UPDATE SET role='member', joined_at=EXCLUDED.joined_at""",
+                (int(r[0]), int(user_id), now)
+            )
+        conn.close()
+        return ok({"ok": True, "group_id": int(r[0]), "accepted": accept})
 
     # ── remove_group_member ───────────────────────────────────────────────────
     if action == "remove_group_member":

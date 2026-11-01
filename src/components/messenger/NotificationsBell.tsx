@@ -18,6 +18,7 @@ const KIND_META: Record<string, { icon: string; color: string; bg: string }> = {
   promo: { icon: "Gift", color: "text-amber-400", bg: "bg-amber-500/15" },
   premium: { icon: "Crown", color: "text-amber-400", bg: "bg-amber-500/15" },
   referral: { icon: "Users", color: "text-violet-400", bg: "bg-violet-500/15" },
+  group_invite: { icon: "UserPlus", color: "text-violet-400", bg: "bg-violet-500/15" },
   system: { icon: "Bell", color: "text-violet-400", bg: "bg-violet-500/15" },
 };
 
