@@ -115,7 +115,7 @@ export function ChatHeader({
           </div>
         </div>
       </button>
-      {!chat.saved && <div className="flex items-center gap-1">
+      {!chat.saved && !chat.readOnly && <div className="flex items-center gap-1">
         <button
           onClick={() => onCall && chat.partner_id && onCall(chat.partner_id, chat.name)}
           className="p-2 rounded-xl hover:bg-white/8 transition-colors text-emerald-400 hover:text-emerald-300"
