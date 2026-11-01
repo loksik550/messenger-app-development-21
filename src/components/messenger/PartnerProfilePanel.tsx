@@ -175,8 +175,10 @@ export default function PartnerProfilePanel({
           </p>
 
           <div className="flex items-center gap-3 mt-6">
-            <ActionCircle icon="Phone" label={t("partner.call")} color="text-emerald-400" onClick={() => { onClose(); onCall?.(); }} />
-            <ActionCircle icon="Video" label={t("partner.video")} color="text-sky-400" onClick={() => { onClose(); onVideoCall?.(); }} />
+            {!chat.readOnly && <>
+              <ActionCircle icon="Phone" label={t("partner.call")} color="text-emerald-400" onClick={() => { onClose(); onCall?.(); }} />
+              <ActionCircle icon="Video" label={t("partner.video")} color="text-sky-400" onClick={() => { onClose(); onVideoCall?.(); }} />
+            </>}
             <ActionCircle icon={chat.muted ? "BellOff" : "Bell"} label={chat.muted ? t("partner.unmute") : t("partner.mute")} color="text-violet-400" onClick={() => { onClose(); onToggleMute(); }} />
             <ActionCircle icon="Search" label={t("partner.search")} color="text-amber-400" onClick={() => { onClose(); onSearch(); }} />
           </div>
