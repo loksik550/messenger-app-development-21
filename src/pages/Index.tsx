@@ -51,6 +51,7 @@ import ResetApprovalPrompt from "@/components/messenger/ResetApprovalPrompt";
 import VkPhonePrompt from "@/components/messenger/VkPhonePrompt";
 import NameFixPrompt from "@/components/messenger/NameFixPrompt";
 import GroupInvitePrompt from "@/components/messenger/GroupInvitePrompt";
+import BirthdayReminder from "@/components/messenger/birthday/BirthdayReminder";
 import { reportAppVersion } from "@/lib/reportAppVersion";
 import { NAV_ITEMS } from "@/pages/navItems";
 import ShopPanel from "@/components/messenger/ShopPanel";
@@ -651,6 +652,9 @@ export default function Index() {
                   </div>
                   <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
                 </button>
+              )}
+              {!showArchived && currentUser && !searchQuery.trim() && (
+                <BirthdayReminder userId={currentUser.id} onOpenChat={(id) => handleStartChat(id)} />
               )}
               {!showArchived && (
                 <ChatFolders folder={chatFolder} onChange={setChatFolder} chats={realChats} groups={groups} custom={customFolders.folders} currentUser={currentUser} onFoldersChanged={customFolders.reload} />

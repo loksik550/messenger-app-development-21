@@ -67,7 +67,7 @@ export interface Message {
   read?: boolean;
   sender_id?: number;
   sender_name?: string;
-  kind?: "text" | "missed_call" | "system" | "gift" | "fundraiser" | "sticker" | "bot_message" | "story_reply";
+  kind?: "text" | "missed_call" | "system" | "gift" | "fundraiser" | "sticker" | "bot_message" | "story_reply" | "birthday";
   payload?: GiftPayload | FundraiserPayload | StickerPayload
     | { buttons?: { text: string; callback_data?: string | null; url?: string | null }[][] }
     | { story_id?: number; story_media_url?: string; story_caption?: string | null; story_author_id?: number }

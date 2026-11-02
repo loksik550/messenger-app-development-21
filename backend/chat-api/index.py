@@ -6766,6 +6766,149 @@ def _handle(event: dict, context) -> dict:
         return ok({"owned": True, "balance": new_balance})
 
     # ── lightning_send_to_chat (подарок ⚡ + сообщение в чат) ─────────────────
+    # ── дни рождения друзей ───────────────────────────────────────────────────
+    if action in ("birthdays_today", "birthday_greet"):
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        import datetime as _dt
+        uid = int(user_id)
+        today = (_dt.datetime.utcnow() + _dt.timedelta(hours=3)).date()
+        year = today.year
+        feb28_extra = today.month == 2 and today.day == 28 and not (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))
+
+        if action == "birthdays_today":
+            cur.execute(
+                f"""SELECT u.id, COALESCE(c.name_override, u.name), u.avatar_url, u.birthdate,
+                           EXISTS(SELECT 1 FROM {SCHEMA}.birthday_greetings g WHERE g.user_id = %s AND g.friend_id = u.id AND g.year = %s)
+                    FROM {SCHEMA}.contacts c
+                    JOIN {SCHEMA}.users u ON u.id = c.contact_id
+                    WHERE c.user_id = %s AND (c.name_override IS NULL OR c.name_override <> 'DELETED')
+                      AND u.birthdate IS NOT NULL AND COALESCE(u.is_service, FALSE) = FALSE
+                      AND (u.banned_until IS NULL OR u.banned_until < %s)
+                      AND ((EXTRACT(MONTH FROM u.birthdate) = %s AND EXTRACT(DAY FROM u.birthdate) = %s)
+                           OR (%s AND EXTRACT(MONTH FROM u.birthdate) = 2 AND EXTRACT(DAY FROM u.birthdate) = 29))
+                    LIMIT 20""",
+                (uid, year, uid, int(time.time()), today.month, today.day, feb28_extra),
+            )
+            rows = cur.fetchall()
+            pv = _privacy_map(cur, uid, [r[0] for r in rows])
+            items = []
+            for r in rows:
+                age = None
+                try:
+                    b = r[3]
+                    if b and b.year > 1900:
+                        age = year - b.year
+                except Exception:
+                    age = None
+                items.append({"id": int(r[0]), "name": r[1], "avatar_url": r[2] if pv.get(r[0], {}).get("photo", True) else None,
+                              "age": age if age and 0 < age < 120 else None, "greeted": bool(r[4])})
+            cur.execute(f"SELECT COALESCE(lightning_balance, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            bal = int((cur.fetchone() or [0])[0])
+            conn.close()
+            return ok({"items": items, "lightning": bal})
+
+        try:
+            friend = int(body.get("friend_id") or 0)
+            qty = int(body.get("quantity") or 0)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Неверные параметры")
+        card = str(body.get("card") or "")
+        message = " ".join(str(body.get("message") or "").split())[:200]
+        if card not in ("balloons", "cake", "confetti", "stars"):
+            conn.close()
+            return err("Выберите открытку")
+        if qty < 0 or qty > 100000:
+            conn.close()
+            return err("От 0 до 100000 ⚡")
+        cur.execute(
+            f"""SELECT u.name, u.birthdate FROM {SCHEMA}.contacts c JOIN {SCHEMA}.users u ON u.id = c.contact_id
+                WHERE c.user_id = %s AND c.contact_id = %s AND (c.name_override IS NULL OR c.name_override <> 'DELETED')""",
+            (uid, friend),
+        )
+        fr = cur.fetchone()
+        if not fr or not fr[1]:
+            conn.close()
+            return err("Друг не найден в контактах", 404)
+        bd = fr[1]
+        is_today = (bd.month == today.month and bd.day == today.day) or (feb28_extra and bd.month == 2 and bd.day == 29)
+        if not is_today:
+            conn.close()
+            return err("Сегодня не день рождения этого друга")
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.user_blocks WHERE blocker_id = %s AND blocked_id = %s", (friend, uid))
+        if cur.fetchone():
+            conn.close()
+            return err("Пользователь ограничил сообщения", 403)
+        _deny = _inbound_denied(cur, uid, friend, "message")
+        if _deny:
+            conn.close()
+            return err(_deny, 403)
+        cur.execute(
+            f"SELECT 1 FROM {SCHEMA}.birthday_greetings WHERE user_id = %s AND friend_id = %s AND year = %s",
+            (uid, friend, year),
+        )
+        if cur.fetchone():
+            conn.close()
+            return err("Вы уже поздравили этого друга в этом году")
+        now = int(time.time())
+        cur.execute(f"SELECT name, COALESCE(lightning_balance, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
+        me_row = cur.fetchone()
+        me_name = (me_row[0] if me_row else None) or "Друг"
+        new_bal = int(me_row[1]) if me_row else 0
+        if qty > 0:
+            cur.execute(
+                f"""UPDATE {SCHEMA}.users SET lightning_balance = COALESCE(lightning_balance, 0) - %s
+                    WHERE id = %s AND COALESCE(lightning_balance, 0) >= %s RETURNING lightning_balance""",
+                (qty, uid, qty),
+            )
+            _r = cur.fetchone()
+            if not _r:
+                conn.close()
+                return err(f"Недостаточно ⚡. У вас {new_bal}")
+            new_bal = int(_r[0])
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET lightning_balance = COALESCE(lightning_balance, 0) + %s WHERE id = %s RETURNING lightning_balance",
+                (qty, friend),
+            )
+            their = int((cur.fetchone() or [0])[0])
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.lightning_transactions (user_id, amount, kind, description, related_user_id, balance_after, created_at)
+                    VALUES (%s, %s, 'sent', %s, %s, %s, %s), (%s, %s, 'received', %s, %s, %s, %s)""",
+                (uid, -qty, f"Подарок на день рождения {fr[0]}", friend, new_bal, now,
+                 friend, qty, f"С днём рождения от {me_name}", uid, their, now),
+            )
+        a, b2 = sorted([uid, friend])
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.chats (user1_id, user2_id, created_at) VALUES (%s, %s, %s)
+                ON CONFLICT (user1_id, user2_id) DO UPDATE SET user1_id = EXCLUDED.user1_id RETURNING id""",
+            (a, b2, now),
+        )
+        chat_id = int(cur.fetchone()[0])
+        text = "🎂 С днём рождения!" + (f" + ⚡ {qty}" if qty else "")
+        payload = {"card": card, "quantity": qty, "message": message}
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.messages (chat_id, sender_id, text, created_at, kind, payload_json)
+                VALUES (%s, %s, %s, %s, 'birthday', %s) RETURNING id""",
+            (chat_id, uid, text, now, json.dumps(payload, ensure_ascii=False)),
+        )
+        msg_id = int(cur.fetchone()[0])
+        cur.execute(f"UPDATE {SCHEMA}.chats SET last_message = %s, last_message_at = %s WHERE id = %s", (text[:100], now, chat_id))
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.birthday_greetings (user_id, friend_id, year, card, quantity, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
+            (uid, friend, year, card, qty, now),
+        )
+        _fire_and_forget_http(_push_notify_url(), json.dumps({
+            "action": "send", "recipient_id": friend, "sender_name": me_name,
+            "message": "🎂 Поздравляет вас с днём рождения!" + (f" Подарок: ⚡ {qty}" if qty else ""),
+        }).encode("utf-8"), timeout=5.0)
+        if qty > 0:
+            _grant_xp(cur, uid, "lightning_sent")
+        conn.close()
+        return ok({"ok": True, "chat_id": chat_id, "msg_id": msg_id, "lightning": new_bal})
+
     if action == "lightning_send_to_chat":
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")

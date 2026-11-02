@@ -41,7 +41,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
         forwarded_from_user_id?: number | null;
         forwarded_from_name?: string | null;
         edited_at?: number | null;
-        kind?: "text" | "missed_call" | "system";
+        kind?: Message["kind"];
         payload?: Message["payload"];
         enc_retry?: string;
         media_retry?: string | null;

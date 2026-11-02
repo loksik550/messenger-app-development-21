@@ -564,6 +564,26 @@
         "chat_id": 1
       },
       "expectedStatus": 400
+    },
+    {
+      "name": "birthdays_today без user-id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "birthdays_today"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "birthday_greet без user-id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "birthday_greet",
+        "friend_id": 1,
+        "card": "cake"
+      },
+      "expectedStatus": 400
     }
   ]
 }

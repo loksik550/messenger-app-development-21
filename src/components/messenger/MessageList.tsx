@@ -1,3 +1,4 @@
+import BirthdayBubble from "@/components/messenger/birthday/BirthdayBubble";
 import { type RefObject, type JSX } from "react";
 import Icon from "@/components/ui/icon";
 import { type Chat, type Message, type User } from "@/lib/api";
@@ -109,6 +110,15 @@ export default function MessageList({
               <div key={msg.id} id={`msg-${msg.id}`} data-hold-id={msg.id} data-hold-out={msg.out ? "1" : "0"}
                 className={`flex ${msg.out ? "justify-end" : "justify-start"} my-2 animate-fade-in px-2`}>
                 <GiftBubble msg={msg} />
+              </div>
+            );
+            return;
+          }
+          if (msg.kind === "birthday") {
+            nodes.push(
+              <div key={msg.id} id={`msg-${msg.id}`} data-hold-id={msg.id} data-hold-out={msg.out ? "1" : "0"}
+                className={`flex ${msg.out ? "justify-end" : "justify-start"} my-2 animate-fade-in px-2`}>
+                <BirthdayBubble msg={msg} />
               </div>
             );
             return;
