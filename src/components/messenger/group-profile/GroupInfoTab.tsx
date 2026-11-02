@@ -1,10 +1,12 @@
 import type { Dispatch, SetStateAction } from "react";
 import Icon from "@/components/ui/icon";
 import type { Group } from "@/lib/api";
+import PaidChannelSettings from "@/components/messenger/paid/PaidChannelSettings";
 import type { VerifState } from "@/components/messenger/group-profile/useGroupProfileData";
 
 interface Props {
   info: Group;
+  currentUserId: number;
   isAdmin: boolean;
   isOwner: boolean;
   // описание
@@ -41,7 +43,7 @@ interface Props {
 const fmtDate = (ts: number) => ts ? new Date(ts * 1000).toLocaleDateString("ru", { day: "numeric", month: "long", year: "numeric" }) : "";
 
 export function GroupInfoTab({
-  info, isAdmin, isOwner,
+  info, currentUserId, isAdmin, isOwner,
   editingDesc, setEditingDesc, editDesc, setEditDesc, saveDesc,
   fullInviteUrl, copyState, copyInvite, regenBusy, regenerateInvite,
   verifState, verifBusy, applyVerification,
@@ -154,6 +156,8 @@ export function GroupInfoTab({
                 </div>
               </div>
             )}
+
+            {isOwner && info.is_channel && <PaidChannelSettings groupId={info.id} userId={currentUserId} />}
 
             {/* Только админы могут писать (для каналов и групп) */}
             {isOwner && (

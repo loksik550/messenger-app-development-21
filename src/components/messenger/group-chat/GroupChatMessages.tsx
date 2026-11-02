@@ -111,7 +111,17 @@ export default function GroupChatMessages({
                       <span className="text-[11px] font-semibold text-violet-400 px-1 mb-0.5 max-w-full"><ProName name={msg.sender_name || ""} isPro={msg.sender_pro} emoji={msg.sender_emoji} color={msg.sender_color} effect={msg.sender_effect} badges={msg.sender_badges} userId={msg.sender_id} maxBadges={2} badgeSize={11} /></span>
                     )}
 
-                    {msg.media_type ? (
+                    {msg.kind === "locked" ? (
+                      <div className="relative px-4 py-3 rounded-2xl rounded-bl-sm bg-secondary overflow-hidden min-w-[200px]">
+                        <div className="text-sm leading-relaxed blur-[5px] select-none text-foreground/70" aria-hidden>
+                          {msg.text || "Этот пост доступен только подписчикам канала. Оформите подписку, чтобы читать."}
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center gap-1.5 text-xs font-semibold text-amber-300 bg-black/20">
+                          <Icon name="Lock" size={14} /> {msg.locked_media ? "Фото или видео для подписчиков" : "Пост для подписчиков"}
+                        </div>
+                        <div className="relative text-[10px] mt-1 text-right text-muted-foreground">{msg.time}</div>
+                      </div>
+                    ) : msg.media_type ? (
                       <MediaMessage
                         msg={{ id: msg.id, text: msg.text, time: msg.time || "", out: msg.out,
                           media_type: msg.media_type as "image"|"video"|"audio"|"file",

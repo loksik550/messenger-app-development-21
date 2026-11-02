@@ -584,6 +584,16 @@
         "card": "cake"
       },
       "expectedStatus": 400
+    },
+    {
+      "name": "channel_subscribe без user-id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "channel_subscribe",
+        "group_id": 1
+      },
+      "expectedStatus": 400
     }
   ]
 }

@@ -288,6 +288,8 @@ export interface Group {
   unread_count?: number;
   muted?: boolean;
   archived?: boolean;
+  sub_price?: number;
+  locked?: boolean;
 }
 
 export interface GroupMember {
@@ -321,6 +323,7 @@ export interface GroupMessage {
   edited_at?: number | null;
   kind?: string;
   payload?: AlbumPayload | null;
+  locked_media?: boolean;
   out: boolean;
   time?: string;
   read?: boolean;

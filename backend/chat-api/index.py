@@ -353,6 +353,35 @@ def _watch_state(cur, chat_id: int):
             "now_ms": now_ms}
 
 
+def _paid_access(cur, group_id: int, uid: int):
+    """Платный канал: (цена, есть_доступ, оплачено_до). Владелец и админы всегда с доступом."""
+    cur.execute(f"SELECT COALESCE(sub_price, 0), owner_id, COALESCE(is_channel, FALSE) FROM {SCHEMA}.groups WHERE id = %s", (int(group_id),))
+    g = cur.fetchone()
+    if not g or not g[2] or float(g[0]) <= 0:
+        return 0.0, True, None
+    price = float(g[0])
+    if int(g[1]) == int(uid):
+        return price, True, None
+    cur.execute(f"SELECT role FROM {SCHEMA}.group_members WHERE group_id = %s AND user_id = %s", (int(group_id), int(uid)))
+    r = cur.fetchone()
+    if r and r[0] in ("owner", "admin"):
+        return price, True, None
+    cur.execute(f"SELECT paid_until FROM {SCHEMA}.channel_subscriptions WHERE group_id = %s AND user_id = %s", (int(group_id), int(uid)))
+    sub = cur.fetchone()
+    until = int(sub[0]) if sub else None
+    return price, bool(until and until > int(time.time())), until
+
+
+def _paid_fee_percent(cur) -> float:
+    cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'paid_channel_fee'")
+    r = cur.fetchone()
+    try:
+        v = float(r[0]) if r else 15.0
+    except (TypeError, ValueError):
+        v = 15.0
+    return max(0.0, min(v, 50.0))
+
+
 def _invite_or_add(cur, group_id: int, uid: int, inviter_id: int, now: int) -> str:
     """Добавляет человека в группу сразу или отправляет приглашение, если он требует согласия."""
     if uid == inviter_id:
@@ -2113,9 +2142,13 @@ def _handle(event: dict, context) -> dict:
             (gid,)
         )
         rr = cur.fetchone()
-        conn.close()
         if not rr or not rr[0]:
+            conn.close()
             return ok({"pinned": None})
+        _pp, _pa, _pu = _paid_access(cur, gid, int(user_id))
+        conn.close()
+        if _pp > 0 and not _pa:
+            return ok({"pinned": {"id": rr[0], "text": "🔒 Пост для подписчиков", "sender_name": rr[2] or "", "media_type": None}})
         return ok({"pinned": {"id": rr[0], "text": rr[1] or "", "sender_name": rr[2] or "", "media_type": rr[3]}})
 
     if action == "set_group_only_admins":
@@ -4664,21 +4697,27 @@ def _handle(event: dict, context) -> dict:
                            WHERE gmu.user_id = %s AND gmu.group_id = g.id
                              AND (gmu.muted_until = 0 OR gmu.muted_until > EXTRACT(EPOCH FROM NOW()))
                        ) AS muted,
-                       gm.archived
+                       gm.archived,
+                       (COALESCE(g.is_channel, FALSE) AND COALESCE(g.sub_price, 0) > 0 AND g.owner_id <> %s
+                        AND gm.role NOT IN ('owner', 'admin')
+                        AND NOT EXISTS (SELECT 1 FROM {SCHEMA}.channel_subscriptions cs
+                                        WHERE cs.group_id = g.id AND cs.user_id = %s AND cs.paid_until > EXTRACT(EPOCH FROM NOW()))) AS locked,
+                       COALESCE(g.sub_price, 0)
                 FROM {SCHEMA}.groups g
                 JOIN {SCHEMA}.group_members gm ON gm.group_id = g.id AND gm.user_id = %s AND gm.role <> 'removed'
                 JOIN {SCHEMA}.group_members gm2 ON gm2.group_id = g.id AND gm2.role <> 'removed'
                 WHERE g.removed_at IS NULL
                 GROUP BY g.id, gm.cleared_at, gm.role, gm.archived
                 ORDER BY g.last_message_at DESC NULLS LAST""",
-            (int(user_id), int(user_id), int(user_id), int(user_id))
+            (int(user_id), int(user_id), int(user_id), int(user_id), int(user_id), int(user_id))
         )
         rows = cur.fetchall()
         groups = []
         for r in rows:
             groups.append({
                 "id": r[0], "name": r[1], "description": r[2], "avatar_url": r[3],
-                "owner_id": r[4], "is_channel": r[5], "last_message": r[6] or "",
+                "owner_id": r[4], "is_channel": r[5], "last_message": ("🔒 Пост для подписчиков" if r[14] and r[6] else (r[6] or "")),
+                "sub_price": float(r[15] or 0), "locked": bool(r[14]),
                 "last_message_at": r[7], "invite_link": r[8], "members_count": r[9],
                 "unread_count": r[10] or 0,
                 "my_role": r[11],
@@ -4708,6 +4747,8 @@ def _handle(event: dict, context) -> dict:
             return err("Нет доступа", 403)
         cleared_at = int(member_row[0] or 0)
         effective_since = max(since, cleared_at)
+        _pp, _paccess, _puntil = _paid_access(cur, int(group_id), int(user_id))
+        _locked = _pp > 0 and not _paccess
         cur.execute(
             f"""SELECT m.id, m.sender_id, u.name, u.avatar_url, m.text,
                        m.media_type, m.media_url, m.file_name, m.file_size, m.duration,
@@ -4772,18 +4813,20 @@ def _handle(event: dict, context) -> dict:
             is_out = r[1] == int(user_id)
             messages.append({
                 "id": r[0], "sender_id": r[1], "sender_name": r[2],
-                "sender_avatar": r[3] if _gpv.get(r[1], {}).get("photo", True) else None, "text": r[4] or "",
+                "sender_avatar": r[3] if _gpv.get(r[1], {}).get("photo", True) else None,
+                "text": (((r[4] or "")[:60] + "…") if len(r[4] or "") > 60 else "") if _locked else (r[4] or ""),
                 "sender_pro": bool(_gpv.get(r[1], {}).get("pro")),
                 "sender_emoji": _gpv.get(r[1], {}).get("emoji_status"),
                 "sender_color": _gpv.get(r[1], {}).get("name_color"),
                 "sender_avatar_video": _gpv.get(r[1], {}).get("avatar_video_url"),
                 "sender_effect": _gpv.get(r[1], {}).get("name_effect"),
                 "sender_badges": _gpv.get(r[1], {}).get("badges") or [],
-                "media_type": r[5], "media_url": r[6],
-                "file_name": r[7], "file_size": r[8], "duration": r[9],
+                "media_type": None if _locked else r[5], "media_url": None if _locked else r[6],
+                "file_name": None if _locked else r[7], "file_size": None if _locked else r[8], "duration": None if _locked else r[9],
                 "reply_to_id": r[10], "created_at": r[11],
-                "edited_at": r[12], "kind": r[13] or "text",
-                "payload": (json.loads(r[14]) if r[14] else None),
+                "edited_at": r[12], "kind": "locked" if _locked else (r[13] or "text"),
+                "payload": None if _locked else (json.loads(r[14]) if r[14] else None),
+                "locked_media": bool(_locked and r[5]),
                 "out": is_out,
                 "read": (r[0] in read_set) if is_out else False,
                 "reactions": reactions_map.get(r[0], []),
@@ -4797,7 +4840,8 @@ def _handle(event: dict, context) -> dict:
         _gc = cur.fetchone()
         conn.close()
         active_call = {"call_id": _gc[0], "count": int(_gc[1] or 0)} if _gc and int(_gc[1] or 0) > 0 else None
-        return ok({"messages": messages, "active_call": active_call})
+        return ok({"messages": messages, "active_call": active_call,
+                   "paid": {"price": _pp, "access": _paccess, "paid_until": _puntil} if _pp > 0 else None})
 
     # ── send_group_message ────────────────────────────────────────────────────
     if action == "send_group_message":
@@ -4866,6 +4910,8 @@ def _handle(event: dict, context) -> dict:
         )
         msg_id = cur.fetchone()[0]
         last_msg = text[:100] if text else ("[медиа]")
+        cur.execute(f"SELECT COALESCE(sub_price, 0) > 0 AND COALESCE(is_channel, FALSE) FROM {SCHEMA}.groups WHERE id = %s", (int(group_id),))
+        _paid_ch = bool((cur.fetchone() or [False])[0])
         cur.execute(
             f"UPDATE {SCHEMA}.groups SET last_message=%s, last_message_at=%s WHERE id=%s",
             (last_msg, now, int(group_id))
@@ -4882,7 +4928,7 @@ def _handle(event: dict, context) -> dict:
                 "group_id": int(group_id),
                 "group_name": group_name or "",
                 "sender_id": int(user_id),
-                "message": (text[:100] if text else "[медиа]"),
+                "message": ("🔒 Новый пост для подписчиков" if _paid_ch else (text[:100] if text else "[медиа]")),
                 "message_id": int(msg_id),
                 "is_channel": bool(is_channel),
             }).encode("utf-8")
@@ -5012,6 +5058,10 @@ def _handle(event: dict, context) -> dict:
         if not mrow:
             conn.close()
             return err("Нет доступа", 403)
+        _pp, _pa, _pu = _paid_access(cur, int(group_id), int(user_id))
+        if _pp > 0 and not _pa:
+            conn.close()
+            return ok({"results": []})
         cleared_at = int(mrow[0] or 0)
         like = "%" + query.replace("%", "\\%").replace("_", "\\_") + "%"
         cur.execute(
@@ -5196,6 +5246,115 @@ def _handle(event: dict, context) -> dict:
         return ok({"ok": True})
 
     # ── get_group_info ────────────────────────────────────────────────────────
+    # ── платные каналы ────────────────────────────────────────────────────────
+    if action in ("channel_set_price", "channel_subscribe", "channel_paid_stats"):
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        try:
+            gid = int(body.get("group_id") or 0)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Неверный group_id")
+        uid = int(user_id)
+        cur.execute(
+            f"SELECT owner_id, COALESCE(is_channel, FALSE), name, COALESCE(sub_price, 0) FROM {SCHEMA}.groups WHERE id = %s AND removed_at IS NULL",
+            (gid,),
+        )
+        g = cur.fetchone()
+        if not g:
+            conn.close()
+            return err("Канал не найден", 404)
+        owner_id, is_ch, gname, price = int(g[0]), bool(g[1]), g[2], float(g[3])
+        fee_pct = _paid_fee_percent(cur)
+
+        if action == "channel_set_price":
+            if owner_id != uid:
+                conn.close()
+                return err("Цену может менять только владелец", 403)
+            if not is_ch:
+                conn.close()
+                return err("Платная подписка доступна только для каналов")
+            try:
+                new_price = round(float(body.get("price") or 0), 2)
+            except (TypeError, ValueError):
+                conn.close()
+                return err("Неверная цена")
+            if new_price != 0 and not (50 <= new_price <= 10000):
+                conn.close()
+                return err("Цена от 50 до 10 000 ₽ в месяц или 0, чтобы сделать канал бесплатным")
+            cur.execute(f"UPDATE {SCHEMA}.groups SET sub_price = %s WHERE id = %s", (new_price, gid))
+            conn.close()
+            return ok({"ok": True, "sub_price": new_price, "fee_percent": fee_pct})
+
+        if action == "channel_paid_stats":
+            if owner_id != uid:
+                conn.close()
+                return err("Только для владельца", 403)
+            now = int(time.time())
+            cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.channel_subscriptions WHERE group_id = %s AND paid_until > %s", (gid, now))
+            active = int(cur.fetchone()[0])
+            cur.execute(
+                f"SELECT COALESCE(SUM(author_amount), 0), COALESCE(SUM(author_amount) FILTER (WHERE created_at > %s), 0) FROM {SCHEMA}.channel_payments WHERE group_id = %s",
+                (now - 30 * 86400, gid),
+            )
+            tot = cur.fetchone()
+            conn.close()
+            return ok({"price": price, "fee_percent": fee_pct, "active_subscribers": active,
+                       "earned_total": float(tot[0]), "earned_30d": float(tot[1])})
+
+        if price <= 0:
+            conn.close()
+            return err("Канал бесплатный")
+        if owner_id == uid:
+            conn.close()
+            return err("Это ваш канал")
+        cur.execute(f"SELECT role FROM {SCHEMA}.group_members WHERE group_id = %s AND user_id = %s", (gid, uid))
+        mr = cur.fetchone()
+        if not mr or mr[0] == "removed":
+            conn.close()
+            return err("Сначала вступите в канал", 403)
+        now = int(time.time())
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) - %s WHERE id = %s AND COALESCE(wallet_balance, 0) >= %s RETURNING wallet_balance",
+            (price, uid, price),
+        )
+        r = cur.fetchone()
+        if not r:
+            cur.execute(f"SELECT COALESCE(wallet_balance, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            bal = float((cur.fetchone() or [0])[0])
+            conn.close()
+            return err(f"Недостаточно средств: нужно {price:g} ₽, на балансе {bal:g} ₽. Пополните кошелёк.", 402)
+        my_bal = float(r[0])
+        fee = round(price * fee_pct / 100, 2)
+        author = round(price - fee, 2)
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) + %s WHERE id = %s RETURNING wallet_balance",
+            (author, owner_id),
+        )
+        owner_bal = float((cur.fetchone() or [0])[0])
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.channel_subscriptions (group_id, user_id, paid_until, created_at) VALUES (%s, %s, %s, %s)
+                ON CONFLICT (group_id, user_id) DO UPDATE SET
+                  paid_until = GREATEST({SCHEMA}.channel_subscriptions.paid_until, EXCLUDED.created_at) + 30 * 86400
+                RETURNING paid_until""",
+            (gid, uid, now + 30 * 86400, now),
+        )
+        until = int(cur.fetchone()[0])
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.channel_payments (group_id, user_id, owner_id, amount, fee, author_amount, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (gid, uid, owner_id, price, fee, author, now),
+        )
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
+                VALUES (%s, %s, 'channel_sub', %s, %s, %s), (%s, %s, 'channel_income', %s, %s, %s)""",
+            (uid, -price, f"Подписка на канал «{gname}» на 30 дней", my_bal, now,
+             owner_id, author, f"Подписка на «{gname}» (комиссия Nova {fee_pct:g}%)", owner_bal, now),
+        )
+        conn.close()
+        return ok({"ok": True, "paid_until": until, "balance": my_bal})
+
     if action == "get_group_info":
         if not user_id:
             conn.close(); return err("Нужен X-User-Id")
@@ -5215,7 +5374,7 @@ def _handle(event: dict, context) -> dict:
             f"""SELECT g.id, g.name, g.description, g.avatar_url, g.owner_id, g.is_channel,
                        g.invite_link, g.created_at, g.last_message, g.last_message_at,
                        (SELECT COUNT(*) FROM {SCHEMA}.group_members gm WHERE gm.group_id=g.id AND gm.role!='removed') AS members_count,
-                       COALESCE(g.only_admins_post, FALSE)
+                       COALESCE(g.only_admins_post, FALSE), COALESCE(g.sub_price, 0)
                 FROM {SCHEMA}.groups g WHERE g.id=%s""",
             (gid,)
         )
@@ -5230,6 +5389,7 @@ def _handle(event: dict, context) -> dict:
             "last_message": r[8] or "", "last_message_at": int(r[9] or 0),
             "members_count": int(r[10] or 0),
             "only_admins_post": bool(r[11]),
+            "sub_price": float(r[12] or 0),
             "my_role": me[0],
         }})
 
@@ -5408,7 +5568,8 @@ def _handle(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT g.id, g.name, COALESCE(g.description, '') AS description,
                        g.avatar_url, g.is_channel,
-                       (SELECT COUNT(*) FROM {SCHEMA}.group_members gm WHERE gm.group_id=g.id AND gm.role!='removed') AS members
+                       (SELECT COUNT(*) FROM {SCHEMA}.group_members gm WHERE gm.group_id=g.id AND gm.role!='removed') AS members,
+                       COALESCE(g.sub_price, 0)
                 FROM {SCHEMA}.groups g
                 WHERE (g.name ILIKE %s OR COALESCE(g.description, '') ILIKE %s)
                   AND g.removed_at IS NULL AND COALESCE(g.is_test, FALSE) = FALSE
@@ -5420,6 +5581,7 @@ def _handle(event: dict, context) -> dict:
         return ok({"items": [{
             "id": r[0], "name": r[1], "description": r[2], "avatar_url": r[3],
             "is_channel": bool(r[4]), "members_count": int(r[5] or 0),
+            "sub_price": float(r[6] or 0),
         } for r in rows]})
 
     # ── set_member_role ───────────────────────────────────────────────────────

@@ -184,6 +184,7 @@ export function GroupProfilePanel({
         {tab === "info" && (
           <GroupInfoTab
             info={info}
+            currentUserId={currentUser.id}
             isAdmin={isAdmin}
             isOwner={isOwner}
             editingDesc={editingDesc}

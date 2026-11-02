@@ -16,6 +16,7 @@ import GroupChatMessages from "@/components/messenger/group-chat/GroupChatMessag
 import GroupChatInput from "@/components/messenger/group-chat/GroupChatInput";
 import { useAdaptivePoll } from "@/hooks/useAdaptivePoll";
 import { useGroupMedia } from "@/components/messenger/useGroupMedia";
+import PaidChannelGate, { PaidUntilBar, type PaidInfo } from "@/components/messenger/paid/PaidChannelGate";
 
 const POLL_MS = 3500;
 
@@ -62,6 +63,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     };
   }, []);
 
+  const [paid, setPaid] = useState<PaidInfo | null>(null);
   const pendingGroupMsgRef = useRef<(i: OutboxItem) => GroupMessage>(() => ({} as GroupMessage));
   const toTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
 
@@ -69,6 +71,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
     const d = await api("get_group_messages", { group_id: group.id, since }, currentUser.id);
     if (!d.messages) return false;
     setActiveCall(d.active_call || null);
+    setPaid((d.paid as PaidInfo | null) || null);
     const msgs: GroupMessage[] = d.messages.map((m: GroupMessage) => ({ ...m, time: toTime(m.created_at) }));
     let changed = false;
     if (since === 0) {
@@ -379,6 +382,8 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         onCall={group.is_channel ? undefined : () => startGroupCall({ id: group.id, name: group.name, avatar_url: group.avatar_url })}
       />
 
+      {paid?.access && paid.paid_until && <PaidUntilBar until={paid.paid_until} />}
+
       <GroupChatMessages
         group={group}
         currentUser={currentUser}
@@ -431,6 +436,16 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         />
       )}
 
+      {paid && !paid.access ? (
+        <PaidChannelGate
+          groupId={group.id}
+          userId={currentUser.id}
+          channelName={group.name}
+          paid={paid}
+          onPaid={() => loadMessages(0)}
+          onOpenWallet={() => window.dispatchEvent(new CustomEvent("nova:open-wallet"))}
+        />
+      ) : (
       <GroupChatInput
         isPro={!!currentUser.is_pro}
         group={group}
@@ -463,6 +478,7 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         onStopRecording={stopRecording}
         onCancelRecording={cancelRecording}
       />
+      )}
 
       {/* Video circle */}
       <VideoCircleRecorder open={showVideoCircle} onClose={() => setShowVideoCircle(false)}

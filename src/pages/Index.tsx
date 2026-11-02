@@ -234,6 +234,12 @@ export default function Index() {
     return () => clearInterval(t);
   }, [currentUser?.id]);
 
+  useEffect(() => {
+    const h = () => openOverlay(setShowWallet);
+    window.addEventListener("nova:open-wallet", h);
+    return () => window.removeEventListener("nova:open-wallet", h);
+  });
+
   const handleStartChat = async (partnerId: number, known?: Pick<User, "name" | "avatar_url">) => {
     if (!currentUser) return;
     const data = await api("get_or_create_chat", { partner_id: partnerId }, currentUser.id);
