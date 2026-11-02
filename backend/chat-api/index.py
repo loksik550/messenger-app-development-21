@@ -331,6 +331,28 @@ def _enforce_name_deadline(cur, uid: int) -> bool:
     return True
 
 
+_YT_RE = re.compile(r"(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/))([A-Za-z0-9_-]{11})")
+_WATCH_EMOJI = {"❤️", "🔥", "😂", "😮", "👏", "😢"}
+
+
+def _watch_state(cur, chat_id: int):
+    """Текущее состояние совместного просмотра в чате или None."""
+    cur.execute(
+        f"""SELECT source, url, title, started_by, playing, position, updated_ms, updated_by, version
+            FROM {SCHEMA}.watch_sessions WHERE chat_id = %s AND ended_at IS NULL""",
+        (int(chat_id),),
+    )
+    r = cur.fetchone()
+    if not r:
+        return None
+    now_ms = int(time.time() * 1000)
+    if not r[4] and now_ms - int(r[6]) > 6 * 3600 * 1000:
+        return None
+    return {"source": r[0], "url": r[1], "title": r[2], "started_by": int(r[3]), "playing": bool(r[4]),
+            "position": float(r[5]), "updated_ms": int(r[6]), "updated_by": int(r[7]), "version": int(r[8]),
+            "now_ms": now_ms}
+
+
 def _invite_or_add(cur, group_id: int, uid: int, inviter_id: int, now: int) -> str:
     """Добавляет человека в группу сразу или отправляет приглашение, если он требует согласия."""
     if uid == inviter_id:
@@ -1726,7 +1748,11 @@ def _handle(event: dict, context) -> dict:
             "enc": r[23],
             "reactions": r[25] or [],
         } for r in rows]
-        return ok({"messages": messages, "removed_ids": removed_ids, "read_up_to": read_up_to, "now": int(time.time()), "has_more": has_more})
+        try:
+            _watch = _watch_state(cur, cid)
+        except Exception:
+            _watch = None
+        return ok({"messages": messages, "removed_ids": removed_ids, "read_up_to": read_up_to, "now": int(time.time()), "has_more": has_more, "watch": _watch})
 
     # ── scheduled_messages ────────────────────────────────────────────────────
     if action == "schedule_message":
@@ -2605,6 +2631,114 @@ def _handle(event: dict, context) -> dict:
         return ok({"id": mid, "created_at": now})
 
     # ── send_message ──────────────────────────────────────────────────────────
+    # ── совместный просмотр ───────────────────────────────────────────────────
+    if action in ("watch_start", "watch_control", "watch_stop", "watch_react"):
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        try:
+            w_chat = int(body.get("chat_id"))
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Укажите chat_id")
+        if not _is_chat_member(cur, w_chat, int(user_id)):
+            conn.close()
+            return err("Нет доступа к чату", 403)
+        uid = int(user_id)
+        now_ms = int(time.time() * 1000)
+
+        if action == "watch_start":
+            source = str(body.get("source") or "")
+            url = str(body.get("url") or "").strip()[:2000]
+            title = " ".join(str(body.get("title") or "").split())[:120]
+            if source == "youtube":
+                m = _YT_RE.search(url)
+                if not m:
+                    conn.close()
+                    return err("Не удалось распознать ссылку YouTube")
+                url = m.group(1)
+                title = title or "Видео с YouTube"
+            elif source == "file":
+                if not url.startswith("https://"):
+                    conn.close()
+                    return err("Нужна ссылка на видео, начинающаяся с https://")
+                title = title or "Видео"
+            else:
+                conn.close()
+                return err("Неизвестный источник видео")
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.watch_sessions
+                    (chat_id, source, url, title, started_by, playing, position, updated_ms, updated_by, version, created_at, ended_at)
+                    VALUES (%s, %s, %s, %s, %s, FALSE, 0, %s, %s, 1, %s, NULL)
+                    ON CONFLICT (chat_id) DO UPDATE SET source = EXCLUDED.source, url = EXCLUDED.url, title = EXCLUDED.title,
+                      started_by = EXCLUDED.started_by, playing = FALSE, position = 0, updated_ms = EXCLUDED.updated_ms,
+                      updated_by = EXCLUDED.updated_by, version = {SCHEMA}.watch_sessions.version + 1,
+                      created_at = EXCLUDED.created_at, ended_at = NULL""",
+                (w_chat, source, url, title, uid, now_ms, uid, int(now_ms / 1000)),
+            )
+            now_s = int(time.time())
+            note = f"🎬 Смотрим вместе: «{title}»"
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.messages (chat_id, sender_id, text, created_at, kind) VALUES (%s, %s, %s, %s, 'text')",
+                (w_chat, uid, note, now_s),
+            )
+            cur.execute(f"UPDATE {SCHEMA}.chats SET last_message = %s, last_message_at = %s WHERE id = %s", (note[:100], now_s, w_chat))
+            cur.execute(
+                f"SELECT CASE WHEN user1_id = %s THEN user2_id ELSE user1_id END FROM {SCHEMA}.chats WHERE id = %s",
+                (uid, w_chat),
+            )
+            pr = cur.fetchone()
+            cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+            me_name = (cur.fetchone() or ("Собеседник",))[0]
+            if pr and pr[0]:
+                _fire_and_forget_http(_push_notify_url(), json.dumps({
+                    "action": "send", "recipient_id": int(pr[0]), "sender_name": me_name,
+                    "message": f"Приглашает смотреть вместе: «{title}»",
+                }).encode("utf-8"), timeout=5.0)
+            st = _watch_state(cur, w_chat)
+            conn.close()
+            return ok({"watch": st})
+
+        if action == "watch_control":
+            playing = bool(body.get("playing"))
+            try:
+                position = max(0.0, min(float(body.get("position") or 0), 86400.0))
+            except (TypeError, ValueError):
+                position = 0.0
+            cur.execute(
+                f"""UPDATE {SCHEMA}.watch_sessions SET playing = %s, position = %s, updated_ms = %s, updated_by = %s,
+                    version = version + 1 WHERE chat_id = %s AND ended_at IS NULL""",
+                (playing, position, now_ms, uid, w_chat),
+            )
+            st = _watch_state(cur, w_chat)
+            conn.close()
+            return ok({"watch": st})
+
+        if action == "watch_stop":
+            cur.execute(
+                f"UPDATE {SCHEMA}.watch_sessions SET ended_at = %s, playing = FALSE WHERE chat_id = %s AND ended_at IS NULL",
+                (int(now_ms / 1000), w_chat),
+            )
+            conn.close()
+            return ok({"ok": True})
+
+        emoji = str(body.get("emoji") or "")
+        if emoji not in _WATCH_EMOJI:
+            conn.close()
+            return err("Недопустимая реакция")
+        if not _rate_limit(cur, f"wr:{uid}", 90):
+            conn.close()
+            return err("Слишком много реакций", 429)
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.watch_reactions (chat_id, user_id, emoji, created_ms) VALUES (%s, %s, %s, %s) RETURNING id",
+            (w_chat, uid, emoji, now_ms),
+        )
+        rid = int(cur.fetchone()[0])
+        if rid % 50 == 0:
+            cur.execute(f"DELETE FROM {SCHEMA}.watch_reactions WHERE created_ms < %s", (now_ms - 120000,))
+        conn.close()
+        return ok({"id": rid})
+
     if action == "send_message":
         if not user_id:
             conn.close()

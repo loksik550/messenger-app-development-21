@@ -18,6 +18,8 @@ export function ChatHeader({
   showSearch,
   setShowSearch,
   e2eSlot,
+  onWatchTogether,
+  watchActive,
 }: {
   chat: Chat;
   onBack: () => void;
@@ -40,6 +42,8 @@ export function ChatHeader({
   e2eSlot?: React.ReactNode;
   disappearingSeconds?: number | null;
   onChooseWallpaper?: () => void;
+  onWatchTogether?: () => void;
+  watchActive?: boolean;
 }) {
   const { t } = useT();
   const netOnline = useOnline();
@@ -116,6 +120,15 @@ export function ChatHeader({
         </div>
       </button>
       {!chat.saved && !chat.readOnly && <div className="flex items-center gap-1">
+        {onWatchTogether && (
+          <button
+            onClick={onWatchTogether}
+            aria-label="Смотреть вместе"
+            className={`p-2 rounded-xl hover:bg-white/8 transition-colors ${watchActive ? "text-fuchsia-300 bg-fuchsia-500/15" : "text-violet-400 hover:text-violet-300"}`}
+          >
+            <Icon name="MonitorPlay" size={18} />
+          </button>
+        )}
         <button
           onClick={() => onCall && chat.partner_id && onCall(chat.partner_id, chat.name)}
           className="p-2 rounded-xl hover:bg-white/8 transition-colors text-emerald-400 hover:text-emerald-300"

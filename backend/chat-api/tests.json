@@ -554,6 +554,16 @@
         "accept": true
       },
       "expectedStatus": 400
+    },
+    {
+      "name": "watch_start без user-id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "watch_start",
+        "chat_id": 1
+      },
+      "expectedStatus": 400
     }
   ]
 }

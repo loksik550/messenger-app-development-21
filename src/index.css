@@ -993,3 +993,10 @@
 :root.skin-cyber .skin-ticker { color: #e5e7eb; background: rgba(6,9,16,.9); border-color: rgba(255,255,255,.12); margin-top: -0.75rem; }
 :root.skin-cyber .skin-ticker-track span::first-letter { color: #fde047; }
 @media (prefers-reduced-motion: reduce) { .skin-ticker-track { animation-duration: 80s; } }
+
+@keyframes watch-float {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  15% { opacity: 1; transform: translateY(-10%) scale(1.1); }
+  100% { transform: translateY(-260%) scale(1); opacity: 0; }
+}
+.watch-float { animation: watch-float 2.5s ease-out forwards; }

@@ -24,6 +24,8 @@ import { ChatModals } from "@/components/messenger/ChatModals";
 import { MediaActionsContext, type MediaMessageActions } from "@/components/messenger/MediaActionsContext";
 import SelectionBar from "@/components/messenger/SelectionBar";
 import MessageActionSheet from "@/components/messenger/MessageActionSheet";
+import WatchTogetherPanel from "@/components/messenger/watch/WatchTogetherPanel";
+import WatchStartSheet from "@/components/messenger/watch/WatchStartSheet";
 
 // Re-export atoms so existing imports from ChatComponents still work
 export { Avatar, TypingIndicator, ChatList } from "@/components/messenger/ChatAtoms";
@@ -46,7 +48,9 @@ export function ChatWindow({
   onOpenStickersStore?: () => void;
 }) {
   useEdgeSwipeBack(onBack);
-  const { messages, setMessages, isTyping, setLastSince, hasMore, loadingOlder, loadOlder } = useChatMessages(chat, currentUser);
+  const { messages, setMessages, isTyping, setLastSince, hasMore, loadingOlder, loadOlder, watch, setWatch } = useChatMessages(chat, currentUser);
+  const [showWatchStart, setShowWatchStart] = useState(false);
+  const canWatch = !chat.group && !chat.saved && !chat.readOnly;
   const [input, setInput] = useState("");
   const [showAttach, setShowAttach] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -247,7 +251,29 @@ export function ChatWindow({
         disappearingSeconds={disappearingSec}
         onChooseWallpaper={() => setShowWallpaper(true)}
         e2eSlot={<E2EBadge sec={e2eSec} onClick={() => setShowE2E(true)} />}
+        onWatchTogether={canWatch ? () => setShowWatchStart(true) : undefined}
+        watchActive={!!watch}
       />
+
+      {canWatch && watch && (
+        <WatchTogetherPanel
+          key={watch.url}
+          chatId={chat.id}
+          userId={currentUser.id}
+          partnerName={chat.name}
+          initial={watch}
+          onEnded={() => setWatch(null)}
+        />
+      )}
+
+      {showWatchStart && (
+        <WatchStartSheet
+          chatId={chat.id}
+          userId={currentUser.id}
+          onStarted={(st) => setWatch(st)}
+          onClose={() => setShowWatchStart(false)}
+        />
+      )}
 
       {showE2E && (
         <E2EPanel chatId={chat.id} userId={currentUser.id} partnerName={chat.name} sec={e2eSec} onClose={() => setShowE2E(false)} />

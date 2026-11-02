@@ -27,7 +27,7 @@ def _entry(event: dict, context) -> dict:
     """
     Лёгкий polling-эндпоинт для Nova: typing-индикатор, опрос звонков и доспевших отложенных сообщений.
     Вынесен из chat-api ради скорости и снижения compute-секунд.
-    Actions: get_typing, get_call_signals, poll_incoming_call, scheduled_run_due, ping
+    Actions: watch_poll, get_typing, get_call_signals, poll_incoming_call, scheduled_run_due, ping
     """
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
@@ -49,6 +49,50 @@ def _entry(event: dict, context) -> dict:
     if not nova_auth.check(cur, event, user_id):
         conn.close()
         return nova_auth.denied(CORS)
+
+    # ── watch_poll: синхронизация совместного просмотра ─────────────────────
+    if action == "watch_poll":
+        try:
+            w_chat = int(body.get("chat_id"))
+            after = int(body.get("after_reaction") or 0)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Укажите chat_id")
+        cur.execute(
+            f"SELECT 1 FROM {SCHEMA}.chats WHERE id = %s AND (user1_id = %s OR user2_id = %s)",
+            (w_chat, int(user_id), int(user_id)),
+        )
+        if not cur.fetchone():
+            conn.close()
+            return err("Нет доступа к чату", 403)
+        now_ms = int(time.time() * 1000)
+        cur.execute(
+            f"""SELECT source, url, title, started_by, playing, position, updated_ms, updated_by, version
+                FROM {SCHEMA}.watch_sessions WHERE chat_id = %s AND ended_at IS NULL""",
+            (w_chat,),
+        )
+        r = cur.fetchone()
+        watch = None
+        if r:
+            watch = {"source": r[0], "url": r[1], "title": r[2], "started_by": int(r[3]), "playing": bool(r[4]),
+                     "position": float(r[5]), "updated_ms": int(r[6]), "updated_by": int(r[7]), "version": int(r[8]),
+                     "now_ms": now_ms}
+        if after <= 0:
+            cur.execute(f"SELECT COALESCE(MAX(id), 0) FROM {SCHEMA}.watch_reactions WHERE chat_id = %s", (w_chat,))
+            last_id = int(cur.fetchone()[0])
+            reactions = []
+        else:
+            cur.execute(
+                f"""SELECT id, user_id, emoji FROM {SCHEMA}.watch_reactions
+                    WHERE chat_id = %s AND id > %s AND user_id <> %s AND created_ms > %s ORDER BY id LIMIT 30""",
+                (w_chat, after, int(user_id), now_ms - 20000),
+            )
+            rows = cur.fetchall()
+            reactions = [{"id": int(x[0]), "emoji": x[2]} for x in rows]
+            cur.execute(f"SELECT COALESCE(MAX(id), 0) FROM {SCHEMA}.watch_reactions WHERE chat_id = %s", (w_chat,))
+            last_id = max(after, int(cur.fetchone()[0]))
+        conn.close()
+        return ok({"watch": watch, "reactions": reactions, "last_reaction": last_id})
 
     # ── get_typing ───────────────────────────────────────────────────────────
     if action == "get_typing":

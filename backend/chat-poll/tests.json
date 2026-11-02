@@ -36,6 +36,16 @@
         "action": "wat"
       },
       "expectedStatus": 401
+    },
+    {
+      "name": "watch_poll без user-id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "watch_poll",
+        "chat_id": 1
+      },
+      "expectedStatus": 400
     }
   ]
 }

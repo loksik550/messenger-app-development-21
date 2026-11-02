@@ -1,3 +1,4 @@
+import type { WatchState } from "@/components/messenger/watch/watchTypes";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api, type Chat, type Message, type Reaction, type User } from "@/lib/api";
 import { playMessageSound } from "@/lib/sounds";
@@ -27,6 +28,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
   const [lastSince, setLastSince] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [watch, setWatch] = useState<WatchState | null>(null);
 
   const readUpToRef = useRef(0);
 
@@ -74,6 +76,10 @@ export function useChatMessages(chat: Chat, currentUser: User) {
   const loadMessages = useCallback(async (since = 0): Promise<boolean> => {
     const data = await api("get_messages", since === 0 ? { chat_id: chat.id, since, limit: PAGE } : { chat_id: chat.id, since }, currentUser.id);
     if (since === 0) setHasMore(!!data.has_more);
+    if (data && !data.error && "watch" in data) {
+      const w = (data.watch || null) as WatchState | null;
+      setWatch(prev => (prev?.version === w?.version && prev?.url === w?.url ? prev : w));
+    }
     let changed = false;
 
     // Удаляем у себя то, что удалили на сервере (для получателя)
@@ -240,7 +246,7 @@ export function useChatMessages(chat: Chat, currentUser: User) {
     return changed;
   }, [chat.id, currentUser.id], 4000, 8000);
 
-  return { messages, setMessages, isTyping, lastSince, setLastSince, loadMessages, hasMore, loadingOlder, loadOlder };
+  return { messages, setMessages, isTyping, lastSince, setLastSince, loadMessages, hasMore, loadingOlder, loadOlder, watch, setWatch };
 }
 
 export default useChatMessages;

@@ -58,7 +58,7 @@ export function prefetchIceServers(userId?: number) {
 }
 
 // Лёгкие polling-эндпоинты вынесены в отдельную функцию chat-poll
-const POLL_ACTIONS = new Set(["get_typing", "get_call_signals", "poll_incoming_call", "scheduled_run_due"]);
+const POLL_ACTIONS = new Set(["watch_poll", "get_typing", "get_call_signals", "poll_incoming_call", "scheduled_run_due"]);
 
 export interface UploadResult {
   url: string;
