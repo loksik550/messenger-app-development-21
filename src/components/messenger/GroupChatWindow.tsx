@@ -382,7 +382,10 @@ export function GroupChatWindow({ group, currentUser, onBack, onGroupUpdated, on
         onCall={group.is_channel ? undefined : () => startGroupCall({ id: group.id, name: group.name, avatar_url: group.avatar_url })}
       />
 
-      {paid?.access && paid.paid_until && <PaidUntilBar until={paid.paid_until} />}
+      {paid?.access && paid.paid_until && (
+        <PaidUntilBar until={paid.paid_until} autoRenew={!!paid.auto_renew} price={paid.price}
+          groupId={group.id} userId={currentUser.id} onChanged={() => loadMessages(0)} />
+      )}
 
       <GroupChatMessages
         group={group}

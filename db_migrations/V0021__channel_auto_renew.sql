@@ -1,0 +1,2 @@
+ALTER TABLE t_p67547116_messenger_app_develo.channel_subscriptions ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE t_p67547116_messenger_app_develo.channel_subscriptions ADD COLUMN IF NOT EXISTS renew_failed_at BIGINT;

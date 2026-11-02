@@ -406,6 +406,93 @@ def _payout_available(cur, uid: int) -> dict:
             "available": round(max(0.0, min(earned - used, bal)), 2), "balance": round(bal, 2), "min": mn}
 
 
+def _charge_channel_sub(cur, gid: int, uid: int, renew: bool = False):
+    """Списывает оплату подписки на 30 дней. Возвращает (ok, ошибка, оплачено_до, баланс)."""
+    cur.execute(
+        f"SELECT owner_id, COALESCE(is_channel, FALSE), name, COALESCE(sub_price, 0) FROM {SCHEMA}.groups WHERE id = %s AND removed_at IS NULL",
+        (gid,),
+    )
+    g = cur.fetchone()
+    if not g or not g[1] or float(g[3]) <= 0:
+        return False, "Канал бесплатный или удалён", None, None
+    owner_id, gname, price = int(g[0]), g[2], float(g[3])
+    if owner_id == uid:
+        return False, "Это ваш канал", None, None
+    cur.execute(f"SELECT role FROM {SCHEMA}.group_members WHERE group_id = %s AND user_id = %s", (gid, uid))
+    mr = cur.fetchone()
+    if not mr or mr[0] == "removed":
+        return False, "Сначала вступите в канал", None, None
+    fee_pct = _paid_fee_percent(cur)
+    now = int(time.time())
+    cur.execute(
+        f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) - %s WHERE id = %s AND COALESCE(wallet_balance, 0) >= %s RETURNING wallet_balance",
+        (price, uid, price),
+    )
+    r = cur.fetchone()
+    if not r:
+        cur.execute(f"SELECT COALESCE(wallet_balance, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
+        bal = float((cur.fetchone() or [0])[0])
+        return False, f"Недостаточно средств: нужно {price:g} ₽, на балансе {bal:g} ₽. Пополните кошелёк.", None, bal
+    my_bal = float(r[0])
+    fee = round(price * fee_pct / 100, 2)
+    author = round(price - fee, 2)
+    cur.execute(
+        f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) + %s WHERE id = %s RETURNING wallet_balance",
+        (author, owner_id),
+    )
+    owner_bal = float((cur.fetchone() or [0])[0])
+    cur.execute(
+        f"""INSERT INTO {SCHEMA}.channel_subscriptions (group_id, user_id, paid_until, created_at) VALUES (%s, %s, %s, %s)
+            ON CONFLICT (group_id, user_id) DO UPDATE SET
+              paid_until = GREATEST({SCHEMA}.channel_subscriptions.paid_until, EXCLUDED.created_at) + 30 * 86400,
+              renew_failed_at = NULL
+            RETURNING paid_until""",
+        (gid, uid, now + 30 * 86400, now),
+    )
+    until = int(cur.fetchone()[0])
+    cur.execute(
+        f"""INSERT INTO {SCHEMA}.channel_payments (group_id, user_id, owner_id, amount, fee, author_amount, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (gid, uid, owner_id, price, fee, author, now),
+    )
+    what = "Автопродление подписки" if renew else "Подписка"
+    cur.execute(
+        f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
+            VALUES (%s, %s, 'channel_sub', %s, %s, %s), (%s, %s, 'channel_income', %s, %s, %s)""",
+        (uid, -price, f"{what} на канал «{gname}» на 30 дней", my_bal, now,
+         owner_id, author, f"Подписка на «{gname}» (комиссия Nova {fee_pct:g}%)", owner_bal, now),
+    )
+    return True, None, until, my_bal
+
+
+def _auto_renew_due(cur, uid: int) -> None:
+    """Продлевает истёкшие подписки пользователя с включённым автопродлением (не чаще раза в сутки при нехватке денег)."""
+    now = int(time.time())
+    cur.execute(
+        f"""SELECT s.group_id, g.name, COALESCE(g.sub_price, 0) FROM {SCHEMA}.channel_subscriptions s
+            JOIN {SCHEMA}.groups g ON g.id = s.group_id
+            WHERE s.user_id = %s AND s.auto_renew AND s.paid_until <= %s AND s.paid_until > %s
+              AND (s.renew_failed_at IS NULL OR s.renew_failed_at < %s)
+            LIMIT 5""",
+        (uid, now, now - 30 * 86400, now - 86400),
+    )
+    for gid, gname, price in cur.fetchall():
+        ok_, e, until, _bal = _charge_channel_sub(cur, int(gid), uid, renew=True)
+        if ok_:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) VALUES (%s, 'system', %s, %s)",
+                (uid, "Подписка продлена", f"Подписка на «{gname}» продлена ещё на 30 дней. Списано {float(price):g} ₽."),
+            )
+        elif float(price) > 0:
+            cur.execute(f"UPDATE {SCHEMA}.channel_subscriptions SET renew_failed_at = %s WHERE group_id = %s AND user_id = %s", (now, gid, uid))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) VALUES (%s, 'system', %s, %s)",
+                (uid, "Не удалось продлить подписку", f"Подписка на «{gname}» закончилась: {e} Мы попробуем снова завтра."),
+            )
+        else:
+            cur.execute(f"UPDATE {SCHEMA}.channel_subscriptions SET auto_renew = FALSE WHERE group_id = %s AND user_id = %s", (gid, uid))
+
+
 def _invite_or_add(cur, group_id: int, uid: int, inviter_id: int, now: int) -> str:
     """Добавляет человека в группу сразу или отправляет приглашение, если он требует согласия."""
     if uid == inviter_id:
@@ -4700,6 +4787,10 @@ def _handle(event: dict, context) -> dict:
         if not user_id:
             conn.close()
             return err("Нужен X-User-Id")
+        try:
+            _auto_renew_due(cur, int(user_id))
+        except Exception as _e:
+            print(f"[auto_renew] {_e}")
         cur.execute(
             f"""SELECT g.id, g.name, g.description, g.avatar_url, g.owner_id, g.is_channel,
                        g.last_message, g.last_message_at, g.invite_link,
@@ -4862,10 +4953,15 @@ def _handle(event: dict, context) -> dict:
             (int(time.time()) - 25, int(group_id)),
         )
         _gc = cur.fetchone()
+        _ar = False
+        if _pp > 0 and _puntil:
+            cur.execute(f"SELECT auto_renew FROM {SCHEMA}.channel_subscriptions WHERE group_id = %s AND user_id = %s", (int(group_id), int(user_id)))
+            _arr = cur.fetchone()
+            _ar = bool(_arr and _arr[0])
         conn.close()
         active_call = {"call_id": _gc[0], "count": int(_gc[1] or 0)} if _gc and int(_gc[1] or 0) > 0 else None
         return ok({"messages": messages, "active_call": active_call,
-                   "paid": {"price": _pp, "access": _paccess, "paid_until": _puntil} if _pp > 0 else None})
+                   "paid": {"price": _pp, "access": _paccess, "paid_until": _puntil, "auto_renew": _ar} if _pp > 0 else None})
 
     # ── send_group_message ────────────────────────────────────────────────────
     if action == "send_group_message":
@@ -5395,7 +5491,7 @@ def _handle(event: dict, context) -> dict:
         return ok({"ok": True, "id": pid, "balance": bal})
 
     # ── платные каналы ────────────────────────────────────────────────────────
-    if action in ("channel_set_price", "channel_subscribe", "channel_paid_stats"):
+    if action in ("channel_set_price", "channel_subscribe", "channel_paid_stats", "channel_auto_renew"):
         if not user_id:
             conn.close()
             return err("Нужен X-User-Id")
@@ -5451,57 +5547,28 @@ def _handle(event: dict, context) -> dict:
             return ok({"price": price, "fee_percent": fee_pct, "active_subscribers": active,
                        "earned_total": float(tot[0]), "earned_30d": float(tot[1])})
 
+        if action == "channel_auto_renew":
+            on = bool(body.get("on"))
+            cur.execute(
+                f"UPDATE {SCHEMA}.channel_subscriptions SET auto_renew = %s, renew_failed_at = NULL WHERE group_id = %s AND user_id = %s RETURNING paid_until",
+                (on, gid, uid),
+            )
+            r = cur.fetchone()
+            conn.close()
+            if not r:
+                return err("Подписка не найдена", 404)
+            return ok({"ok": True, "auto_renew": on})
+
         if price <= 0:
             conn.close()
             return err("Канал бесплатный")
-        if owner_id == uid:
+        ok_, e, until, my_bal = _charge_channel_sub(cur, gid, uid)
+        if not ok_:
             conn.close()
-            return err("Это ваш канал")
-        cur.execute(f"SELECT role FROM {SCHEMA}.group_members WHERE group_id = %s AND user_id = %s", (gid, uid))
-        mr = cur.fetchone()
-        if not mr or mr[0] == "removed":
-            conn.close()
-            return err("Сначала вступите в канал", 403)
-        now = int(time.time())
-        cur.execute(
-            f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) - %s WHERE id = %s AND COALESCE(wallet_balance, 0) >= %s RETURNING wallet_balance",
-            (price, uid, price),
-        )
-        r = cur.fetchone()
-        if not r:
-            cur.execute(f"SELECT COALESCE(wallet_balance, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
-            bal = float((cur.fetchone() or [0])[0])
-            conn.close()
-            return err(f"Недостаточно средств: нужно {price:g} ₽, на балансе {bal:g} ₽. Пополните кошелёк.", 402)
-        my_bal = float(r[0])
-        fee = round(price * fee_pct / 100, 2)
-        author = round(price - fee, 2)
-        cur.execute(
-            f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) + %s WHERE id = %s RETURNING wallet_balance",
-            (author, owner_id),
-        )
-        owner_bal = float((cur.fetchone() or [0])[0])
-        cur.execute(
-            f"""INSERT INTO {SCHEMA}.channel_subscriptions (group_id, user_id, paid_until, created_at) VALUES (%s, %s, %s, %s)
-                ON CONFLICT (group_id, user_id) DO UPDATE SET
-                  paid_until = GREATEST({SCHEMA}.channel_subscriptions.paid_until, EXCLUDED.created_at) + 30 * 86400
-                RETURNING paid_until""",
-            (gid, uid, now + 30 * 86400, now),
-        )
-        until = int(cur.fetchone()[0])
-        cur.execute(
-            f"""INSERT INTO {SCHEMA}.channel_payments (group_id, user_id, owner_id, amount, fee, author_amount, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            (gid, uid, owner_id, price, fee, author, now),
-        )
-        cur.execute(
-            f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
-                VALUES (%s, %s, 'channel_sub', %s, %s, %s), (%s, %s, 'channel_income', %s, %s, %s)""",
-            (uid, -price, f"Подписка на канал «{gname}» на 30 дней", my_bal, now,
-             owner_id, author, f"Подписка на «{gname}» (комиссия Nova {fee_pct:g}%)", owner_bal, now),
-        )
+            return err(e, 402 if my_bal is not None else 400)
+        cur.execute(f"UPDATE {SCHEMA}.channel_subscriptions SET auto_renew = TRUE WHERE group_id = %s AND user_id = %s", (gid, uid))
         conn.close()
-        return ok({"ok": True, "paid_until": until, "balance": my_bal})
+        return ok({"ok": True, "paid_until": until, "balance": my_bal, "auto_renew": True})
 
     if action == "get_group_info":
         if not user_id:
