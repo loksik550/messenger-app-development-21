@@ -3747,6 +3747,16 @@ def _handle(event: dict, context) -> dict:
         if not call_id or not to_user_id or not signal_type:
             conn.close()
             return err("Укажите call_id, to_user_id, type")
+        try:
+            _to_uid = int(to_user_id)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Некорректный to_user_id")
+        cur.execute(f"SELECT COALESCE(is_service, FALSE) FROM {SCHEMA}.users WHERE id = %s", (_to_uid,))
+        _svc = cur.fetchone()
+        if _svc and _svc[0]:
+            conn.close()
+            return err("Официальному аккаунту Nova нельзя позвонить", 403)
         if signal_type == "offer":
             cur.execute(
                 f"SELECT 1 FROM {SCHEMA}.user_blocks WHERE blocker_id=%s AND blocked_id=%s",
