@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { api, type User, type WalletTransaction, YOOKASSA_PAY_API } from "@/lib/api";
 import { authHeaders } from "@/lib/authToken";
+import PayoutSection from "@/components/messenger/paid/PayoutSection";
 
 interface Props {
   currentUser: User;
@@ -165,6 +166,8 @@ export default function WalletPanel({ currentUser, onClose, onOpenLightning, onO
             </button>
           </div>
         </div>
+
+        <PayoutSection userId={currentUser.id} onBalance={(b) => { setBalance(b); reload(); }} />
 
         {/* Quick actions */}
         <div className="grid grid-cols-3 gap-2">

@@ -5,6 +5,7 @@ import { devApi, formatNum } from "@/lib/devApi";
 import { Loading, ErrorBox } from "./DevDashboard";
 import { ExportDialog, RefundDialog, type Payment } from "./DevPaymentsDialogs";
 import ManualBlock from "./DevPaymentsManual";
+import DevPayouts from "./DevPayouts";
 
 
 
@@ -117,6 +118,7 @@ export default function DevPayments({ can }: { can: (p: string) => boolean }) {
 
   return (
     <div className="space-y-4">
+      <DevPayouts editable={can("wallet")} />
       {summary && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card label="Всего получено" value={`${formatNum(summary.success_sum)} ₽`} sub={`${formatNum(summary.success_count)} платежей`} icon="Banknote" accent />

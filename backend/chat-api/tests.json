@@ -594,6 +594,15 @@
         "group_id": 1
       },
       "expectedStatus": 400
+    },
+    {
+      "name": "payout_info без user-id",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "payout_info"
+      },
+      "expectedStatus": 400
     }
   ]
 }

@@ -382,6 +382,30 @@ def _paid_fee_percent(cur) -> float:
     return max(0.0, min(v, 50.0))
 
 
+def _payout_available(cur, uid: int) -> dict:
+    """Сколько можно вывести: только заработок с платных каналов минус уже выведенное, не больше баланса."""
+    cur.execute(
+        f"SELECT COALESCE(SUM(amount), 0) FROM {SCHEMA}.wallet_transactions WHERE user_id = %s AND kind = 'channel_income'",
+        (uid,),
+    )
+    earned = float(cur.fetchone()[0])
+    cur.execute(
+        f"SELECT COALESCE(SUM(amount), 0) FROM {SCHEMA}.payout_requests WHERE user_id = %s AND status IN ('pending', 'paid')",
+        (uid,),
+    )
+    used = float(cur.fetchone()[0])
+    cur.execute(f"SELECT COALESCE(wallet_balance, 0) FROM {SCHEMA}.users WHERE id = %s", (uid,))
+    bal = float((cur.fetchone() or [0])[0])
+    cur.execute(f"SELECT value FROM {SCHEMA}.dev_settings WHERE key = 'payout_min'")
+    r = cur.fetchone()
+    try:
+        mn = float(r[0]) if r else 500.0
+    except (TypeError, ValueError):
+        mn = 500.0
+    return {"earned": round(earned, 2), "withdrawn": round(used, 2),
+            "available": round(max(0.0, min(earned - used, bal)), 2), "balance": round(bal, 2), "min": mn}
+
+
 def _invite_or_add(cur, group_id: int, uid: int, inviter_id: int, now: int) -> str:
     """Добавляет человека в группу сразу или отправляет приглашение, если он требует согласия."""
     if uid == inviter_id:
@@ -5246,6 +5270,130 @@ def _handle(event: dict, context) -> dict:
         return ok({"ok": True})
 
     # ── get_group_info ────────────────────────────────────────────────────────
+    # ── вывод заработка ───────────────────────────────────────────────────────
+    if action in ("payout_info", "payout_request", "payout_cancel"):
+        if not user_id:
+            conn.close()
+            return err("Нужен X-User-Id")
+        uid = int(user_id)
+
+        if action == "payout_info":
+            info = _payout_available(cur, uid)
+            cur.execute(
+                f"""SELECT id, amount, method, details, status, admin_note, created_at, decided_at
+                    FROM {SCHEMA}.payout_requests WHERE user_id = %s ORDER BY id DESC LIMIT 20""",
+                (uid,),
+            )
+            items = [{"id": r[0], "amount": float(r[1]), "method": r[2],
+                      "details": ("•••• " + r[3][-4:]) if r[2] == "card" else r[3],
+                      "status": r[4], "note": r[5] or "", "created_at": int(r[6]),
+                      "decided_at": int(r[7]) if r[7] else None} for r in cur.fetchall()]
+            conn.close()
+            return ok({**info, "items": items})
+
+        if action == "payout_cancel":
+            try:
+                pid = int(body.get("id") or 0)
+            except (TypeError, ValueError):
+                conn.close()
+                return err("Неверный id")
+            cur.execute(
+                f"""UPDATE {SCHEMA}.payout_requests SET status = 'cancelled', decided_at = %s, decided_by = 'user'
+                    WHERE id = %s AND user_id = %s AND status = 'pending' RETURNING amount""",
+                (int(time.time()), pid, uid),
+            )
+            r = cur.fetchone()
+            if not r:
+                conn.close()
+                return err("Заявка уже обработана")
+            amt = float(r[0])
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) + %s WHERE id = %s RETURNING wallet_balance",
+                (amt, uid),
+            )
+            bal = float(cur.fetchone()[0])
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
+                    VALUES (%s, %s, 'payout_return', %s, %s, %s)""",
+                (uid, amt, f"Отмена заявки на вывод #{pid}", bal, int(time.time())),
+            )
+            conn.close()
+            return ok({"ok": True, "balance": bal})
+
+        method = str(body.get("method") or "")
+        details = "".join(str(body.get("details") or "").split())
+        holder = " ".join(str(body.get("holder") or "").split())[:100]
+        try:
+            amount = round(float(body.get("amount") or 0), 2)
+        except (TypeError, ValueError):
+            conn.close()
+            return err("Неверная сумма")
+        if method == "card":
+            if not details.isdigit() or not (16 <= len(details) <= 19):
+                conn.close()
+                return err("Номер карты — 16–19 цифр")
+            digits = [int(c) for c in details][::-1]
+            luhn = sum(d if i % 2 == 0 else (d * 2 - 9 if d * 2 > 9 else d * 2) for i, d in enumerate(digits))
+            if luhn % 10 != 0:
+                conn.close()
+                return err("Проверьте номер карты — похоже, в нём ошибка")
+        elif method == "sbp":
+            ph = "".join(c for c in details if c.isdigit())
+            if len(ph) == 10:
+                ph = "7" + ph
+            if len(ph) != 11:
+                conn.close()
+                return err("Укажите номер телефона для СБП")
+            bank = " ".join(str(body.get("bank") or "").split())[:60]
+            if not bank:
+                conn.close()
+                return err("Укажите банк для перевода по СБП")
+            details = f"+{ph} · {bank}"
+        else:
+            conn.close()
+            return err("Выберите способ: карта или СБП")
+        if len(holder) < 3:
+            conn.close()
+            return err("Укажите имя и фамилию получателя")
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.payout_requests WHERE user_id = %s AND status = 'pending'", (uid,))
+        if cur.fetchone():
+            conn.close()
+            return err("У вас уже есть заявка в обработке. Дождитесь решения или отмените её.")
+        info = _payout_available(cur, uid)
+        if amount < info["min"]:
+            conn.close()
+            return err(f"Минимальная сумма вывода — {info['min']:g} ₽")
+        if amount > info["available"]:
+            conn.close()
+            return err(f"Доступно к выводу {info['available']:g} ₽. Выводить можно только заработок с платных каналов.")
+        cur.execute(
+            f"""UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) - %s
+                WHERE id = %s AND COALESCE(wallet_balance, 0) >= %s RETURNING wallet_balance""",
+            (amount, uid, amount),
+        )
+        r = cur.fetchone()
+        if not r:
+            conn.close()
+            return err("Недостаточно средств на балансе")
+        bal = float(r[0])
+        now = int(time.time())
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.payout_requests (user_id, amount, method, details, holder, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (uid, amount, method, details, holder, now),
+        )
+        pid = int(cur.fetchone()[0])
+        cur.execute(
+            f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
+                VALUES (%s, %s, 'payout', %s, %s, %s)""",
+            (uid, -amount, f"Заявка на вывод #{pid}", bal, now),
+        )
+        cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (uid,))
+        nm = (cur.fetchone() or ("Пользователь",))[0]
+        tg_notify(cur, "pay", "Заявка на вывод", f"{nm} (ID {uid}) просит вывести {amount:g} ₽ — {'карта' if method == 'card' else 'СБП'}")
+        conn.close()
+        return ok({"ok": True, "id": pid, "balance": bal})
+
     # ── платные каналы ────────────────────────────────────────────────────────
     if action in ("channel_set_price", "channel_subscribe", "channel_paid_stats"):
         if not user_id:

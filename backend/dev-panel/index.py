@@ -45,7 +45,7 @@ ROLES = {
 CONFIRM_ACTIONS = {
     "delete_user", "purge_user", "purge_deleted", "delete_chat", "bulk_action", "team_update", "team_remove",
     "wallet_set", "payment_refund", "settings_save", "broadcast_send",
-    "channel_delete", "create_invite", "auth_strict_save", "reset_decide",
+    "channel_delete", "create_invite", "auth_strict_save", "reset_decide", "payout_decide",
 }
 
 ACTION_PERMS = {
@@ -93,6 +93,7 @@ ACTION_PERMS = {
     "twofa_get": "dashboard", "twofa_save": "dashboard",
     "auth_strict_get": "dashboard", "auth_strict_save": "settings",
     "resets_list": "support", "reset_decide": "user_write",
+    "payouts_list": "dashboard", "payout_decide": "wallet",
     "trends": "dashboard", "expiring_soon": "dashboard",
     "live_feed": "dashboard", "system_health": "dashboard", "spark": "dashboard",
     "funnel": "dashboard", "retention": "dashboard",
@@ -2985,6 +2986,67 @@ def _handler(event: dict, context) -> dict:
             audit(cur, admin, "twofa_save",
                   "Включена защита входа кодом" if enabled else "Отключена защита входа", ip)
             return ok({"success": True, "enabled": enabled})
+
+        if action == "payouts_list":
+            st = str(body.get("status") or "pending")
+            where = "" if st == "all" else "WHERE p.status = %s"
+            args = () if st == "all" else (st,)
+            cur.execute(
+                f"""SELECT p.id, p.user_id, u.name, u.phone, p.amount, p.method, p.details, p.holder, p.status,
+                           p.admin_note, p.created_at, p.decided_at, p.decided_by,
+                           (SELECT COALESCE(SUM(amount), 0) FROM {SCHEMA}.wallet_transactions w WHERE w.user_id = p.user_id AND w.kind = 'channel_income')
+                    FROM {SCHEMA}.payout_requests p JOIN {SCHEMA}.users u ON u.id = p.user_id
+                    {where} ORDER BY (p.status = 'pending') DESC, p.id DESC LIMIT 100""",
+                args,
+            )
+            items = [{"id": r[0], "user_id": r[1], "name": r[2], "phone": r[3], "amount": float(r[4]), "method": r[5],
+                      "details": r[6], "holder": r[7], "status": r[8], "note": r[9] or "", "created_at": int(r[10]),
+                      "decided_at": int(r[11]) if r[11] else None, "decided_by": r[12], "earned_total": float(r[13])}
+                     for r in cur.fetchall()]
+            cur.execute(f"SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM {SCHEMA}.payout_requests WHERE status = 'pending'")
+            pc = cur.fetchone()
+            cur.execute(f"SELECT COALESCE(SUM(amount), 0) FROM {SCHEMA}.payout_requests WHERE status = 'paid'")
+            paid_total = float(cur.fetchone()[0])
+            cur.execute(f"SELECT COALESCE(SUM(fee), 0), COALESCE(SUM(amount), 0) FROM {SCHEMA}.channel_payments")
+            fee = cur.fetchone()
+            return ok({"items": items, "pending_count": int(pc[0]), "pending_sum": float(pc[1]),
+                       "paid_total": paid_total, "fee_total": float(fee[0]), "subs_total": float(fee[1])})
+
+        if action == "payout_decide":
+            pid = int(body.get("id") or 0)
+            approve = bool(body.get("approve"))
+            note = " ".join(str(body.get("note") or "").split())[:300]
+            now = int(time.time())
+            cur.execute(
+                f"""UPDATE {SCHEMA}.payout_requests SET status = %s, admin_note = %s, decided_at = %s, decided_by = %s
+                    WHERE id = %s AND status = 'pending' RETURNING user_id, amount""",
+                ("paid" if approve else "rejected", note, now, f"admin:{admin['id']}", pid),
+            )
+            r = cur.fetchone()
+            if not r:
+                return err("Заявка уже обработана")
+            uid, amt = int(r[0]), float(r[1])
+            if approve:
+                title, text = "Выплата отправлена", f"Мы перевели {amt:g} ₽ по вашей заявке #{pid}. Деньги поступят в течение 1–3 рабочих дней."
+            else:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET wallet_balance = COALESCE(wallet_balance, 0) + %s WHERE id = %s RETURNING wallet_balance",
+                    (amt, uid),
+                )
+                bal = float(cur.fetchone()[0])
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.wallet_transactions (user_id, amount, kind, description, balance_after, created_at)
+                        VALUES (%s, %s, 'payout_return', %s, %s, %s)""",
+                    (uid, amt, f"Возврат по отклонённой заявке #{pid}", bal, now),
+                )
+                title = "Заявка на вывод отклонена"
+                text = f"Заявка #{pid} на {amt:g} ₽ отклонена" + (f": {note}" if note else "") + ". Деньги вернулись в кошелёк."
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.user_notifications (user_id, kind, title, body) VALUES (%s, 'system', %s, %s)",
+                (uid, title, text),
+            )
+            audit(cur, admin, "payout_decide", f"{'Выплачено' if approve else 'Отклонено'} {amt:g} ₽ по заявке #{pid} (ID {uid})", ip)
+            return ok({"success": True})
 
         if action == "resets_list":
             now = int(time.time())
