@@ -22,7 +22,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NovaCallPlugin.class);
         registerPlugin(NovaAppIconPlugin.class);
         registerPlugin(NovaUpdatePlugin.class);
+        registerPlugin(NovaContactsPlugin.class);
         super.onCreate(savedInstanceState);
+        applyTextZoom();
         NovaMessagingService.ensureChannels(this);
         handleCallIntent(getIntent());
         savePushTap(getIntent());
@@ -67,6 +69,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         isInForeground = true;
+        applyTextZoom();
         try {
             NotificationManagerCompat.from(this).cancelAll();
         } catch (Exception ignored) {
@@ -79,13 +82,27 @@ public class MainActivity extends BridgeActivity {
         isInForeground = false;
     }
 
+    private static final int MAX_TEXT_ZOOM = 115;
+
+    private void applyTextZoom() {
+        try {
+            if (getBridge() == null || getBridge().getWebView() == null) return;
+            float scale = getResources().getConfiguration().fontScale;
+            int zoom = Math.round(scale * 100f);
+            if (zoom > MAX_TEXT_ZOOM) zoom = MAX_TEXT_ZOOM;
+            if (zoom < 85) zoom = 85;
+            getBridge().getWebView().getSettings().setTextZoom(zoom);
+        } catch (Exception ignored) {
+        }
+    }
+
     private void savePushTap(Intent intent) {
         if (intent == null || intent.getExtras() == null) return;
         Bundle ex = intent.getExtras();
         if (!"1".equals(ex.getString("nova_push_tap"))) return;
         try {
             JSONObject o = new JSONObject();
-            for (String k : new String[]{"chat_id", "group_id", "call_id", "is_call", "from_user_id", "call_accept"}) {
+            for (String k : new String[]{"chat_id", "group_id", "call_id", "is_call", "from_user_id", "call_accept", "clip_id"}) {
                 String v = ex.getString(k);
                 if (v != null) o.put(k, v);
             }

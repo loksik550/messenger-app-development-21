@@ -5,6 +5,7 @@
     "": {
       "name": "vite_react_tanstack_start_ts",
       "dependencies": {
+        "@aparajita/capacitor-biometric-auth": "8.0.2",
         "@capacitor-community/contacts": "6.0.6",
         "@capacitor/android": "6.1.2",
         "@capacitor/app": "6.0.1",
@@ -105,6 +106,8 @@
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.3.0", "", {}, "sha512-U4+70Pc5ZS9osnCBCE5Jha/ciHM+Yp+CNMNC/7HvYbNRk1Ldd+f7qO65W5qfhu/TCv+/ozljlXXe9Nj8419DMA=="],
 
+    "@aparajita/capacitor-biometric-auth": ["@aparajita/capacitor-biometric-auth@8.0.2", "", { "dependencies": { "@capacitor/android": "^6.1.0", "@capacitor/app": "^6.0.0", "@capacitor/core": "^6.1.0", "@capacitor/ios": "^6.1.0" } }, "sha512-f5EHwJYkwQDM/FmoZoyOTmBs/3XEcYURZDUNyps9+Fn7WrgojtJuZP8GhfW7KrQGqCok+ctDd369nEAmNiTxfw=="],
+
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
     "@babel/compat-data": ["@babel/compat-data@7.29.7", "", {}, "sha512-locTkQyKvwIEgBzVrn8693ebc97F2U8ZHjbXwDXJ5Fn2TCpNwTlKcaKLkdHop5c/icOFE7qt7Q9JC5hnKNa6Gg=="],
@@ -168,6 +171,8 @@
     "@capacitor/filesystem": ["@capacitor/filesystem@6.0.3", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-PdIP/yOGAbG1lq1wbFbSPhXQ9/5lpTpeiok2NneawJOk6UXvy9W7QZXRo7wXAP7J6FdzU7bKfOORRXpOJpgXyw=="],
 
     "@capacitor/haptics": ["@capacitor/haptics@6.0.2", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-xcFdIH4iIIeW2+1lzmlYMVicqB9ytaiuZ9NE3a9laKFPvMGC7hdj6i6tHFezwPJ/96xkHOwXT2b0F8Mh9xtTWg=="],
+
+    "@capacitor/ios": ["@capacitor/ios@6.2.3", "", { "peerDependencies": { "@capacitor/core": "^6.2.0" } }, "sha512-IqYhQH6yOrsNLwmKgUj51UWemRuNw2+wIi/mwpkDP3SennxmovjdpnCpbSmapjA4CmCn56yd4D1AVdPHWKVj4Q=="],
 
     "@capacitor/keyboard": ["@capacitor/keyboard@6.0.3", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-V/mURxBI68HvClYjrGBlOriWkwYN7r+cWid/igJz/3scNc/V81DgQ9fpoLr4W0I5NY7YxOesjIJLuLO+LT18mQ=="],
 
