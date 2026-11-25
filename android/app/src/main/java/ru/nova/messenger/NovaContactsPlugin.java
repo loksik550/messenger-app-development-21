@@ -62,6 +62,7 @@ public class NovaContactsPlugin extends Plugin {
                     ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
                     ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
                     ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER,
                 };
                 try (Cursor c = cr.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, proj, null, null, null)) {
                     if (c != null) {
@@ -69,7 +70,9 @@ public class NovaContactsPlugin extends Plugin {
                             String id = c.getString(0);
                             String name = c.getString(1);
                             String num = c.getString(2);
-                            if (id == null || num == null) continue;
+                            // Некоторые телефоны (Xiaomi, TECNO, Honor) хранят номер только в «нормализованном» поле
+                            if (num == null || num.trim().isEmpty()) num = c.getString(3);
+                            if (id == null || num == null || num.trim().isEmpty()) continue;
                             if (!names.containsKey(id)) names.put(id, name == null ? "" : name);
                             Set<String> set = phones.get(id);
                             if (set == null) { set = new LinkedHashSet<>(); phones.put(id, set); }

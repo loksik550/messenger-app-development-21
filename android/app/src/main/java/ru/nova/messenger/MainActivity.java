@@ -23,6 +23,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NovaAppIconPlugin.class);
         registerPlugin(NovaUpdatePlugin.class);
         registerPlugin(NovaContactsPlugin.class);
+        registerPlugin(NovaSharePlugin.class);
         super.onCreate(savedInstanceState);
         applyTextZoom();
         NovaMessagingService.ensureChannels(this);
